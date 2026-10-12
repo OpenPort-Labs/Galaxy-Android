@@ -98,6 +98,10 @@ bool checkGameFolder(const std::string& dir, bool* ready) {
 
 std::string findGameData(const std::string& extDir) {
     std::vector<std::string> candidates = {
+        "/sdcard/GalaxyData",
+        "/sdcard/GalaxyData/game",
+        "/storage/emulated/0/GalaxyData",
+        "/storage/emulated/0/GalaxyData/game",
         extDir + "/game",
         "/sdcard/Android/data/com.galaxy.mobile.plus/files/game",
         "/sdcard/Android/data/com.galaxy.mobile/files/game",

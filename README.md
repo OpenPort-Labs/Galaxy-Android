@@ -91,7 +91,7 @@ With the dedicated `GalaxyInstaller` app, your phone does everything on-device â
    - Tap **"Start Cooking Game Data"**.
    - The app automatically:
      1. Unpacks and decrypts the optical disc partition on-device using its native ARM64 extraction engine (`libnodtool.so`).
-     2. Runs multi-threaded asset cooking powered by an embedded ARM64 Python runtime and hardware-accelerated native C Yaz0 decompression (`libinstaller.so`), converting textures, geometry, audio streams, and levels directly into `/sdcard/Download/game`.
+     2. Runs multi-threaded asset cooking powered by an embedded ARM64 Python runtime and hardware-accelerated native C Yaz0 decompression (`libinstaller.so`), converting textures, geometry, audio streams, and levels directly into `/sdcard/GalaxyData`.
      3. Preserves temporary extraction cache across retries and cleans it up only upon successful completion.
 5. **Launch & Play**:
    - Tap **"Launch GalaxyMobile ðŸš€"** or **GalaxyMobile+** and enjoy native 60 FPS Super Mario Galaxy on Android!
@@ -179,7 +179,7 @@ This processes textures, geometry, audio streams, and cinematics into format-opt
 1. Compress your `cooked` folder into a zip file (`game.zip`).
 2. Plug your phone into your PC and drag `game.zip` into your phone's **`Download`** folder.
 3. On your phone, open your file manager (Samsung My Files / Google Files) and extract `game.zip`.
-*(GalaxyMobile automatically checks `/sdcard/Download/game`, `/sdcard/Download/cooked`, and `/sdcard/GalaxyQuest` on startup!)*
+*(GalaxyMobile automatically checks `/sdcard/GalaxyData`, `/sdcard/Download/game`, and `/sdcard/GalaxyQuest` on startup!)*
 
 ---
 

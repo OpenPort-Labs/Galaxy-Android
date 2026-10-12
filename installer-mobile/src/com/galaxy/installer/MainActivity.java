@@ -95,7 +95,34 @@ public class MainActivity extends Activity {
     }
 
     private void autoDetectSource() {
-        appendLog("[Scan] Searching for game dumps in Downloads...");
+        appendLog("[Scan] Checking for GalaxyData folder and game dumps...");
+
+        // 1. Check if /sdcard/GalaxyData already exists
+        File galaxyDataDir = new File(Environment.getExternalStorageDirectory(), "GalaxyData");
+        if (galaxyDataDir.exists()) {
+            File fstCheck = new File(galaxyDataDir, "sys/fst.bin");
+            File filesCheck = new File(galaxyDataDir, "files");
+            if (fstCheck.exists() && filesCheck.exists()) {
+                appendLog("[Scan] Found ready game data in " + galaxyDataDir.getAbsolutePath() + "!");
+                mHandler.post(() -> {
+                    btnLaunchGame.setVisibility(View.VISIBLE);
+                    txtProgressStatus.setText("Cooked game data ready in GalaxyData!");
+                });
+            }
+            // Check for game dumps inside GalaxyData
+            File[] gFiles = galaxyDataDir.listFiles();
+            if (gFiles != null) {
+                for (File f : gFiles) {
+                    String name = f.getName().toLowerCase();
+                    if (name.endsWith(".rvz") || name.endsWith(".wbfs") || name.endsWith(".iso")) {
+                        selectSource(f.getAbsolutePath(), "Auto-detected disc in GalaxyData: " + f.getName());
+                        return;
+                    }
+                }
+            }
+        }
+
+        // 2. Scan Downloads folder
         File downloadDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
         if (downloadDir != null && downloadDir.exists()) {
             File[] files = downloadDir.listFiles();
@@ -135,6 +162,10 @@ public class MainActivity extends Activity {
 
         // Check fallback root paths
         String[] fallbackCandidates = {
+            "/sdcard/GalaxyData/Super Mario Galaxy.rvz",
+            "/sdcard/GalaxyData/Super Mario Galaxy.wbfs",
+            "/sdcard/GalaxyData/Super Mario Galaxy.iso",
+            "/sdcard/Download/Super Mario Galaxy.rvz",
             "/sdcard/Download/Super Mario Galaxy.wbfs",
             "/sdcard/Download/Super Mario Galaxy.iso",
             "/sdcard/Download/extracted",
@@ -244,7 +275,14 @@ public class MainActivity extends Activity {
         txtProgressStatus.setText(R.string.status_cooking);
 
         final String sourcePath = mSelectedSourcePath;
-        final String outputDir = "/sdcard/Download/game";
+        File galaxyDataDir = new File(Environment.getExternalStorageDirectory(), "GalaxyData");
+        if (!galaxyDataDir.exists()) {
+            boolean created = galaxyDataDir.mkdirs();
+            appendLog("[Directory] Created GalaxyData directory: " + galaxyDataDir.getAbsolutePath());
+        } else {
+            appendLog("[Directory] Using existing GalaxyData directory: " + galaxyDataDir.getAbsolutePath());
+        }
+        final String outputDir = galaxyDataDir.getAbsolutePath();
         final boolean withMovies = chkIncludeMovies.isChecked();
 
         appendLog("==============================================");
@@ -445,16 +483,14 @@ public class MainActivity extends Activity {
     }
 
     private void launchGalaxyMobile() {
-        Intent launchIntent = getPackageManager().getLaunchIntentForPackage("com.galaxy.mobile");
+        Intent launchIntent = getPackageManager().getLaunchIntentForPackage("com.galaxy.mobile.plus");
+        if (launchIntent == null) {
+            launchIntent = getPackageManager().getLaunchIntentForPackage("com.galaxy.mobile");
+        }
         if (launchIntent != null) {
             startActivity(launchIntent);
         } else {
-            launchIntent = getPackageManager().getLaunchIntentForPackage("com.galaxy.quest");
-            if (launchIntent != null) {
-                startActivity(launchIntent);
-            } else {
-                Toast.makeText(this, "GalaxyMobile (com.galaxy.mobile) is not installed yet!", Toast.LENGTH_LONG).show();
-            }
+            Toast.makeText(this, "Neither GalaxyMobile nor GalaxyMobile+ is installed yet!", Toast.LENGTH_LONG).show();
         }
     }
 

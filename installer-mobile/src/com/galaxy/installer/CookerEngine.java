@@ -143,10 +143,12 @@ public class CookerEngine {
         if (!pythonHomeDir.exists()) pythonHomeDir.mkdirs();
         if (!scriptsDir.exists()) scriptsDir.mkdirs();
 
-        // Unpack pythonhome.zip if not already extracted
-        File stdlibMarker = new File(pythonHomeDir, ".extracted");
+        // Unpack pythonhome.zip if not already extracted (force re-extract for ARM64)
+        File stdlibMarker = new File(pythonHomeDir, ".extracted_arm64_v1");
         if (!stdlibMarker.exists()) {
-            if (callback != null) callback.onLog("[Setup] Unpacking embedded Python standard library...");
+            if (callback != null) callback.onLog("[Setup] Unpacking embedded Python standard library (ARM64)...");
+            deleteRecursive(pythonHomeDir);
+            pythonHomeDir.mkdirs();
             try (InputStream is = context.getAssets().open("pythonhome.zip");
                  ZipInputStream zis = new ZipInputStream(is)) {
                 ZipEntry entry;
@@ -162,6 +164,10 @@ public class CookerEngine {
                             while ((len = zis.read(buffer)) > 0) {
                                 fos.write(buffer, 0, len);
                             }
+                        }
+                        if (outFile.getName().endsWith(".so")) {
+                            outFile.setReadable(true, false);
+                            outFile.setExecutable(true, false);
                         }
                     }
                     zis.closeEntry();

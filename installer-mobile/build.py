@@ -149,11 +149,14 @@ with zipfile.ZipFile(base_apk, 'a', zipfile.ZIP_DEFLATED) as z:
     # 2. Add native libraries
     libs = [
         (os.path.join(native_build, 'libinstaller.so'), 'lib/arm64-v8a/libinstaller.so'),
-        (os.path.join(INSTALLER_DIR, 'vendor', 'python', 'lib', 'arm64-v8a', 'libpython3.10.so'), 'lib/arm64-v8a/libpython3.10.so'),
-        (os.path.join(INSTALLER_DIR, 'vendor', 'python', 'lib', 'arm64-v8a', 'libbz2.so'), 'lib/arm64-v8a/libbz2.so'),
-        (os.path.join(INSTALLER_DIR, 'vendor', 'python', 'lib', 'arm64-v8a', 'liblzma.so'), 'lib/arm64-v8a/liblzma.so'),
         (os.path.join(INSTALLER_DIR, 'vendor', 'nodtool', 'libnodtool.so'), 'lib/arm64-v8a/libnodtool.so'),
     ]
+    py_lib_dir = os.path.join(INSTALLER_DIR, 'vendor', 'python', 'lib', 'arm64-v8a')
+    if os.path.exists(py_lib_dir):
+        for f in os.listdir(py_lib_dir):
+            if f.endswith('.so'):
+                libs.append((os.path.join(py_lib_dir, f), f'lib/arm64-v8a/{f}'))
+
     for src, arc in libs:
         if os.path.exists(src):
             z.write(src, arc)

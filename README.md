@@ -76,9 +76,11 @@ With the dedicated `GalaxyInstaller` app, your phone does everything on-device �
      - **`.wia`** (Wii ISO Archive format)
      - **`.zip`** (Archive containing game dump files)
      - *(Or an extracted game folder from Dolphin)*
-2. **Install both APKs on your phone**:
-   - Install [`out-mobile/GalaxyMobile.apk`](out-mobile/GalaxyMobile.apk) (the game engine, package: `com.galaxy.mobile`).
-   - Install [`out-mobile/GalaxyInstaller.apk`](out-mobile/GalaxyInstaller.apk) (the companion installer, package: `com.galaxy.installer`).
+2. **Install the APKs on your phone**:
+   - **GalaxyMobile** ([`out-mobile/GalaxyMobile.apk`](out-mobile/GalaxyMobile.apk), package `com.galaxy.mobile`): The pure vanilla experience with **0 mods** and clean standard controls.
+   - **GalaxyMobile+** ([`out-mobile/GalaxyMobilePlus.apk`](out-mobile/GalaxyMobilePlus.apk), package `com.galaxy.mobile.plus`): The enhanced edition featuring the tabbed **[ Advanced ]** mods drawer (Fly Mode, Cutscene Prevention, Infinite Health + void teleport).
+   - **GalaxyInstaller** ([`out-mobile/GalaxyInstaller.apk`](out-mobile/GalaxyInstaller.apk), package `com.galaxy.installer`): The on-device companion installer.
+   *(Both GalaxyMobile and GalaxyMobile+ can be installed side-by-side and automatically share cooked game data!)*
 3. **Open GalaxyInstaller**:
    - Open **GalaxyInstaller** from your phone's app drawer.
    - Grant storage permission when prompted.
@@ -92,7 +94,7 @@ With the dedicated `GalaxyInstaller` app, your phone does everything on-device �
      2. Runs multi-threaded asset cooking powered by an embedded ARM64 Python runtime and hardware-accelerated native C Yaz0 decompression (`libinstaller.so`), converting textures, geometry, audio streams, and levels directly into `/sdcard/Download/game`.
      3. Preserves temporary extraction cache across retries and cleans it up only upon successful completion.
 5. **Launch & Play**:
-   - Tap **"Launch GalaxyMobile 🚀"** and enjoy native 60 FPS Super Mario Galaxy on Android!
+   - Tap **"Launch GalaxyMobile 🚀"** or **GalaxyMobile+** and enjoy native 60 FPS Super Mario Galaxy on Android!
 
 ---
 
@@ -181,19 +183,27 @@ This processes textures, geometry, audio streams, and cinematics into format-opt
 
 ---
 
-#### Step 5: Install and Run GalaxyMobile
-1. Install [`out-mobile/GalaxyMobile.apk`](out-mobile/GalaxyMobile.apk) on your device:
-   ```bash
-   adb install -r -t -g out-mobile/GalaxyMobile.apk
-   ```
-   *(Package name: `com.galaxy.mobile`. Or double-click `deploy_to_phone.bat` on Windows).*
-2. Launch **GalaxyMobile** from your phone's app drawer!
-3. Tap the `⚙` gear tab at the top-left of the screen to open the scrollable Material 3 Settings Drawer:
-   - **General Tab**: Customize on-screen controls visibility, Camera D-Pad, joystick mode (Dynamic vs. Fixed), opacity, button scale, layout repositioning, and **Fullscreen (Hor+ Ultrawide)** mode.
-   - **Advanced Tab**: Toggle special gameplay mods (all disabled by default):
-     - **Fly Mode**: Hold the **A** button to smoothly levitate and fly upwards in any planet gravity field.
-     - **Cutscene Prevention**: Instantly skip video cutscenes and THP cinematics without delay.
-     - **Infinite Health**: Mario becomes invincible and never loses health; falling into black holes or abysses teleports Mario safely back to the stage's starting point.
+#### Step 5: Install and Run GalaxyMobile or GalaxyMobile+
+1. Install your preferred flavor on your device:
+   - **GalaxyMobile (Vanilla)**:
+     ```bash
+     adb install -r -t -g out-mobile/GalaxyMobile.apk
+     ```
+     *(Package name: `com.galaxy.mobile`)*
+   - **GalaxyMobile+ (Mods Enabled)**:
+     ```bash
+     adb install -r -t -g out-mobile/GalaxyMobilePlus.apk
+     ```
+     *(Package name: `com.galaxy.mobile.plus`)*
+2. Launch your selected app from your phone's app drawer!
+3. Tap the `⚙` gear tab at the top-left of the screen to open the Material 3 Settings Drawer:
+   - In **GalaxyMobile**: Clean, pure vanilla settings (HUD visibility, Camera D-Pad toggles & positioning, Dynamic vs. Fixed stick, opacity, button scale, layout repositioning, and Fullscreen Hor+ Ultrawide). All mods are 100% disabled.
+   - In **GalaxyMobile+**: The drawer features **[ General ]** and **[ Advanced ]** tabs:
+     - **General Tab**: All standard HUD, D-Pad, stick, and display settings.
+     - **Advanced Tab**: Toggle experimental gameplay mods (disabled by default):
+       - **Fly Mode**: Hold the **A** button to smoothly ascend and fly upwards in any planet gravity field with 360-degree analog control.
+       - **Cutscene Prevention**: Instantly skips video cutscenes and THP cinematics without delay.
+       - **Infinite Health**: Mario becomes invincible and never loses health; falling into black holes or abysses teleports Mario safely back to the stage's starting point.
 
 ---
 

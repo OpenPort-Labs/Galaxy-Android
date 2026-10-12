@@ -99,6 +99,7 @@ bool checkGameFolder(const std::string& dir, bool* ready) {
 std::string findGameData(const std::string& extDir) {
     std::vector<std::string> candidates = {
         extDir + "/game",
+        "/sdcard/Android/data/com.galaxy.mobile.plus/files/game",
         "/sdcard/Android/data/com.galaxy.mobile/files/game",
         "/sdcard/Android/data/com.galaxy.quest/files/game",
         "/sdcard/Galaxy/game",
@@ -444,10 +445,15 @@ extern "C" __attribute__((visibility("default"))) void port_android_main(struct 
     a.pad.connected = 1;
     port_input_set(0, &a.pad);
 
-    std::string ext = app->activity->externalDataPath ? app->activity->externalDataPath : "/sdcard/Android/data/com.galaxy.mobile/files";
-    a.saveRoot = std::string(app->activity->internalDataPath) + "/nand";
+    std::string internalPath = app->activity->internalDataPath ? app->activity->internalDataPath : "";
+    bool isPlus = (internalPath.find("plus") != std::string::npos);
+    mobile_ui::get().setPlusEdition(isPlus);
+    LOGI("GalaxyMobile edition detected: %s (internalDataPath: %s)", isPlus ? "GalaxyMobile+" : "GalaxyMobile (Standard)", internalPath.c_str());
+
+    std::string ext = app->activity->externalDataPath ? app->activity->externalDataPath : (isPlus ? "/sdcard/Android/data/com.galaxy.mobile.plus/files" : "/sdcard/Android/data/com.galaxy.mobile/files");
+    a.saveRoot = internalPath + "/nand";
     mkdir(a.saveRoot.c_str(), 0770);
-    mobile_ui::get().setSavePath(a.saveRoot + "/touch_settings.ini");
+    mobile_ui::get().setSavePath(a.saveRoot + (isPlus ? "/touch_settings_plus.ini" : "/touch_settings.ini"));
 
     port_log_file((ext + "/petari_mobile_log.txt").c_str());
     gpu::setShaderCachePath((std::string(app->activity->internalDataPath) + "/shaders.bin").c_str());
@@ -618,14 +624,17 @@ int port_is_fullscreen_aspect(void) {
 }
 
 int port_is_fly_mode(void) {
+    if (!mobile_ui::UIOverlay::get().isPlusEdition()) return 0;
     return mobile_ui::UIOverlay::get().settings().modFly ? 1 : 0;
 }
 
 int port_is_skip_cutscenes(void) {
+    if (!mobile_ui::UIOverlay::get().isPlusEdition()) return 0;
     return mobile_ui::UIOverlay::get().settings().modSkipCutscenes ? 1 : 0;
 }
 
 int port_is_infinite_health(void) {
+    if (!mobile_ui::UIOverlay::get().isPlusEdition()) return 0;
     return mobile_ui::UIOverlay::get().settings().modInfiniteHealth ? 1 : 0;
 }
 }

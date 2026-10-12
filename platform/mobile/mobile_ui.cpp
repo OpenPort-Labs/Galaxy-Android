@@ -291,6 +291,12 @@ UIOverlay& UIOverlay::get() {
 void UIOverlay::setSavePath(const std::string& path) {
     mSavePath = path;
     mSettings.load(path);
+    if (!mPlusEdition) {
+        mSettings.modFly = false;
+        mSettings.modSkipCutscenes = false;
+        mSettings.modInfiniteHealth = false;
+        mSettingsTab = 0;
+    }
 }
 
 bool UIOverlay::needsRedraw() {
@@ -531,9 +537,9 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
     if (mSettingsOpen || mDrawerAnim > 0.05f) {
         float padX = 22.0f * uiScale;
         float contentW = drawerW - padX * 2.0f;
-        float contentTop = 112.0f * uiScale;
+        float contentTop = mPlusEdition ? (112.0f * uiScale) : (68.0f * uiScale);
         float contentBottom = h - 56.0f * uiScale;
-        float totalContentH = (mSettingsTab == 0) ? (455.0f * uiScale) : (340.0f * uiScale);
+        float totalContentH = (mSettingsTab == 0 || !mPlusEdition) ? (455.0f * uiScale) : (340.0f * uiScale);
         float maxScroll = std::max(0.0f, totalContentH - (contentBottom - contentTop));
 
         // 1. Move Gesture for Smooth Scrolling
@@ -562,7 +568,7 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
                     float py = AMotionEvent_getY(event, pointerIndex);
                     float contentRelY = py - contentTop + mDrawerScrollY;
 
-                    if (mSettingsTab == 0) {
+                    if (mSettingsTab == 0 || !mPlusEdition) {
                         // General Tab items
                         // Row 0: Visibility Switch
                         if (contentRelY >= 0.0f && contentRelY <= 48.0f * uiScale) {
@@ -678,8 +684,8 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
                 return true;
             }
 
-            // Tab Bar Tap (General vs Advanced)
-            if (py >= 58.0f * uiScale && py <= 104.0f * uiScale) {
+            // Tab Bar Tap (General vs Advanced) - only in Plus Edition
+            if (mPlusEdition && py >= 58.0f * uiScale && py <= 104.0f * uiScale) {
                 float midX = drawerX + padX + contentW * 0.5f;
                 int newTab = (px < midX) ? 0 : 1;
                 if (newTab != mSettingsTab) {
@@ -1390,9 +1396,9 @@ void UIOverlay::render(int screenW, int screenH) {
 
         float padX = 22.0f * uiScale;
         float contentW = drawerW - padX * 2.0f;
-        float contentTop = 112.0f * uiScale;
+        float contentTop = mPlusEdition ? (112.0f * uiScale) : (68.0f * uiScale);
         float contentBottom = h - 56.0f * uiScale;
-        float totalContentH = (mSettingsTab == 0) ? (455.0f * uiScale) : (340.0f * uiScale);
+        float totalContentH = (mSettingsTab == 0 || !mPlusEdition) ? (455.0f * uiScale) : (340.0f * uiScale);
         float maxScroll = std::max(0.0f, totalContentH - (contentBottom - contentTop));
 
         // Smooth scroll damping
@@ -1410,7 +1416,7 @@ void UIOverlay::render(int screenW, int screenH) {
         // ---------------------------------------------------------
         // A. Scrollable Content Layer
         // ---------------------------------------------------------
-        if (mSettingsTab == 0) {
+        if (mSettingsTab == 0 || !mPlusEdition) {
             // General Tab Settings Items
             auto renderRow = [&](float relY, float rowH, auto func) {
                 float drawY = contentTop + relY - mDrawerScrollY;
@@ -1544,7 +1550,7 @@ void UIOverlay::render(int screenW, int screenH) {
 
         // Header Title & Cogwheel
         drawCogwheel(drawerX + padX + 16.0f * uiScale, 36.0f * uiScale, 15.0f * uiScale, rgba(0.659f, 0.780f, 0.980f, 1.0f), cogRot);
-        drawText("Settings", drawerX + padX + 40.0f * uiScale, 44.0f * uiScale, 0.54f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
+        drawText(mPlusEdition ? "GalaxyMobile+" : "Settings", drawerX + padX + 40.0f * uiScale, 44.0f * uiScale, 0.54f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
 
         // Close [X] circular tonal button
         float closeBtnX = drawerX + drawerW - 36.0f * uiScale;
@@ -1552,27 +1558,32 @@ void UIOverlay::render(int screenW, int screenH) {
         drawCircle(closeBtnX, closeBtnY, 17.0f * uiScale, rgba(0.188f, 0.196f, 0.224f, 0.95f));
         drawCloseIcon(closeBtnX, closeBtnY, 9.0f * uiScale, rgba(0.761f, 0.776f, 0.812f, 0.95f));
 
-        // Material 3 Tab Dock ([ General ]  [ Advanced ])
-        float tabBoxY0 = 62.0f * uiScale;
-        float tabBoxY1 = 98.0f * uiScale;
-        drawRoundRect(drawerX + padX, tabBoxY0, drawerX + drawerW - padX, tabBoxY1, 18.0f * uiScale, rgba(0.149f, 0.160f, 0.190f, 0.95f));
-        drawRoundRect(drawerX + padX, tabBoxY0, drawerX + drawerW - padX, tabBoxY1, 18.0f * uiScale, rgba(0.24f, 0.26f, 0.30f, 0.50f));
+        if (mPlusEdition) {
+            // Material 3 Tab Dock ([ General ]  [ Advanced ])
+            float tabBoxY0 = 62.0f * uiScale;
+            float tabBoxY1 = 98.0f * uiScale;
+            drawRoundRect(drawerX + padX, tabBoxY0, drawerX + drawerW - padX, tabBoxY1, 18.0f * uiScale, rgba(0.149f, 0.160f, 0.190f, 0.95f));
+            drawRoundRect(drawerX + padX, tabBoxY0, drawerX + drawerW - padX, tabBoxY1, 18.0f * uiScale, rgba(0.24f, 0.26f, 0.30f, 0.50f));
 
-        float tabMidX = drawerX + padX + contentW * 0.5f;
-        if (mSettingsTab == 0) {
-            // General Tab Active
-            drawRoundRect(drawerX + padX + 2.0f * uiScale, tabBoxY0 + 2.0f * uiScale, tabMidX - 2.0f * uiScale, tabBoxY1 - 2.0f * uiScale, 16.0f * uiScale, rgba(0.14f, 0.28f, 0.48f, 0.95f));
-            drawText("General", (drawerX + padX + tabMidX) * 0.5f, tabBoxY0 + 23.0f * uiScale, 0.36f * uiScale, rgba(1.0f, 1.0f, 1.0f, 1.0f), 1);
-            drawText("Advanced", (tabMidX + drawerX + drawerW - padX) * 0.5f, tabBoxY0 + 23.0f * uiScale, 0.36f * uiScale, rgba(0.68f, 0.71f, 0.77f, 0.75f), 1);
+            float tabMidX = drawerX + padX + contentW * 0.5f;
+            if (mSettingsTab == 0) {
+                // General Tab Active
+                drawRoundRect(drawerX + padX + 2.0f * uiScale, tabBoxY0 + 2.0f * uiScale, tabMidX - 2.0f * uiScale, tabBoxY1 - 2.0f * uiScale, 16.0f * uiScale, rgba(0.14f, 0.28f, 0.48f, 0.95f));
+                drawText("General", (drawerX + padX + tabMidX) * 0.5f, tabBoxY0 + 23.0f * uiScale, 0.36f * uiScale, rgba(1.0f, 1.0f, 1.0f, 1.0f), 1);
+                drawText("Advanced", (tabMidX + drawerX + drawerW - padX) * 0.5f, tabBoxY0 + 23.0f * uiScale, 0.36f * uiScale, rgba(0.68f, 0.71f, 0.77f, 0.75f), 1);
+            } else {
+                // Advanced Tab Active
+                drawRoundRect(tabMidX + 2.0f * uiScale, tabBoxY0 + 2.0f * uiScale, drawerX + drawerW - padX - 2.0f * uiScale, tabBoxY1 - 2.0f * uiScale, 16.0f * uiScale, rgba(0.14f, 0.28f, 0.48f, 0.95f));
+                drawText("General", (drawerX + padX + tabMidX) * 0.5f, tabBoxY0 + 23.0f * uiScale, 0.36f * uiScale, rgba(0.68f, 0.71f, 0.77f, 0.75f), 1);
+                drawText("Advanced", (tabMidX + drawerX + drawerW - padX) * 0.5f, tabBoxY0 + 23.0f * uiScale, 0.36f * uiScale, rgba(1.0f, 1.0f, 1.0f, 1.0f), 1);
+            }
+
+            // Divider below tab bar
+            drawRoundRect(drawerX + padX, contentTop - 1.0f, drawerX + drawerW - padX, contentTop, 0.5f, rgba(0.267f, 0.278f, 0.310f, 0.45f));
         } else {
-            // Advanced Tab Active
-            drawRoundRect(tabMidX + 2.0f * uiScale, tabBoxY0 + 2.0f * uiScale, drawerX + drawerW - padX - 2.0f * uiScale, tabBoxY1 - 2.0f * uiScale, 16.0f * uiScale, rgba(0.14f, 0.28f, 0.48f, 0.95f));
-            drawText("General", (drawerX + padX + tabMidX) * 0.5f, tabBoxY0 + 23.0f * uiScale, 0.36f * uiScale, rgba(0.68f, 0.71f, 0.77f, 0.75f), 1);
-            drawText("Advanced", (tabMidX + drawerX + drawerW - padX) * 0.5f, tabBoxY0 + 23.0f * uiScale, 0.36f * uiScale, rgba(1.0f, 1.0f, 1.0f, 1.0f), 1);
+            // Divider below header in standard edition
+            drawRoundRect(drawerX + padX, contentTop - 1.0f, drawerX + drawerW - padX, contentTop, 0.5f, rgba(0.267f, 0.278f, 0.310f, 0.45f));
         }
-
-        // Divider below tab bar
-        drawRoundRect(drawerX + padX, contentTop - 1.0f, drawerX + drawerW - padX, contentTop, 0.5f, rgba(0.267f, 0.278f, 0.310f, 0.45f));
 
         // ---------------------------------------------------------
         // C. Fixed Bottom Bar Mask Overlay & [ Done ] Button

@@ -1,6 +1,7 @@
 #!/bin/bash
-# Packages build-mobile/*.so and resources into a signed mobile APK:
-# out/GalaxyMobile.apk (no OpenXR dependencies).
+# Packages build-mobile/*.so and resources into signed mobile APKs:
+# out-mobile/GalaxyMobile.apk (Vanilla - no mods)
+# out-mobile/GalaxyMobilePlus.apk (Plus - all mods included)
 # Run ./build_mobile.sh first.
 set -e
 cd "$(dirname "$0")"
@@ -36,18 +37,25 @@ if [ ! -f "$KEYSTORE" ]; then
     -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=GalaxyMobile Debug,O=Local,C=US" > /dev/null
 fi
 
-rm -f $OUT/res.zip
-"$BT/aapt2$EXE" compile --dir platform/android/res -o $OUT/res.zip
-"$BT/aapt2$EXE" link -o $OUT/base.apk --manifest platform/mobile/AndroidManifest.xml -R $OUT/res.zip --auto-add-overlay \
-  -I "$(native_path "$PLATFORM/android.jar")" --min-sdk-version 32 --target-sdk-version 34
-
-# Android runs wrap.sh (debuggable APKs only); strip CRs
+# Prepare shared native libraries
 tr -d '\r' < platform/android/wrap.sh > $OUT/apk/lib/arm64-v8a/wrap.sh
 for lib in libgame.so libmain.so libreserve.so; do
   "$STRIP" --strip-unneeded -o $OUT/apk/lib/arm64-v8a/$lib $BUILD/$lib
 done
 
-(cd $OUT/apk && py3 - << 'PY'
+rm -f $OUT/res.zip
+"$BT/aapt2$EXE" compile --dir platform/android/res -o $OUT/res.zip
+
+package_flavor() {
+  local MANIFEST="$1"
+  local OUT_APK="$2"
+  local LABEL="$3"
+
+  rm -f $OUT/base.apk $OUT/aligned.apk
+  "$BT/aapt2$EXE" link -o $OUT/base.apk --manifest "$MANIFEST" -R $OUT/res.zip --auto-add-overlay \
+    -I "$(native_path "$PLATFORM/android.jar")" --min-sdk-version 32 --target-sdk-version 34
+
+  (cd $OUT/apk && py3 - << 'PY'
 import zipfile, os
 z = zipfile.ZipFile('../base.apk', 'a', zipfile.ZIP_DEFLATED)
 for root, _, files in os.walk('lib'):
@@ -56,18 +64,22 @@ for root, _, files in os.walk('lib'):
         z.write(p, p)
 z.close()
 PY
-)
+  )
 
-"$BT/zipalign$EXE" -f -p 16 $OUT/base.apk $OUT/aligned.apk
-if [ -n "$IS_WINDOWS" ]; then
-  # On Windows, run apksigner.bat or apksigner.jar
-  APKSIGNER_BAT="$BT/apksigner.bat"
-  cmd //c "$(native_path "$APKSIGNER_BAT")" sign --ks "$(native_path "$KEYSTORE")" --ks-pass pass:android --key-pass pass:android \
-    --out "$(native_path "$OUT/GalaxyMobile.apk")" "$(native_path "$OUT/aligned.apk")"
-else
-  "$BT/apksigner" sign --ks $KEYSTORE --ks-pass pass:android --key-pass pass:android --out $OUT/GalaxyMobile.apk $OUT/aligned.apk
-fi
+  "$BT/zipalign$EXE" -f -p 16 $OUT/base.apk $OUT/aligned.apk
+  if [ -n "$IS_WINDOWS" ]; then
+    APKSIGNER_BAT="$BT/apksigner.bat"
+    cmd //c "$(native_path "$APKSIGNER_BAT")" sign --ks "$(native_path "$KEYSTORE")" --ks-pass pass:android --key-pass pass:android \
+      --out "$(native_path "$OUT_APK")" "$(native_path "$OUT/aligned.apk")"
+  else
+    "$BT/apksigner" sign --ks $KEYSTORE --ks-pass pass:android --key-pass pass:android --out "$OUT_APK" $OUT/aligned.apk
+  fi
+  rm -f $OUT/base.apk $OUT/aligned.apk
+  echo "Successfully built $LABEL: $OUT_APK ($(wc -c < "$OUT_APK") bytes)"
+}
 
-rm -f $OUT/base.apk $OUT/aligned.apk $OUT/res.zip
-echo "Successfully built $OUT/GalaxyMobile.apk ($(wc -c < $OUT/GalaxyMobile.apk) bytes)"
-echo "To install on connected device: adb install --no-incremental -r $OUT/GalaxyMobile.apk"
+package_flavor platform/mobile/AndroidManifest.xml "$OUT/GalaxyMobile.apk" "GalaxyMobile (Vanilla)"
+package_flavor platform/mobile/AndroidManifest_plus.xml "$OUT/GalaxyMobilePlus.apk" "GalaxyMobile+ (Mods Enabled)"
+
+rm -f $OUT/res.zip
+echo "All APKs generated successfully in $OUT/"

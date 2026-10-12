@@ -50,12 +50,15 @@ public:
     bool isSettingsOpen() const { return mSettingsOpen || mDrawerAnim > 0.01f; }
     void closeSettings();
     Settings& settings() { return mSettings; }
+    void setPlusEdition(bool plus) { mPlusEdition = plus; }
+    bool isPlusEdition() const { return mPlusEdition; }
 
 private:
     UIOverlay();
 
     Settings mSettings;
     std::string mSavePath;
+    bool mPlusEdition = false;
     bool mInitialized = false;
     bool mDirty = false;
 

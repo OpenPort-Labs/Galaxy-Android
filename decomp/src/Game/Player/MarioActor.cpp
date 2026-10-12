@@ -1071,19 +1071,6 @@ void MarioActor::controlMain() {
         updateFairyStar();
         _930 = 0;
     }
-
-    if (port_is_fly_mode() && MR::testCorePadButtonA(WPAD_CHAN0)) {
-        TVec3f up = -getGravityVec();
-        if (MR::normalizeOrZero(&up)) {
-            f32 curUp = mMario->mVelocity.dot(up);
-            f32 targetUp = 22.0f;
-            if (curUp < targetUp) {
-                mMario->mVelocity += up * (targetUp - curUp) * 0.45f;
-            }
-            mMario->addTrans(up * 5.0f, nullptr);
-            mPosition = mMario->mPosition;
-        }
-    }
 }
 
 void MarioActor::updateBehavior() {

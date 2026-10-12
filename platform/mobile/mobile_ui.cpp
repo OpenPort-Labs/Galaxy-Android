@@ -121,7 +121,7 @@ void main() {
         float outer = smoothstep(rMax, rMax - fw * 1.5, d);
         float inner = smoothstep(0.33 - fw * 1.5, 0.33, d);
         alpha = outer * inner;
-    } else if (mode > 3.5) {
+    } else if (mode > 3.5 && mode < 4.5) {
         // Mode 4: Material 3 Close 'X' icon
         vec2 p = abs(vUv);
         float lineDist = abs(p.x - p.y) * 0.7071;
@@ -131,6 +131,62 @@ void main() {
         float line = smoothstep(0.16, 0.16 - fw, lineDist);
         float box = smoothstep(0.65, 0.65 - fw, capDist);
         alpha = line * box;
+    } else if (mode > 4.5 && mode < 5.5) {
+        // Mode 5: Spin Cyclone / Galaxy Swirl Glyph (🌀)
+        float d = length(vUv);
+        float a = atan(vUv.y, vUv.x) + param;
+        float aFold = mod(a, 3.14159265);
+        float normAngle = clamp((aFold - 0.25) / 2.35, 0.0, 1.0);
+        float arcR = mix(0.42, 0.78, normAngle);
+        float dArc = abs(d - arcR);
+        float thick = mix(0.06, 0.16, normAngle);
+        float fw = fwidth(dArc);
+        if (fw < 0.001) fw = 0.005;
+        float arcAlpha = smoothstep(thick, thick - fw * 1.5, dArc);
+        float angleMask = smoothstep(0.12, 0.30, aFold) * smoothstep(2.80, 2.60, aFold);
+        alpha = arcAlpha * angleMask;
+    } else if (mode > 5.5 && mode < 6.5) {
+        // Mode 6: Modern Precision Chevron Arrow (rot in param)
+        float ca = cos(param);
+        float sa = sin(param);
+        vec2 p = vec2(ca * vUv.x - sa * vUv.y, sa * vUv.x + ca * vUv.y);
+        vec2 tip = vec2(0.30, 0.0);
+        vec2 wing = vec2(-0.30, 0.52);
+        vec2 seg = wing - tip;
+        vec2 pt = vec2(p.x, abs(p.y)) - tip;
+        float t = clamp(dot(pt, seg) / dot(seg, seg), 0.0, 1.0);
+        float dLine = length(pt - seg * t);
+        float fw = fwidth(dLine);
+        if (fw < 0.001) fw = 0.005;
+        float strokeW = 0.16;
+        alpha = smoothstep(strokeW, strokeW - fw * 1.5, dLine);
+    } else if (mode > 6.5 && mode < 7.5) {
+        // Mode 7: Modern Minimalist Camera Glyph (📷)
+        vec2 p = vUv;
+        vec2 bBody = vec2(0.48, 0.32);
+        vec2 pBody = p - vec2(0.0, 0.06);
+        vec2 dBody = abs(pBody) - bBody;
+        float distBody = length(max(dBody, 0.0)) + min(max(dBody.x, dBody.y), 0.0) - 0.10;
+
+        vec2 bTop = vec2(0.18, 0.08);
+        vec2 pTop = p - vec2(-0.16, -0.32);
+        vec2 dTop = abs(pTop) - bTop;
+        float distTop = length(max(dTop, 0.0)) + min(max(dTop.x, dTop.y), 0.0) - 0.05;
+
+        float bodyUnion = min(distBody, distTop);
+        float fw = fwidth(length(p));
+        if (fw < 0.001) fw = 0.005;
+        float fillBody = smoothstep(0.0, -fw * 1.5, bodyUnion);
+
+        float dLens = length(p - vec2(0.0, 0.08));
+        float lensHole = smoothstep(0.24 - fw, 0.24, dLens);
+        float lensRing = smoothstep(0.24, 0.24 - fw, dLens) * smoothstep(0.15 - fw, 0.15, dLens);
+        float lensDot = smoothstep(0.07, 0.07 - fw, dLens);
+
+        float dFlash = length(p - vec2(0.34, -0.12));
+        float flashDot = smoothstep(0.05, 0.05 - fw, dFlash);
+
+        alpha = max(fillBody * lensHole * (1.0 - flashDot), max(lensRing, lensDot));
     } else {
         // Mode 0: Rounded rectangle with exact aspect ratio
         if (param > 0.0) {
@@ -909,6 +965,36 @@ void UIOverlay::render(int screenW, int screenH) {
         addQuad(cx - r, cy - r, cx + r, cy + r, -1.0f, -1.0f, 1.0f, 1.0f, c, 4.0f, 0.0f);
     };
 
+    auto drawCyclone = [&](float cx, float cy, float r, const Color& c, float rot = 0.0f) {
+        addQuad(cx - r, cy - r, cx + r, cy + r, -1.0f, -1.0f, 1.0f, 1.0f, c, 5.0f, rot);
+    };
+
+    auto drawChevron = [&](float cx, float cy, float r, const Color& c, float rotAngle = 0.0f) {
+        addQuad(cx - r, cy - r, cx + r, cy + r, -1.0f, -1.0f, 1.0f, 1.0f, c, 6.0f, rotAngle);
+    };
+
+    auto drawCameraIcon = [&](float cx, float cy, float r, const Color& c) {
+        addQuad(cx - r, cy - r, cx + r, cy + r, -1.0f, -1.0f, 1.0f, 1.0f, c, 7.0f, 0.0f);
+    };
+
+    auto drawLine = [&](float x0, float y0, float x1, float y1, float thickness, const Color& c) {
+        float dx = x1 - x0;
+        float dy = y1 - y0;
+        float len = sqrtf(dx * dx + dy * dy);
+        if (len < 0.001f) return;
+        float hThick = thickness * 0.5f;
+        float nx = -dy / len * hThick;
+        float ny = dx / len * hThick;
+
+        verts.push_back({x0 + nx, y0 + ny, 0.0f, 0.0f, c.r, c.g, c.b, c.a, 0.0f, 0.0f, 1.0f, 0.0f});
+        verts.push_back({x1 + nx, y1 + ny, 0.0f, 0.0f, c.r, c.g, c.b, c.a, 0.0f, 0.0f, 1.0f, 0.0f});
+        verts.push_back({x1 - nx, y1 - ny, 0.0f, 0.0f, c.r, c.g, c.b, c.a, 0.0f, 0.0f, 1.0f, 0.0f});
+
+        verts.push_back({x0 + nx, y0 + ny, 0.0f, 0.0f, c.r, c.g, c.b, c.a, 0.0f, 0.0f, 1.0f, 0.0f});
+        verts.push_back({x1 - nx, y1 - ny, 0.0f, 0.0f, c.r, c.g, c.b, c.a, 0.0f, 0.0f, 1.0f, 0.0f});
+        verts.push_back({x0 - nx, y0 - ny, 0.0f, 0.0f, c.r, c.g, c.b, c.a, 0.0f, 0.0f, 1.0f, 0.0f});
+    };
+
     auto drawTriangle = [&](float x0, float y0, float x1, float y1, float x2, float y2, const Color& c) {
         verts.push_back({x0, y0, 0.0f, 0.0f, c.r, c.g, c.b, c.a, 0.0f, 0.0f, 1.0f, 0.0f});
         verts.push_back({x1, y1, 0.0f, 0.0f, c.r, c.g, c.b, c.a, 0.0f, 0.0f, 1.0f, 0.0f});
@@ -989,12 +1075,14 @@ void UIOverlay::render(int screenW, int screenH) {
     };
 
     // -------------------------------------------------------------
-    // Draw On-Screen Controls (HUD)
+    // Draw On-Screen Controls (HUD) - Modern Minimalist Frosted Theme
     // -------------------------------------------------------------
     if (mSettings.showControls && mDrawerAnim < 0.98f) {
         float hudOp = op * (1.0f - mDrawerAnim * 0.75f);
 
-        // 1. Virtual Stick
+        // ---------------------------------------------------------
+        // 1. Virtual Joystick - Precision Minimalist Reticle & Laser Tether
+        // ---------------------------------------------------------
         float defaultStickX = 175.0f * scale + mSettings.stickOffsetX;
         float defaultStickY = h - 175.0f * scale + mSettings.stickOffsetY;
         float baseX = (mStickPointerId >= 0) ? mStickBaseX : defaultStickX;
@@ -1002,114 +1090,161 @@ void UIOverlay::render(int screenW, int screenH) {
         float knobX = (mStickPointerId >= 0) ? mStickKnobX : baseX;
         float knobY = (mStickPointerId >= 0) ? mStickKnobY : baseY;
         float baseR = 95.0f * scale;
-        float knobR = 42.0f * scale;
+        float knobR = 38.0f * scale;
+        bool stickActive = (mStickPointerId >= 0);
 
-        // Stick outer ring and inner subtle disc
-        drawCircle(baseX, baseY, baseR, rgba(0.10f, 0.12f, 0.18f, hudOp * 0.40f));
-        drawRing(baseX, baseY, baseR, 0.94f, rgba(0.50f, 0.70f, 1.0f, hudOp * 0.65f));
+        // Base Plate: Translucent dark glass disc
+        drawCircle(baseX, baseY, baseR, rgba(0.05f, 0.07f, 0.11f, hudOp * 0.28f));
 
-        // Center crosshair dots
-        drawCircle(baseX, baseY, 3.0f * scale, rgba(1.0f, 1.0f, 1.0f, hudOp * 0.5f));
+        // Outer Reticle: Razor-thin anti-aliased ring
+        drawRing(baseX, baseY, baseR, 0.96f, rgba(0.60f, 0.80f, 1.0f, hudOp * 0.45f));
 
-        // Thumb Knob
-        drawCircle(knobX, knobY, knobR, rgba(0.15f, 0.20f, 0.32f, hudOp * 0.85f));
-        drawRing(knobX, knobY, knobR, 0.88f, rgba(0.38f, 0.74f, 1.0f, hudOp * 0.95f));
-        drawCircle(knobX, knobY, knobR * 0.40f, rgba(1.0f, 1.0f, 1.0f, hudOp * 0.45f));
+        // Cardinal Precision Orientation Ticks (N, S, E, W)
+        float tickIn = baseR * 0.84f;
+        float tickOut = baseR * 0.95f;
+        float tickW = 2.0f * scale;
+        Color tickCol = rgba(0.75f, 0.88f, 1.0f, hudOp * 0.50f);
+        drawLine(baseX, baseY - tickOut, baseX, baseY - tickIn, tickW, tickCol); // N
+        drawLine(baseX, baseY + tickIn, baseX, baseY + tickOut, tickW, tickCol); // S
+        drawLine(baseX - tickOut, baseY, baseX - tickIn, baseY, tickW, tickCol); // W
+        drawLine(baseX + tickIn, baseY, baseX + tickOut, baseY, tickW, tickCol); // E
 
-        // 2. Action Buttons
+        // Deadzone Center Target: Minimalist ring & center micro-dot
+        drawRing(baseX, baseY, 13.0f * scale, 0.86f, rgba(0.50f, 0.70f, 1.0f, hudOp * 0.35f));
+        drawCircle(baseX, baseY, 2.5f * scale, rgba(1.0f, 1.0f, 1.0f, hudOp * 0.60f));
+
+        // Dynamic Luminous Laser Tether (Center to Knob deflection vector)
+        float sDx = knobX - baseX;
+        float sDy = knobY - baseY;
+        float sDist = sqrtf(sDx * sDx + sDy * sDy);
+        if (sDist > 5.0f * scale) {
+            // Soft cyan outer glow tether
+            drawLine(baseX, baseY, knobX, knobY, 3.2f * scale, rgba(0.22f, 0.74f, 0.97f, hudOp * 0.65f));
+            // Crisp white core laser beam
+            drawLine(baseX, baseY, knobX, knobY, 1.4f * scale, rgba(1.0f, 1.0f, 1.0f, hudOp * 0.85f));
+        }
+
+        // Floating Frosted Thumb Puck
+        float kpR = stickActive ? (knobR * 1.04f) : knobR;
+        // Knob base disc
+        drawCircle(knobX, knobY, kpR, rgba(0.09f, 0.13f, 0.22f, hudOp * (stickActive ? 0.85f : 0.65f)));
+        // Outer glowing rim
+        Color knobRim = stickActive ? rgba(0.22f, 0.74f, 0.97f, hudOp * 0.95f) : rgba(0.60f, 0.80f, 1.0f, hudOp * 0.65f);
+        drawRing(knobX, knobY, kpR, 0.90f, knobRim);
+        // Inner concentric thumb groove ring
+        drawRing(knobX, knobY, kpR * 0.68f, 0.93f, rgba(1.0f, 1.0f, 1.0f, hudOp * 0.35f));
+        // Center tactile micro-dot
+        drawCircle(knobX, knobY, 3.0f * scale, stickActive ? rgba(0.22f, 0.74f, 0.97f, hudOp * 0.95f) : rgba(1.0f, 1.0f, 1.0f, hudOp * 0.50f));
+
+        // ---------------------------------------------------------
+        // 2. Action Buttons - Frosted Glass with Signature Micro-Accents
+        // ---------------------------------------------------------
         float btnBaseX = w - 160.0f * scale + mSettings.buttonOffsetX;
         float btnBaseY = h - 160.0f * scale + mSettings.buttonOffsetY;
 
-        auto drawButton = [&](float cx, float cy, float r, const char* label, uint32_t colorHex, bool pressed) {
-            float pr = pressed ? (r * 0.92f) : r;
-            float discAlpha = pressed ? (hudOp * 0.85f) : (hudOp * 0.55f);
-            float borderAlpha = pressed ? (hudOp * 1.0f) : (hudOp * 0.80f);
+        auto drawModernButton = [&](float cx, float cy, float r, const char* label, uint32_t accentHex, bool pressed, int specialGlyph = 0) {
+            float pr = pressed ? (r * 0.93f) : r;
+            float baseAlpha = pressed ? (hudOp * 0.88f) : (hudOp * 0.36f);
+            float borderAlpha = pressed ? (hudOp * 0.98f) : (hudOp * 0.65f);
+            float ringAlpha = pressed ? (hudOp * 0.85f) : (hudOp * 0.25f);
 
-            // Filled core
-            drawCircle(cx, cy, pr, hexColor(colorHex, discAlpha));
-            // Outer bright border
-            drawRing(cx, cy, pr, 0.90f, hexColor(0xFFFFFF, borderAlpha));
-            // Label
-            float textSize = (r > 40.0f * scale) ? (0.65f * scale) : (0.50f * scale);
-            if (strlen(label) > 1) textSize *= 0.75f;
-            drawText(label, cx, cy + 12.0f * scale, textSize, rgba(1.0f, 1.0f, 1.0f, hudOp * 0.95f), 1);
+            // Frosted dark glass base plate
+            Color baseBg = pressed ? hexColor(accentHex, baseAlpha) : rgba(0.06f, 0.08f, 0.13f, baseAlpha);
+            drawCircle(cx, cy, pr, baseBg);
+
+            // Thin luminous perimeter ring (1.5px)
+            Color outerRing = pressed ? rgba(1.0f, 1.0f, 1.0f, borderAlpha) : hexColor(accentHex, borderAlpha);
+            drawRing(cx, cy, pr, 0.92f, outerRing);
+
+            // Inner concentric frosted micro-ring
+            drawRing(cx, cy, pr * 0.80f, 0.95f, rgba(1.0f, 1.0f, 1.0f, ringAlpha));
+
+            // High-contrast clean glyph / typography
+            Color glyphCol = pressed ? rgba(1.0f, 1.0f, 1.0f, hudOp * 1.0f) : rgba(0.92f, 0.95f, 1.0f, hudOp * 0.92f);
+
+            if (specialGlyph == 1) { // SPIN: Procedural Cyclone glyph + clean micro-label
+                float iconR = pr * 0.44f;
+                drawCyclone(cx, cy - 5.0f * scale, iconR, glyphCol, 0.0f);
+                drawText("SPIN", cx, cy + pr * 0.58f, 0.26f * scale, glyphCol, 1);
+            } else if (specialGlyph == 2) { // PLUS (+): Modern precision cross
+                float armLen = pr * 0.38f;
+                float thick = 2.4f * scale;
+                drawLine(cx - armLen, cy, cx + armLen, cy, thick, glyphCol);
+                drawLine(cx, cy - armLen, cx, cy + armLen, thick, glyphCol);
+            } else { // Standard typography (A, B, Z)
+                float textSize = (r > 48.0f * scale) ? (0.64f * scale) : (0.54f * scale);
+                drawText(label, cx, cy + 11.0f * scale, textSize, glyphCol, 1);
+            }
         };
 
-        // Button A (Jump) - Vibrant Blue
-        drawButton(btnBaseX, btnBaseY, 54.0f * scale, "A", 0x0284C7, mBtnAPressed);
+        // Button A (Jump) - Luminous Electric Cyan (#38BDF8)
+        drawModernButton(btnBaseX, btnBaseY, 54.0f * scale, "A", 0x38BDF8, mBtnAPressed);
 
-        // Button B (Star Bit Shoot) - Star Amber
-        drawButton(btnBaseX - 120.0f * scale, btnBaseY + 25.0f * scale, 45.0f * scale, "B", 0xD97706, mBtnBPressed);
+        // Button B (Star Bit Shoot) - Luminous Star Amber (#FBBF24)
+        drawModernButton(btnBaseX - 120.0f * scale, btnBaseY + 25.0f * scale, 45.0f * scale, "B", 0xFBBF24, mBtnBPressed);
 
-        // Button SPIN - Emerald Green
-        drawButton(btnBaseX + 35.0f * scale, btnBaseY - 130.0f * scale, 48.0f * scale, "SPIN", 0x059669, mBtnSpinPressed);
+        // Button SPIN - Luminous Emerald Mint (#34D399) with Cyclone Glyph
+        drawModernButton(btnBaseX + 35.0f * scale, btnBaseY - 130.0f * scale, 48.0f * scale, "SPIN", 0x34D399, mBtnSpinPressed, 1);
 
-        // Button Z (Crouch) - Violet
-        drawButton(btnBaseX - 90.0f * scale, btnBaseY - 105.0f * scale, 44.0f * scale, "Z", 0x7C3AED, mBtnZPressed);
+        // Button Z (Crouch) - Luminous Lavender Violet (#A78BFA)
+        drawModernButton(btnBaseX - 90.0f * scale, btnBaseY - 105.0f * scale, 44.0f * scale, "Z", 0xA78BFA, mBtnZPressed);
 
-        // Button + (Pause) - Slate
-        drawButton(w - 70.0f * scale, 70.0f * scale, 34.0f * scale, "+", 0x475569, mBtnPlusPressed);
+        // Button + (Pause) - Minimalist Pearl Slate (#E2E8F0) with Vector Cross
+        drawModernButton(w - 70.0f * scale, 70.0f * scale, 34.0f * scale, "+", 0x94A3B8, mBtnPlusPressed, 2);
 
-        // 3. Camera D-Pad (Limited Camera Controls: Left, Right, Up FPView, Down Recenter)
+        // ---------------------------------------------------------
+        // 3. Camera D-Pad - Directional Precision Disc with Chevrons & Camera Icon
+        // ---------------------------------------------------------
         if (mSettings.showDpad) {
             float baseDpadX = mSettings.dpadOnRight ? (w - 380.0f * scale) : (140.0f * scale);
             float baseDpadY = mSettings.dpadOnRight ? (h - 220.0f * scale) : (h - 390.0f * scale);
             float dpadX = baseDpadX + mSettings.dpadOffsetX;
             float dpadY = baseDpadY + mSettings.dpadOffsetY;
-            float armDist = 38.0f * scale;
-            float armR = 24.0f * scale;
-            float crossW = 34.0f * scale;
-            float crossLen = 50.0f * scale;
+            float dialR = 56.0f * scale;
+            float armDist = 36.0f * scale;
+            float chevronR = 14.0f * scale;
 
-            // Cross base backdrops: Horizontal bar & Vertical bar
-            drawRoundRect(dpadX - crossLen, dpadY - crossW * 0.5f, dpadX + crossLen, dpadY + crossW * 0.5f, crossW * 0.35f,
-                          rgba(0.10f, 0.12f, 0.18f, hudOp * 0.50f));
-            drawRoundRect(dpadX - crossW * 0.5f, dpadY - crossLen, dpadX + crossW * 0.5f, dpadY + crossLen, crossW * 0.35f,
-                          rgba(0.10f, 0.12f, 0.18f, hudOp * 0.50f));
+            // Frosted circular dial plate
+            drawCircle(dpadX, dpadY, dialR, rgba(0.06f, 0.08f, 0.13f, hudOp * 0.32f));
 
-            // Outer outline borders for cross
-            drawRoundRect(dpadX - crossLen, dpadY - crossW * 0.5f, dpadX + crossLen, dpadY + crossW * 0.5f, crossW * 0.35f,
-                          rgba(0.50f, 0.70f, 1.0f, hudOp * 0.35f));
-            drawRoundRect(dpadX - crossW * 0.5f, dpadY - crossLen, dpadX + crossW * 0.5f, dpadY + crossLen, crossW * 0.35f,
-                          rgba(0.50f, 0.70f, 1.0f, hudOp * 0.35f));
+            // Outer razor-thin precision ring
+            drawRing(dpadX, dpadY, dialR, 0.95f, rgba(0.55f, 0.75f, 1.0f, hudOp * 0.42f));
 
-            auto drawDpadArm = [&](float cx, float cy, float r, bool pressed, int dir) {
-                float pr = pressed ? (r * 0.92f) : r;
-                float discAlpha = pressed ? (hudOp * 0.90f) : (hudOp * 0.40f);
-                float borderAlpha = pressed ? (hudOp * 1.0f) : (hudOp * 0.65f);
+            // Quadrant division hairlines (45 deg diagonals)
+            float divInner = 20.0f * scale;
+            float divOuter = dialR * 0.88f;
+            float diag = 0.7071f;
+            Color divCol = rgba(1.0f, 1.0f, 1.0f, hudOp * 0.16f);
+            drawLine(dpadX + divInner * diag, dpadY + divInner * diag, dpadX + divOuter * diag, dpadY + divOuter * diag, 1.4f * scale, divCol);
+            drawLine(dpadX - divInner * diag, dpadY + divInner * diag, dpadX - divOuter * diag, dpadY + divOuter * diag, 1.4f * scale, divCol);
+            drawLine(dpadX + divInner * diag, dpadY - divInner * diag, dpadX + divOuter * diag, dpadY - divOuter * diag, 1.4f * scale, divCol);
+            drawLine(dpadX - divInner * diag, dpadY - divInner * diag, dpadX - divOuter * diag, dpadY - divOuter * diag, 1.4f * scale, divCol);
 
-                // Arm disc highlight
-                Color armBg = pressed ? hexColor(0x0284C7, discAlpha) : rgba(0.15f, 0.20f, 0.30f, discAlpha);
-                drawCircle(cx, cy, pr, armBg);
-                drawRing(cx, cy, pr, 0.88f, hexColor(0xFFFFFF, borderAlpha));
-
-                // Directional Arrow Triangle
-                float aSize = 8.0f * scale;
-                Color arrowC = pressed ? rgba(1.0f, 1.0f, 1.0f, hudOp * 1.0f) : rgba(0.90f, 0.93f, 1.0f, hudOp * 0.85f);
-                if (dir == 0) { // Left
-                    drawTriangle(cx - aSize * 0.9f, cy, cx + aSize * 0.7f, cy - aSize * 0.85f, cx + aSize * 0.7f, cy + aSize * 0.85f, arrowC);
-                } else if (dir == 1) { // Right
-                    drawTriangle(cx + aSize * 0.9f, cy, cx - aSize * 0.7f, cy - aSize * 0.85f, cx - aSize * 0.7f, cy + aSize * 0.85f, arrowC);
-                } else if (dir == 2) { // Up
-                    drawTriangle(cx, cy - aSize * 0.9f, cx - aSize * 0.85f, cy + aSize * 0.7f, cx + aSize * 0.85f, cy + aSize * 0.7f, arrowC);
-                } else if (dir == 3) { // Down
-                    drawTriangle(cx, cy + aSize * 0.9f, cx - aSize * 0.85f, cy - aSize * 0.7f, cx + aSize * 0.85f, cy - aSize * 0.7f, arrowC);
+            // 4 Directional Chevron Sectors (◀ ▶ ▲ ▼)
+            auto drawDpadSector = [&](float cx, float cy, float rotAngle, bool pressed) {
+                if (pressed) {
+                    drawCircle(cx, cy, 20.0f * scale, rgba(0.22f, 0.74f, 0.97f, hudOp * 0.80f));
+                    drawRing(cx, cy, 20.0f * scale, 0.88f, rgba(1.0f, 1.0f, 1.0f, hudOp * 0.95f));
                 }
+                Color chevCol = pressed ? rgba(1.0f, 1.0f, 1.0f, hudOp * 1.0f) : rgba(0.85f, 0.92f, 1.0f, hudOp * 0.75f);
+                float chevSize = pressed ? (chevronR * 1.15f) : chevronR;
+                drawChevron(cx, cy, chevSize, chevCol, rotAngle);
             };
 
-            // Left (Rotate Left)
-            drawDpadArm(dpadX - armDist, dpadY, armR, mBtnDpadLeft, 0);
-            // Right (Rotate Right)
-            drawDpadArm(dpadX + armDist, dpadY, armR, mBtnDpadRight, 1);
-            // Up (First Person View / Zoom)
-            drawDpadArm(dpadX, dpadY - armDist, armR, mBtnDpadUp, 2);
-            // Down (Recenter Camera)
-            drawDpadArm(dpadX, dpadY + armDist, armR, mBtnDpadDown, 3);
+            // Left (rot = PI)
+            drawDpadSector(dpadX - armDist, dpadY, 3.14159265f, mBtnDpadLeft);
+            // Right (rot = 0)
+            drawDpadSector(dpadX + armDist, dpadY, 0.0f, mBtnDpadRight);
+            // Up (rot = -PI/2)
+            drawDpadSector(dpadX, dpadY - armDist, -1.5707963f, mBtnDpadUp);
+            // Down (rot = PI/2)
+            drawDpadSector(dpadX, dpadY + armDist, 1.5707963f, mBtnDpadDown);
 
-            // Center hub disc with "CAM" label
-            drawCircle(dpadX, dpadY, 19.0f * scale, rgba(0.12f, 0.16f, 0.24f, hudOp * 0.85f));
-            drawRing(dpadX, dpadY, 19.0f * scale, 0.88f, rgba(0.40f, 0.65f, 0.98f, hudOp * 0.60f));
-            drawText("CAM", dpadX, dpadY + 4.0f * scale, 0.28f * scale, rgba(0.70f, 0.85f, 1.0f, hudOp * 0.85f), 1);
+            // Center Concave Hub with Modern Camera Icon (📷)
+            float hubR = 18.0f * scale;
+            drawCircle(dpadX, dpadY, hubR, rgba(0.09f, 0.13f, 0.22f, hudOp * 0.80f));
+            drawRing(dpadX, dpadY, hubR, 0.88f, rgba(0.55f, 0.75f, 1.0f, hudOp * 0.55f));
+            drawCameraIcon(dpadX, dpadY, 11.0f * scale, rgba(0.85f, 0.93f, 1.0f, hudOp * 0.90f));
         }
     }
 

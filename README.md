@@ -22,17 +22,26 @@ GalaxyMobile is a **native Android ARM64 port** of Super Mario Galaxy, compiled 
   - Virtual control opacity (25%, 50%, 75%, 100%) and button scale adjustments.
   - Floating dynamic stick mode vs. fixed thumbstick mode.
   - Interactive on-screen touch layout editor (drag buttons and stick to your desired positions).
-- **Responsive Touch & Star Pointer Controls**:
-  - Ergonomic on-screen virtual stick and colored action buttons (A Jump, B Shoot Star Bit, Emerald Green SPIN, Violet Z Crouch/Ground Pound, + Pause).
-  - **On-Screen Camera D-Pad**: Full 4-way cross directional pad replicating the Wii Remote D-Pad for Super Mario Galaxy's camera controls:
-    - **Left / Right (◀ / ▶)**: Rotate and pivot camera around Mario.
-    - **Down (▼)**: Recenter camera directly behind Mario.
-    - **Up (▲)**: First-Person Look / Zoom mode.
+- **Modern Minimalist Frosted Touch Controls**:
+  - **Sleek Translucent Dark Glass Theme**: Inspired by modern minimalist mobile gamepads (Apple Arcade, Delta clean skins, Nothing OS), buttons feature semi-transparent frosted glass backplates with ultra-thin luminous perimeter rings and tactile depression feedback.
+  - **Signature Micro-Accents**:
+    - **A (Jump)**: Luminous Electric Cyan (`#38BDF8`)
+    - **B (Star Bit Shoot)**: Luminous Star Amber (`#FBBF24`)
+    - **SPIN (Star Spin)**: Luminous Mint Emerald (`#34D399`) with procedural **Galaxy Cyclone Swirl** icon
+    - **Z (Crouch / Ground Pound)**: Luminous Lavender Violet (`#A78BFA`)
+    - **+ (Pause / Menu)**: Minimalist Pearl Slate (`#E2E8F0`) with precision vector cross
+  - **Precision Minimalist Reticle Joystick**:
+    - Feather-light translucent glass plate with razor-thin outer boundary ring.
+    - 4 cardinal precision ticks (N, S, E, W) and center deadzone target ring.
+    - **Dynamic Luminous Laser Tether**: Vector laser line connects the stick origin to your thumb knob, providing immediate visual feedback of analog magnitude and deflection angle with zero screen clutter.
+    - Floating frosted thumb puck with concentric grip groove.
+  - **Directional Precision Dial Camera D-Pad**:
+    - Unibody circular navigation disc with hairline quadrant dividers.
+    - 4 modern vector **Chevrons (◀ ▶ ▲ ▼)** that illuminate and scale with glowing neon pulses upon touch.
+    - Centered concave hub featuring a crisp minimalist **Camera Shutter Glyph (📷)**.
+    - Replicates the Wii Remote D-Pad for Super Mario Galaxy's camera controls (Left/Right rotate, Down recenter, Up first-person look).
     - Fully customizable in Settings: toggle visibility, switch between Left and Right sides, or drag anywhere in the Layout Editor!
   - Direct 1:1 Star Pointer finger tracking: touch and drag anywhere on screen to collect and aim star bits.
-  - Dedicated **SPIN** button shakes the virtual Wiimote without triggering ground pounds.
-  - Dedicated **Z** button handles crouching and ground pounds.
-  - Android system volume buttons pass through cleanly to adjust media volume normally.
 - **Physical Gamepad Support**:
   - Full plug-and-play support for Bluetooth and USB gamepads (Xbox, PlayStation, Nintendo Switch Pro, Razer Kishi, Backbone, etc.).
 - **Cinematic Cutscenes & High-Quality Audio**:

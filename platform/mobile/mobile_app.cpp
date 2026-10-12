@@ -133,6 +133,57 @@ std::string findGameData(const std::string& extDir) {
     return "";
 }
 
+void promptStoragePermissionIfMissing(ANativeActivity* activity) {
+    if (!activity || !activity->vm || !activity->clazz) return;
+    JNIEnv* env = nullptr;
+    if (activity->vm->AttachCurrentThread(&env, nullptr) != JNI_OK || !env) return;
+
+    jclass versionClass = env->FindClass("android/os/Build$VERSION");
+    if (!versionClass) return;
+    jfieldID sdkIntField = env->GetStaticFieldID(versionClass, "SDK_INT", "I");
+    jint sdkInt = env->GetStaticIntField(versionClass, sdkIntField);
+
+    if (sdkInt >= 30) {
+        jclass envClass = env->FindClass("android/os/Environment");
+        if (envClass) {
+            jmethodID isManagerMethod = env->GetStaticMethodID(envClass, "isExternalStorageManager", "()Z");
+            if (isManagerMethod) {
+                jboolean isManager = env->CallStaticBooleanMethod(envClass, isManagerMethod);
+                if (!isManager) {
+                    LOGI("MANAGE_EXTERNAL_STORAGE permission missing, launching settings prompt...");
+                    jclass intentClass = env->FindClass("android/content/Intent");
+                    jmethodID intentCtor = env->GetMethodID(intentClass, "<init>", "(Ljava/lang/String;Landroid/net/Uri;)V");
+
+                    jclass uriClass = env->FindClass("android/net/Uri");
+                    jmethodID parseMethod = env->GetStaticMethodID(uriClass, "parse", "(Ljava/lang/String;)Landroid/net/Uri;");
+
+                    jclass actClass = env->GetObjectClass(activity->clazz);
+                    jmethodID getPackageNameMethod = env->GetMethodID(actClass, "getPackageName", "()Ljava/lang/String;");
+                    jstring pkgName = (jstring)env->CallObjectMethod(activity->clazz, getPackageNameMethod);
+
+                    const char* pkgChars = env->GetStringUTFChars(pkgName, nullptr);
+                    std::string uriStr = std::string("package:") + (pkgChars ? pkgChars : "");
+                    if (pkgChars) env->ReleaseStringUTFChars(pkgName, pkgChars);
+
+                    jstring jUriStr = env->NewStringUTF(uriStr.c_str());
+                    jobject jUri = env->CallStaticObjectMethod(uriClass, parseMethod, jUriStr);
+
+                    jstring actionStr = env->NewStringUTF("android.settings.MANAGE_APP_ALL_FILES_ACCESS_PERMISSION");
+                    jobject intent = env->NewObject(intentClass, intentCtor, actionStr, jUri);
+
+                    jmethodID startActivityMethod = env->GetMethodID(actClass, "startActivity", "(Landroid/content/Intent;)V");
+                    env->CallVoidMethod(activity->clazz, startActivityMethod, intent);
+
+                    env->DeleteLocalRef(actionStr);
+                    env->DeleteLocalRef(jUriStr);
+                    env->DeleteLocalRef(jUri);
+                    env->DeleteLocalRef(intent);
+                }
+            }
+        }
+    }
+}
+
 bool initEgl(MobileApp& a) {
     if (a.eglReady) return true;
 
@@ -464,6 +515,9 @@ extern "C" __attribute__((visibility("default"))) void port_android_main(struct 
 
     // Search for game data files
     a.dataRoot = findGameData(ext);
+    if (a.dataRoot.empty()) {
+        promptStoragePermissionIfMissing(app->activity);
+    }
 
     bool running = true;
     while (running && !app->destroyRequested) {
@@ -497,7 +551,7 @@ extern "C" __attribute__((visibility("default"))) void port_android_main(struct 
                 int64_t now = port_host_time_ns();
                 if (now - lastLog > 3000000000ll) {  // Every 3 seconds
                     lastLog = now;
-                    LOGI("Waiting for game files in: %s/game", ext.c_str());
+                    LOGI("Waiting for game files in /sdcard/GalaxyData or %s/game", ext.c_str());
                     // Re-scan in case player pushed files
                     a.dataRoot = findGameData(ext);
                 }

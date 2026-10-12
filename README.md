@@ -44,34 +44,39 @@ GalaxyMobile is a **native Android ARM64 port** of Super Mario Galaxy, compiled 
 ## Getting Started: How to Run on Android
 
 There are two ways to set up and play GalaxyMobile:
-- **Method 1 (Recommended / Easiest)**: Use the companion **[GalaxyInstaller.apk](out-mobile/GalaxyInstaller.apk)** directly on your phone — no Python setup, terminal commands, or manual PC cooking required!
+- **Method 1 (Recommended / 100% PC-Less)**: Use the companion **[GalaxyInstaller.apk](out-mobile/GalaxyInstaller.apk)** directly on your phone — feed it your `.wbfs`, `.iso`, or `.zip` game dump and it handles extraction, decryption, and cooking directly on your phone! Zero PC needed!
 - **Method 2 (Advanced / PC Toolchain)**: Cook assets on your PC using Python and push them via USB (`adb` or `transfer_game.bat`).
 
 ---
 
-### Method 1: On-Device Companion Installer (Easiest)
+### Method 1: 100% PC-Less Setup on Your Phone (Easiest)
 
-With the dedicated `GalaxyInstaller` app, your phone does all asset conversions, format optimizations, and filesystem placement automatically:
+With the dedicated `GalaxyInstaller` app, your phone does everything on-device — no PC, Python setup, or command line required:
 
-1. **Extract your game disc on PC**:
-   - Open [Dolphin Emulator](https://dolphin-emu.org/) on your PC.
-   - Right-click **Super Mario Galaxy** > **Properties** > **Filesystem**.
-   - Right-click the top disc entry > **Extract Entire Disc...** into a folder named `extracted` (or `Super Mario Galaxy`).
-   - *(Optional)* Compress the extracted folder into a `.zip` file for faster file transfer.
-2. **Transfer extracted files to your phone**:
-   - Plug your phone into your PC via USB and copy the extracted folder (or `.zip`) into your phone's **`Download`** folder.
-3. **Install both APKs on your phone**:
+1. **Get your Super Mario Galaxy game dump on your phone**:
+   - Download or transfer your game dump directly on your Android device (into your **`Download`** folder).
+   - Supported formats:
+     - **`.wbfs`** (Wii Backup File System — standard format created by CleanRip / USB Loader GX)
+     - **`.iso`** (Standard Wii optical disc image)
+     - **`.zip`** (Archive containing game files or dump)
+     - *(Or an extracted game folder from Dolphin)*
+2. **Install both APKs on your phone**:
    - Install [`out-mobile/GalaxyMobile.apk`](out-mobile/GalaxyMobile.apk) (the game engine).
    - Install [`out-mobile/GalaxyInstaller.apk`](out-mobile/GalaxyInstaller.apk) (the companion installer).
-4. **Run GalaxyInstaller**:
-   - Open **GalaxyInstaller** from your app drawer.
+3. **Open GalaxyInstaller**:
+   - Open **GalaxyInstaller** from your phone's app drawer.
    - Grant storage permission when prompted.
-   - Tap **"Auto-Detect"** or **"Browse Folder / ZIP"** to select your extracted game folder.
-   - Check **"Include Cutscenes & Movies"** if you want prologue and ending cinematics.
-   - Tap **"Cook & Prepare Assets"**.
-   - The installer uses its embedded native Python ARM64 engine to convert all textures, models, audio, and scripts directly on your phone.
+   - The app will automatically scan your `Download` folder and detect your `.wbfs`, `.iso`, or `.zip` file!
+   - *(Or tap **"Select Game Disc (.wbfs / .iso / .zip)"** to pick any file manually).*
+4. **Prepare Assets (1-Tap)**:
+   - Check **"Include Cutscene Movies"** if you want prologue and ending cinematics.
+   - Tap **"Start Cooking Game Data"**.
+   - The app automatically:
+     1. Decrypts and extracts the Wii optical disc data partition on-device using its native ARM64 AES engine.
+     2. Runs the embedded cooker engine to convert textures, geometry, audio streams, and levels directly into `/sdcard/Download/game`.
+     3. Automatically cleans up temporary cache files so your phone storage is preserved.
 5. **Launch & Play**:
-   - Once completed, tap **"Launch GalaxyMobile"** and enjoy 60 FPS Super Mario Galaxy on Android!
+   - Tap **"Launch GalaxyMobile 🚀"** and enjoy native 60 FPS Super Mario Galaxy on Android!
 
 ---
 

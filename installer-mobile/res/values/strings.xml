@@ -3,8 +3,10 @@
     <string name="app_name">GalaxyMobile Installer</string>
     <string name="header_title">GalaxyMobile Setup</string>
     <string name="header_subtitle">Automated Game Data Cooker &amp; Installer</string>
-    <string name="section_source">Step 1: Game Data Source</string>
-    <string name="btn_select_file">Select Disc / Extracted Folder</string>
+    <string name="section_source">Step 1: Game Data Source (PC-less)</string>
+    <string name="btn_select_disc">Select Game Disc (.wbfs / .iso / .zip)</string>
+    <string name="btn_select_folder">Select Extracted Folder</string>
+    <string name="btn_auto_detect">Scan Downloads Folder</string>
     <string name="no_source_selected">No game file or folder selected</string>
     <string name="section_options">Step 2: Conversion Options</string>
     <string name="include_movies">Include Cutscene Movies (~2.3 GB)</string>

@@ -28,6 +28,56 @@ public class CookerEngine {
     }
 
     public static native int runCooker(String pythonHome, String scriptsDir, String inputDir, String outputDir, boolean withMovies, CookerCallback callback);
+    public static native boolean isWiiDisc(String filePath);
+    public static native int extractDisc(String imagePath, String outDir, boolean includeMovies, CookerCallback callback);
+
+    public static boolean extractZip(File zipFile, File outDir, CookerCallback callback) {
+        if (callback != null) callback.onLog("[Extractor] Unpacking ZIP archive: " + zipFile.getName() + "...");
+        byte[] buffer = new byte[65536];
+        try (InputStream is = new java.io.FileInputStream(zipFile);
+             ZipInputStream zis = new ZipInputStream(is)) {
+            ZipEntry entry;
+            int count = 0;
+            while ((entry = zis.getNextEntry()) != null) {
+                File outFile = new File(outDir, entry.getName());
+                if (entry.isDirectory()) {
+                    outFile.mkdirs();
+                } else {
+                    outFile.getParentFile().mkdirs();
+                    try (FileOutputStream fos = new FileOutputStream(outFile)) {
+                        int len;
+                        while ((len = zis.read(buffer)) > 0) {
+                            fos.write(buffer, 0, len);
+                        }
+                    }
+                }
+                zis.closeEntry();
+                count++;
+                if (count % 100 == 0 && callback != null) {
+                    callback.onProgress(-1, "Unpacked " + count + " files...");
+                }
+            }
+            if (callback != null) callback.onLog("[Extractor] Finished unpacking ZIP archive (" + count + " items).");
+            return true;
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to unpack zip: " + zipFile.getAbsolutePath(), e);
+            if (callback != null) callback.onLog("[Error] Failed to unpack zip: " + e.getMessage());
+            return false;
+        }
+    }
+
+    public static void deleteRecursive(File fileOrDirectory) {
+        if (fileOrDirectory == null || !fileOrDirectory.exists()) return;
+        if (fileOrDirectory.isDirectory()) {
+            File[] children = fileOrDirectory.listFiles();
+            if (children != null) {
+                for (File child : children) {
+                    deleteRecursive(child);
+                }
+            }
+        }
+        fileOrDirectory.delete();
+    }
 
     public static void prepareAssets(Context context, CookerCallback callback) throws Exception {
         File filesDir = context.getFilesDir();

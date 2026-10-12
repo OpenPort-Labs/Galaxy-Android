@@ -25,7 +25,7 @@ if %ERRORLEVEL% neq 0 (
     echo.
     echo [ERROR] Build failed!
     echo.
-    pause
+    if "%1" neq "--no-pause" pause
     exit /b 1
 )
 

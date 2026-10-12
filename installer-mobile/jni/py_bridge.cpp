@@ -4,6 +4,7 @@
 #include <android/log.h>
 #include <unistd.h>
 #include <Python.h>
+#include "wii_extractor.h"
 
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, "CookerBridge", __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, "CookerBridge", __VA_ARGS__)
@@ -28,8 +29,27 @@ static void sendLogToJava(const char* text) {
         }
     }
     if (env) {
-        jstring jText = env->NewStringUTF(text);
+        jstring jText = env->NewStringUTF(text ? text : "");
         env->CallVoidMethod(gCallbackGlobal, gOnLogMethod, jText);
+        env->DeleteLocalRef(jText);
+        if (attached) {
+            gVm->DetachCurrentThread();
+        }
+    }
+}
+
+static void sendProgressToJava(int percent, const char* text) {
+    if (!gVm || !gCallbackGlobal || !gOnProgressMethod) return;
+    JNIEnv* env = nullptr;
+    bool attached = false;
+    if (gVm->GetEnv((void**)&env, JNI_VERSION_1_6) != JNI_OK) {
+        if (gVm->AttachCurrentThread(&env, nullptr) == JNI_OK) {
+            attached = true;
+        }
+    }
+    if (env) {
+        jstring jText = env->NewStringUTF(text ? text : "");
+        env->CallVoidMethod(gCallbackGlobal, gOnProgressMethod, percent, jText);
         env->DeleteLocalRef(jText);
         if (attached) {
             gVm->DetachCurrentThread();
@@ -64,6 +84,58 @@ PyMODINIT_FUNC PyInit_android_bridge(void) {
     return PyModule_Create(&bridge_module);
 }
 
+// ---------------------------------------------------------------------------
+// JNI Method: isWiiDisc(String filePath)
+// ---------------------------------------------------------------------------
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_galaxy_installer_CookerEngine_isWiiDisc(
+        JNIEnv *env, jclass clazz, jstring jFilePath) {
+    if (!jFilePath) return JNI_FALSE;
+    const char* filePath = env->GetStringUTFChars(jFilePath, nullptr);
+    bool result = wii::isWiiDiscImage(filePath);
+    env->ReleaseStringUTFChars(jFilePath, filePath);
+    return result ? JNI_TRUE : JNI_FALSE;
+}
+
+// ---------------------------------------------------------------------------
+// JNI Method: extractDisc(String imagePath, String outDir, boolean includeMovies, Callback)
+// ---------------------------------------------------------------------------
+extern "C" JNIEXPORT jint JNICALL
+Java_com_galaxy_installer_CookerEngine_extractDisc(
+        JNIEnv *env, jclass clazz,
+        jstring jImagePath, jstring jOutDir,
+        jboolean jIncludeMovies, jobject jCallback) {
+
+    const char* imagePath = env->GetStringUTFChars(jImagePath, nullptr);
+    const char* outDir = env->GetStringUTFChars(jOutDir, nullptr);
+    bool includeMovies = (bool)jIncludeMovies;
+
+    gCallbackGlobal = env->NewGlobalRef(jCallback);
+    jclass cbClass = env->GetObjectClass(jCallback);
+    gOnLogMethod = env->GetMethodID(cbClass, "onLog", "(Ljava/lang/String;)V");
+    gOnProgressMethod = env->GetMethodID(cbClass, "onProgress", "(ILjava/lang/String;)V");
+
+    bool success = wii::extractWiiDisc(
+        imagePath, outDir, includeMovies,
+        [](const std::string& msg) {
+            sendLogToJava(msg.c_str());
+        },
+        [](int pct, const std::string& msg) {
+            sendProgressToJava(pct, msg.c_str());
+        }
+    );
+
+    env->ReleaseStringUTFChars(jImagePath, imagePath);
+    env->ReleaseStringUTFChars(jOutDir, outDir);
+    env->DeleteGlobalRef(gCallbackGlobal);
+    gCallbackGlobal = nullptr;
+
+    return success ? 0 : 1;
+}
+
+// ---------------------------------------------------------------------------
+// JNI Method: runCooker(pythonHome, scriptsDir, inputDir, outputDir, withMovies, Callback)
+// ---------------------------------------------------------------------------
 extern "C" JNIEXPORT jint JNICALL
 Java_com_galaxy_installer_CookerEngine_runCooker(
         JNIEnv *env, jclass clazz,

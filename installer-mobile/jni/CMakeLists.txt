@@ -15,6 +15,8 @@ set_target_properties(python310 PROPERTIES
 
 add_library(installer SHARED
     py_bridge.cpp
+    wii_extractor.cpp
+    aes.c
 )
 
 target_link_libraries(installer

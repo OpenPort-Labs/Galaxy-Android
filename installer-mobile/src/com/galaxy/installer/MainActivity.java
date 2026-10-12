@@ -2,12 +2,14 @@ package com.galaxy.installer;
 
 import android.app.Activity;
 import android.content.Intent;
+import android.database.Cursor;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
+import android.provider.OpenableColumns;
 import android.provider.Settings;
 import android.text.method.ScrollingMovementMethod;
 import android.util.Log;
@@ -22,11 +24,14 @@ import java.io.File;
 
 public class MainActivity extends Activity {
     private static final String TAG = "GalaxyInstaller";
-    private static final int REQ_PICK_SOURCE = 1001;
+    private static final int REQ_PICK_DISC = 1001;
+    private static final int REQ_PICK_FOLDER = 1002;
 
     private TextView txtSourcePath;
     private CheckBox chkIncludeMovies;
-    private Button btnSelectSource;
+    private Button btnSelectDisc;
+    private Button btnSelectFolder;
+    private Button btnAutoDetect;
     private Button btnStartCooking;
     private Button btnLaunchGame;
     private ProgressBar progressBar;
@@ -44,7 +49,9 @@ public class MainActivity extends Activity {
 
         txtSourcePath = findViewById(R.id.txtSourcePath);
         chkIncludeMovies = findViewById(R.id.chkIncludeMovies);
-        btnSelectSource = findViewById(R.id.btnSelectSource);
+        btnSelectDisc = findViewById(R.id.btnSelectDisc);
+        btnSelectFolder = findViewById(R.id.btnSelectFolder);
+        btnAutoDetect = findViewById(R.id.btnAutoDetect);
         btnStartCooking = findViewById(R.id.btnStartCooking);
         btnLaunchGame = findViewById(R.id.btnLaunchGame);
         progressBar = findViewById(R.id.progressBar);
@@ -56,11 +63,13 @@ public class MainActivity extends Activity {
         checkStoragePermissions();
         autoDetectSource();
 
-        btnSelectSource.setOnClickListener(v -> openFilePicker());
+        btnSelectDisc.setOnClickListener(v -> openFilePicker());
+        btnSelectFolder.setOnClickListener(v -> openFolderPicker());
+        btnAutoDetect.setOnClickListener(v -> autoDetectSource());
 
         btnStartCooking.setOnClickListener(v -> {
             if (mSelectedSourcePath.isEmpty()) {
-                Toast.makeText(this, "Please select a game file or extracted folder first", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, "Please select a game disc or extracted folder first", Toast.LENGTH_SHORT).show();
                 return;
             }
             startCookingProcess();
@@ -86,57 +95,141 @@ public class MainActivity extends Activity {
     }
 
     private void autoDetectSource() {
-        String[] candidates = {
+        appendLog("[Scan] Searching for game dumps in Downloads...");
+        File downloadDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
+        if (downloadDir != null && downloadDir.exists()) {
+            File[] files = downloadDir.listFiles();
+            if (files != null) {
+                // Priority 1: .wbfs or .iso files
+                for (File f : files) {
+                    String name = f.getName().toLowerCase();
+                    if (name.endsWith(".wbfs") || name.endsWith(".iso")) {
+                        selectSource(f.getAbsolutePath(), "Auto-detected disc: " + f.getName());
+                        return;
+                    }
+                }
+                // Priority 2: .zip files
+                for (File f : files) {
+                    String name = f.getName().toLowerCase();
+                    if (name.contains("galaxy") && name.endsWith(".zip")) {
+                        selectSource(f.getAbsolutePath(), "Auto-detected archive: " + f.getName());
+                        return;
+                    }
+                }
+                // Priority 3: extracted directories
+                for (File f : files) {
+                    if (f.isDirectory()) {
+                        String name = f.getName().toLowerCase();
+                        if (name.equals("extracted") || name.equals("data") || name.contains("galaxy")) {
+                            File testFiles = new File(f, "files");
+                            File testData = new File(f, "DATA");
+                            if (testFiles.exists() || testData.exists()) {
+                                selectSource(f.getAbsolutePath(), "Auto-detected extracted folder: " + f.getName());
+                                return;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Check fallback root paths
+        String[] fallbackCandidates = {
+            "/sdcard/Download/Super Mario Galaxy.wbfs",
             "/sdcard/Download/Super Mario Galaxy.iso",
-            "/sdcard/Download/Super Mario Galaxy.rvz",
             "/sdcard/Download/extracted",
             "/sdcard/Download/DATA",
             "/sdcard/GalaxyQuest/extracted",
             "/sdcard/extracted"
         };
-        for (String c : candidates) {
+        for (String c : fallbackCandidates) {
             File f = new File(c);
             if (f.exists()) {
-                mSelectedSourcePath = c;
-                txtSourcePath.setText("Auto-detected: " + c);
-                appendLog("[Found] Auto-detected game data at: " + c);
-                break;
+                selectSource(c, "Auto-detected: " + c);
+                return;
             }
         }
+
+        appendLog("[Scan] No disc dump found automatically. Please select your file manually.");
+    }
+
+    private void selectSource(String path, String label) {
+        mSelectedSourcePath = path;
+        txtSourcePath.setText(label);
+        appendLog("[Source] " + label + " (" + path + ")");
     }
 
     private void openFilePicker() {
+        Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
+        intent.setType("*/*");
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        try {
+            startActivityForResult(Intent.createChooser(intent, "Select Super Mario Galaxy (.wbfs / .iso / .zip)"), REQ_PICK_DISC);
+        } catch (Exception e) {
+            Toast.makeText(this, "Failed to open file picker: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void openFolderPicker() {
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
         intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
         try {
-            startActivityForResult(intent, REQ_PICK_SOURCE);
+            startActivityForResult(intent, REQ_PICK_FOLDER);
         } catch (Exception e) {
-            Toast.makeText(this, "Failed to open document picker: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "Failed to open folder picker: " + e.getMessage(), Toast.LENGTH_SHORT).show();
         }
     }
 
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode == REQ_PICK_SOURCE && resultCode == RESULT_OK && data != null) {
-            Uri treeUri = data.getData();
-            if (treeUri != null) {
-                // Resolving standard path if possible, or using tree URI
-                String path = treeUri.getPath();
-                if (path != null && path.contains(":")) {
-                    String[] parts = path.split(":");
-                    if (parts.length > 1) {
-                        mSelectedSourcePath = "/sdcard/" + parts[1];
-                    } else {
-                        mSelectedSourcePath = path;
-                    }
-                } else {
-                    mSelectedSourcePath = path != null ? path : treeUri.toString();
-                }
-                txtSourcePath.setText(mSelectedSourcePath);
-                appendLog("[Source] Selected: " + mSelectedSourcePath);
+        if (resultCode != RESULT_OK || data == null) return;
+
+        Uri uri = data.getData();
+        if (uri == null) return;
+
+        String resolvedPath = resolvePathFromUri(uri);
+        if (resolvedPath != null && !resolvedPath.isEmpty()) {
+            selectSource(resolvedPath, "Selected: " + new File(resolvedPath).getName());
+        } else {
+            selectSource(uri.toString(), "Selected: " + uri.getLastPathSegment());
+        }
+    }
+
+    private String resolvePathFromUri(Uri uri) {
+        if ("file".equalsIgnoreCase(uri.getScheme())) {
+            return uri.getPath();
+        }
+
+        // Try to resolve standard storage tree/document path
+        String path = uri.getPath();
+        if (path != null && path.contains(":")) {
+            String[] parts = path.split(":");
+            if (parts.length > 1) {
+                String subPath = parts[1];
+                File direct = new File(Environment.getExternalStorageDirectory(), subPath);
+                if (direct.exists()) return direct.getAbsolutePath();
+                File downloadDirect = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), subPath);
+                if (downloadDirect.exists()) return downloadDirect.getAbsolutePath();
+                return "/sdcard/" + subPath;
             }
         }
+
+        // Try getting display name and matching in Download folder
+        try (Cursor cursor = getContentResolver().query(uri, null, null, null, null)) {
+            if (cursor != null && cursor.moveToFirst()) {
+                int nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME);
+                if (nameIndex != -1) {
+                    String displayName = cursor.getString(nameIndex);
+                    File dl = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), displayName);
+                    if (dl.exists()) {
+                        return dl.getAbsolutePath();
+                    }
+                }
+            }
+        } catch (Exception ignored) {}
+
+        return uri.getPath();
     }
 
     private void startCookingProcess() {
@@ -144,22 +237,26 @@ public class MainActivity extends Activity {
         mIsCooking = true;
 
         btnStartCooking.setEnabled(false);
-        btnSelectSource.setEnabled(false);
+        btnSelectDisc.setEnabled(false);
+        btnSelectFolder.setEnabled(false);
+        btnAutoDetect.setEnabled(false);
         progressBar.setVisibility(View.VISIBLE);
         txtProgressStatus.setText(R.string.status_cooking);
 
-        final String inputDir = mSelectedSourcePath;
-        // Output directory is standard location automatically scanned by GalaxyMobile
+        final String sourcePath = mSelectedSourcePath;
         final String outputDir = "/sdcard/Download/game";
         final boolean withMovies = chkIncludeMovies.isChecked();
 
-        appendLog("[Cook] Starting game conversion pipeline...");
-        appendLog("[Cook] Input:  " + inputDir);
-        appendLog("[Cook] Output: " + outputDir);
+        appendLog("==============================================");
+        appendLog("[Pipeline] Starting PC-less on-device preparation");
+        appendLog("[Pipeline] Source: " + sourcePath);
+        appendLog("[Pipeline] Target: " + outputDir);
+        appendLog("==============================================");
 
         new Thread(() -> {
+            File tempExtractionDir = null;
             try {
-                // Step 1: Prepare assets
+                // Step 1: Ensure Python runtime and cooker scripts are unpacked
                 CookerEngine.prepareAssets(MainActivity.this, new CookerEngine.CookerCallback() {
                     @Override public void onLog(String line) { appendLog(line); }
                     @Override public void onProgress(int percent, String message) {}
@@ -169,45 +266,128 @@ public class MainActivity extends Activity {
                 String pythonHome = new File(getFilesDir(), "pythonhome").getAbsolutePath();
                 String scriptsDir = new File(getFilesDir(), "scripts").getAbsolutePath();
 
-                // Step 2: Ensure destination directory exists
+                String cookInputPath = sourcePath;
+                File sourceFile = new File(sourcePath);
+
+                // Step 2: Handle Wii Disc Image (.wbfs / .iso) extraction
+                boolean isDisc = false;
+                if (sourceFile.isFile()) {
+                    isDisc = CookerEngine.isWiiDisc(sourcePath) ||
+                             sourcePath.toLowerCase().endsWith(".wbfs") ||
+                             sourcePath.toLowerCase().endsWith(".iso");
+                }
+
+                if (isDisc) {
+                    appendLog("[Stage 1/2] Native Wii Optical Disc detected.");
+                    appendLog("[Stage 1/2] Decrypting partition and extracting game files on-device...");
+                    mHandler.post(() -> txtProgressStatus.setText("Extracting Wii disc image..."));
+
+                    tempExtractionDir = new File(getFilesDir(), "extracted_cache");
+                    CookerEngine.deleteRecursive(tempExtractionDir);
+                    tempExtractionDir.mkdirs();
+
+                    int extractRet = CookerEngine.extractDisc(
+                        sourcePath,
+                        tempExtractionDir.getAbsolutePath(),
+                        withMovies,
+                        new CookerEngine.CookerCallback() {
+                            @Override public void onLog(String line) { appendLog(line); }
+                            @Override
+                            public void onProgress(int percent, String message) {
+                                mHandler.post(() -> {
+                                    if (percent >= 0) {
+                                        progressBar.setIndeterminate(false);
+                                        progressBar.setProgress(percent);
+                                    }
+                                    if (message != null) {
+                                        txtProgressStatus.setText(message);
+                                    }
+                                });
+                            }
+                            @Override public void onFinished(boolean success, String message) {}
+                        }
+                    );
+
+                    if (extractRet != 0) {
+                        throw new RuntimeException("Disc extraction failed (code: " + extractRet + ")");
+                    }
+
+                    appendLog("[Stage 1/2] Disc extraction complete.");
+                    cookInputPath = tempExtractionDir.getAbsolutePath();
+                } else if (sourceFile.isFile() && sourcePath.toLowerCase().endsWith(".zip")) {
+                    appendLog("[Stage 1/2] ZIP Archive detected. Unpacking on-device...");
+                    mHandler.post(() -> txtProgressStatus.setText("Unpacking ZIP archive..."));
+
+                    tempExtractionDir = new File(getFilesDir(), "extracted_cache");
+                    CookerEngine.deleteRecursive(tempExtractionDir);
+                    tempExtractionDir.mkdirs();
+
+                    boolean unzipped = CookerEngine.extractZip(sourceFile, tempExtractionDir, new CookerEngine.CookerCallback() {
+                        @Override public void onLog(String line) { appendLog(line); }
+                        @Override public void onProgress(int percent, String message) {
+                            mHandler.post(() -> {
+                                if (message != null) txtProgressStatus.setText(message);
+                            });
+                        }
+                        @Override public void onFinished(boolean success, String message) {}
+                    });
+
+                    if (!unzipped) {
+                        throw new RuntimeException("Failed to unpack ZIP archive.");
+                    }
+                    cookInputPath = tempExtractionDir.getAbsolutePath();
+                }
+
+                // Step 3: Run the asset converter (cook.py)
+                appendLog("[Stage 2/2] Running asset cooker engine (textures, models, audio)...");
+                mHandler.post(() -> {
+                    progressBar.setIndeterminate(true);
+                    txtProgressStatus.setText("Cooking game assets...");
+                });
+
                 File outFolder = new File(outputDir);
                 if (!outFolder.exists()) {
                     outFolder.mkdirs();
                 }
 
-                // Step 3: Run the native cooker
-                int ret = CookerEngine.runCooker(pythonHome, scriptsDir, inputDir, outputDir, withMovies, new CookerEngine.CookerCallback() {
-                    @Override
-                    public void onLog(String line) {
-                        appendLog(line);
+                int ret = CookerEngine.runCooker(
+                    pythonHome, scriptsDir, cookInputPath, outputDir, withMovies,
+                    new CookerEngine.CookerCallback() {
+                        @Override public void onLog(String line) { appendLog(line); }
+                        @Override
+                        public void onProgress(int percent, String message) {
+                            mHandler.post(() -> {
+                                if (percent >= 0) {
+                                    progressBar.setIndeterminate(false);
+                                    progressBar.setProgress(percent);
+                                }
+                                if (message != null) txtProgressStatus.setText(message);
+                            });
+                        }
+                        @Override public void onFinished(boolean success, String message) {
+                            mHandler.post(() -> onCookingCompleted(success, message));
+                        }
                     }
+                );
 
-                    @Override
-                    public void onProgress(int percent, String message) {
-                        mHandler.post(() -> {
-                            if (percent >= 0) {
-                                progressBar.setIndeterminate(false);
-                                progressBar.setProgress(percent);
-                            }
-                            if (message != null) {
-                                txtProgressStatus.setText(message);
-                            }
-                        });
-                    }
-
-                    @Override
-                    public void onFinished(boolean success, String message) {
-                        mHandler.post(() -> onCookingCompleted(success, message));
-                    }
-                });
+                // Clean up temporary cache to free device storage
+                if (tempExtractionDir != null && tempExtractionDir.exists()) {
+                    appendLog("[Clean] Freeing temporary cache storage...");
+                    CookerEngine.deleteRecursive(tempExtractionDir);
+                }
 
                 if (ret != 0) {
                     mHandler.post(() -> onCookingCompleted(false, "Cooker returned error code: " + ret));
+                } else {
+                    mHandler.post(() -> onCookingCompleted(true, "All game assets cooked successfully!"));
                 }
 
             } catch (Exception e) {
                 Log.e(TAG, "Cooking failed with exception", e);
                 appendLog("[ERROR] " + e.getMessage());
+                if (tempExtractionDir != null && tempExtractionDir.exists()) {
+                    CookerEngine.deleteRecursive(tempExtractionDir);
+                }
                 mHandler.post(() -> onCookingCompleted(false, e.getMessage()));
             }
         }).start();
@@ -217,17 +397,19 @@ public class MainActivity extends Activity {
         mIsCooking = false;
         progressBar.setVisibility(View.GONE);
         btnStartCooking.setEnabled(true);
-        btnSelectSource.setEnabled(true);
+        btnSelectDisc.setEnabled(true);
+        btnSelectFolder.setEnabled(true);
+        btnAutoDetect.setEnabled(true);
 
         if (success) {
             txtProgressStatus.setText(R.string.status_done);
             appendLog("[SUCCESS] " + (message != null ? message : "Conversion complete!"));
             btnLaunchGame.setVisibility(View.VISIBLE);
-            Toast.makeText(this, "Game data successfully prepared!", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "Game data ready! You can now launch GalaxyMobile.", Toast.LENGTH_LONG).show();
         } else {
             txtProgressStatus.setText(R.string.status_error);
             appendLog("[FAILURE] " + (message != null ? message : "Error during conversion."));
-            Toast.makeText(this, "Cooking failed. Check log for details.", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "Preparation failed. Check terminal log.", Toast.LENGTH_LONG).show();
         }
     }
 
@@ -243,7 +425,6 @@ public class MainActivity extends Activity {
     private void appendLog(String line) {
         mHandler.post(() -> {
             txtLogOutput.append(line + "\n");
-            // Auto-scroll to bottom
             final int scrollAmount = txtLogOutput.getLayout() != null ?
                     txtLogOutput.getLayout().getLineTop(txtLogOutput.getLineCount()) - txtLogOutput.getHeight() : 0;
             if (scrollAmount > 0) {

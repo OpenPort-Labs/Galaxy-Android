@@ -50,6 +50,19 @@ GalaxyMobile is a **native Android ARM64 port** of Super Mario Galaxy, compiled 
 
 ---
 
+## System Requirements
+
+| Specification | Minimum Requirement | Recommended |
+|---|---|---|
+| **Operating System** | **Android 11 or newer (API Level 30+)** | Android 12, 13, 14, or 15 |
+| **CPU Architecture** | 64-bit ARM (`arm64-v8a`) | 64-bit ARM (`arm64-v8a`) |
+| **Graphics API** | OpenGL ES 3.2 | OpenGL ES 3.2 |
+| **Audio Subsystem** | AAudio | AAudio |
+| **RAM** | 3 GB | 4 GB or higher |
+| **Storage** | ~2.5 GB (without movies) / ~5 GB (with movies) | Fast UFS internal storage |
+
+---
+
 > **Legal Notice:**
 > **You must provide your own legally dumped copy of Super Mario Galaxy.** Neither this repository nor the compiled APK contains any copyrighted Nintendo game assets, levels, audio, textures, or cinematics. You extract and convert your own legally owned disc once on your PC and transfer the cooked data to your Android device.
 
@@ -76,7 +89,7 @@ With the dedicated `GalaxyInstaller` app, your phone does everything on-device â
      - **`.wia`** (Wii ISO Archive format)
      - **`.zip`** (Archive containing game dump files)
      - *(Or an extracted game folder from Dolphin)*
-2. **Install the APKs on your phone**:
+2. **Install the APKs on your phone (Android 11 or newer)**:
    - **GalaxyMobile** ([`out-mobile/GalaxyMobile.apk`](out-mobile/GalaxyMobile.apk), package `com.galaxy.mobile`): The pure vanilla experience with **0 mods** and clean standard controls.
    - **GalaxyMobile+** ([`out-mobile/GalaxyMobilePlus.apk`](out-mobile/GalaxyMobilePlus.apk), package `com.galaxy.mobile.plus`): The enhanced edition featuring the tabbed **[ Advanced ]** mods drawer (Fly Mode, Cutscene Prevention, Infinite Health + void teleport).
    - **GalaxyInstaller** ([`out-mobile/GalaxyInstaller.apk`](out-mobile/GalaxyInstaller.apk), package `com.galaxy.installer`): The on-device companion installer.

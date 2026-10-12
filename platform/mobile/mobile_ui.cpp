@@ -185,10 +185,14 @@ void Settings::load(const std::string& path) {
             else if (!strcmp(key, "stick_offset_y")) stickOffsetY = val;
             else if (!strcmp(key, "button_offset_x")) buttonOffsetX = val;
             else if (!strcmp(key, "button_offset_y")) buttonOffsetY = val;
+            else if (!strcmp(key, "show_dpad")) showDpad = (val > 0.5f);
+            else if (!strcmp(key, "dpad_on_right")) dpadOnRight = (val > 0.5f);
+            else if (!strcmp(key, "dpad_offset_x")) dpadOffsetX = val;
+            else if (!strcmp(key, "dpad_offset_y")) dpadOffsetY = val;
         }
     }
     fclose(f);
-    LOGI("Loaded settings: show=%d, full=%d, op=%.2f, scale=%.2f", showControls, fullscreen, opacity, scale);
+    LOGI("Loaded settings: show=%d, full=%d, op=%.2f, scale=%.2f, dpad=%d", showControls, fullscreen, opacity, scale, showDpad);
 }
 
 void Settings::save(const std::string& path) const {
@@ -203,6 +207,10 @@ void Settings::save(const std::string& path) const {
     fprintf(f, "stick_offset_y=%.1f\n", stickOffsetY);
     fprintf(f, "button_offset_x=%.1f\n", buttonOffsetX);
     fprintf(f, "button_offset_y=%.1f\n", buttonOffsetY);
+    fprintf(f, "show_dpad=%d\n", showDpad ? 1 : 0);
+    fprintf(f, "dpad_on_right=%d\n", dpadOnRight ? 1 : 0);
+    fprintf(f, "dpad_offset_x=%.1f\n", dpadOffsetX);
+    fprintf(f, "dpad_offset_y=%.1f\n", dpadOffsetY);
     fclose(f);
     LOGI("Saved settings to %s", path.c_str());
 }
@@ -389,13 +397,35 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
                 mSettings.stickOffsetY = 0.0f;
                 mSettings.buttonOffsetX = 0.0f;
                 mSettings.buttonOffsetY = 0.0f;
+                mSettings.dpadOffsetX = 0.0f;
+                mSettings.dpadOffsetY = 0.0f;
                 if (!mSavePath.empty()) mSettings.save(mSavePath);
                 mDirty = true;
                 return true;
             }
 
-            // Start dragging stick cluster or button cluster
-            if (px < w * 0.45f) {
+            // Start dragging stick cluster, button cluster, or D-Pad cluster
+            float baseDpadX = mSettings.dpadOnRight ? (w - 380.0f * scale) : (140.0f * scale);
+            float baseDpadY = mSettings.dpadOnRight ? (h - 220.0f * scale) : (h - 390.0f * scale);
+            float curDpadX = baseDpadX + mSettings.dpadOffsetX;
+            float curDpadY = baseDpadY + mSettings.dpadOffsetY;
+
+            float curStickX = 175.0f * scale + mSettings.stickOffsetX;
+            float curStickY = h - 175.0f * scale + mSettings.stickOffsetY;
+
+            float curBtnX = w - 160.0f * scale + mSettings.buttonOffsetX - 60.0f * scale;
+            float curBtnY = h - 160.0f * scale + mSettings.buttonOffsetY - 60.0f * scale;
+
+            float dDpad2 = (px - curDpadX) * (px - curDpadX) + (py - curDpadY) * (py - curDpadY);
+            float dStick2 = (px - curStickX) * (px - curStickX) + (py - curStickY) * (py - curStickY);
+
+            if (mSettings.showDpad && dDpad2 <= (95.0f * scale) * (95.0f * scale)) {
+                mDraggingCluster = 3; // D-Pad
+                mDragStartX = px;
+                mDragStartY = py;
+                mInitialDpadOfsX = mSettings.dpadOffsetX;
+                mInitialDpadOfsY = mSettings.dpadOffsetY;
+            } else if (dStick2 <= (140.0f * scale) * (140.0f * scale) || px < w * 0.40f) {
                 mDraggingCluster = 1; // stick
                 mDragStartX = px;
                 mDragStartY = py;
@@ -419,6 +449,9 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
             } else if (mDraggingCluster == 2) {
                 mSettings.buttonOffsetX = mInitialBtnOfsX + (px - mDragStartX);
                 mSettings.buttonOffsetY = mInitialBtnOfsY + (py - mDragStartY);
+            } else if (mDraggingCluster == 3) {
+                mSettings.dpadOffsetX = mInitialDpadOfsX + (px - mDragStartX);
+                mSettings.dpadOffsetY = mInitialDpadOfsY + (py - mDragStartY);
             }
             mDirty = true;
             return true;
@@ -461,31 +494,53 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
                 return true;
             }
 
-            // Row 1: Visibility Switch (r1Y = 84.0f * uiScale)
-            float r1Y = 84.0f * uiScale;
-            if (py >= r1Y && py <= r1Y + 50.0f * uiScale) {
+            // Row 1: Visibility Switch (r1Y = 78.0f * uiScale)
+            float r1Y = 78.0f * uiScale;
+            if (py >= r1Y && py <= r1Y + 48.0f * uiScale) {
                 mSettings.showControls = !mSettings.showControls;
             }
 
-            // Row 2: Fullscreen Switch (r2Y = 140.0f * uiScale)
-            float r2Y = 140.0f * uiScale;
-            if (py >= r2Y && py <= r2Y + 50.0f * uiScale) {
+            // Row 2: Camera D-Pad Switch (r2Y = 130.0f * uiScale)
+            float r2Y = 130.0f * uiScale;
+            if (py >= r2Y && py <= r2Y + 48.0f * uiScale) {
+                mSettings.showDpad = !mSettings.showDpad;
+            }
+
+            // Row 3: D-Pad Position Segmented (r3Y = 182.0f * uiScale)
+            float r3Y = 182.0f * uiScale;
+            float seg3Y = r3Y + 22.0f * uiScale;
+            if (py >= seg3Y && py <= seg3Y + 36.0f * uiScale) {
+                float midX = drawerX + padX + contentW * 0.5f;
+                if (px < midX) {
+                    mSettings.dpadOnRight = false;
+                    mSettings.dpadOffsetX = 0.0f;
+                    mSettings.dpadOffsetY = 0.0f;
+                } else {
+                    mSettings.dpadOnRight = true;
+                    mSettings.dpadOffsetX = 0.0f;
+                    mSettings.dpadOffsetY = 0.0f;
+                }
+            }
+
+            // Row 4: Fullscreen Switch (r4Y = 242.0f * uiScale)
+            float r4Y = 242.0f * uiScale;
+            if (py >= r4Y && py <= r4Y + 48.0f * uiScale) {
                 mSettings.fullscreen = !mSettings.fullscreen;
             }
 
-            // Row 3: Joystick Mode Segmented Button (r3Y = 196.0f * uiScale)
-            float r3Y = 196.0f * uiScale;
-            float seg3Y = r3Y + 22.0f * uiScale;
-            if (py >= seg3Y && py <= seg3Y + 36.0f * uiScale) {
+            // Row 5: Joystick Mode Segmented Button (r5Y = 294.0f * uiScale)
+            float r5Y = 294.0f * uiScale;
+            float seg5Y = r5Y + 22.0f * uiScale;
+            if (py >= seg5Y && py <= seg5Y + 36.0f * uiScale) {
                 float midX = drawerX + padX + contentW * 0.5f;
                 if (px < midX) mSettings.dynamicStick = true;
                 else mSettings.dynamicStick = false;
             }
 
-            // Row 4: Opacity Segmented Button (r4Y = 260.0f * uiScale)
-            float r4Y = 260.0f * uiScale;
-            float seg4Y = r4Y + 22.0f * uiScale;
-            if (py >= seg4Y && py <= seg4Y + 36.0f * uiScale) {
+            // Row 6: Opacity Segmented Button (r6Y = 354.0f * uiScale)
+            float r6Y = 354.0f * uiScale;
+            float seg6Y = r6Y + 22.0f * uiScale;
+            if (py >= seg6Y && py <= seg6Y + 36.0f * uiScale) {
                 float segW = contentW / 4.0f;
                 int idx = (int)((px - (drawerX + padX)) / segW);
                 if (idx <= 0) mSettings.opacity = 0.25f;
@@ -494,10 +549,10 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
                 else mSettings.opacity = 1.00f;
             }
 
-            // Row 5: Button Scale Segmented Button (r5Y = 324.0f * uiScale)
-            float r5Y = 324.0f * uiScale;
-            float seg5Y = r5Y + 22.0f * uiScale;
-            if (py >= seg5Y && py <= seg5Y + 36.0f * uiScale) {
+            // Row 7: Button Scale Segmented Button (r7Y = 414.0f * uiScale)
+            float r7Y = 414.0f * uiScale;
+            float seg7Y = r7Y + 22.0f * uiScale;
+            if (py >= seg7Y && py <= seg7Y + 36.0f * uiScale) {
                 float segW = contentW / 3.0f;
                 int idx = (int)((px - (drawerX + padX)) / segW);
                 if (idx <= 0) mSettings.scale = 0.85f;
@@ -505,10 +560,10 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
                 else mSettings.scale = 1.25f;
             }
 
-            // Row 6: Layout Edit / Reset (r6Y = 388.0f * uiScale)
-            float r6Y = 388.0f * uiScale;
-            float btn6Y = r6Y + 22.0f * uiScale;
-            if (py >= btn6Y && py <= btn6Y + 38.0f * uiScale) {
+            // Row 8: Layout Edit / Reset (r8Y = 474.0f * uiScale)
+            float r8Y = 474.0f * uiScale;
+            float btn8Y = r8Y + 22.0f * uiScale;
+            if (py >= btn8Y && py <= btn8Y + 38.0f * uiScale) {
                 float splitX = drawerX + padX + contentW * 0.56f;
                 if (px < splitX) {
                     mSettingsOpen = false;
@@ -518,11 +573,13 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
                     mSettings.stickOffsetY = 0.0f;
                     mSettings.buttonOffsetX = 0.0f;
                     mSettings.buttonOffsetY = 0.0f;
+                    mSettings.dpadOffsetX = 0.0f;
+                    mSettings.dpadOffsetY = 0.0f;
                 }
             }
 
-            // Row 7: [ Done ] Action Pill Button
-            float doneY = std::min(h - 52.0f * uiScale, 452.0f * uiScale);
+            // Row 9: [ Done ] Action Pill Button
+            float doneY = std::min(h - 52.0f * uiScale, 538.0f * uiScale);
             if (py >= doneY && py <= doneY + 42.0f * uiScale) {
                 mSettingsOpen = false;
             }
@@ -546,6 +603,10 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
     mBtnZPressed = false;
     mBtnSpinPressed = false;
     mBtnPlusPressed = false;
+    mBtnDpadLeft = false;
+    mBtnDpadRight = false;
+    mBtnDpadUp = false;
+    mBtnDpadDown = false;
 
     // Button layout positions
     float btnBaseX = w - 160.0f * scale + mSettings.buttonOffsetX;
@@ -561,6 +622,15 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
     float zX = btnBaseX - 90.0f * scale, zY = btnBaseY - 105.0f * scale, zR = 44.0f * scale;
     // Plus (+) - Top right
     float plusX = w - 70.0f * scale, plusY = 70.0f * scale, plusR = 34.0f * scale;
+
+    // Camera D-Pad position
+    float baseDpadX = mSettings.dpadOnRight ? (w - 380.0f * scale) : (140.0f * scale);
+    float baseDpadY = mSettings.dpadOnRight ? (h - 220.0f * scale) : (h - 390.0f * scale);
+    float dpadX = baseDpadX + mSettings.dpadOffsetX;
+    float dpadY = baseDpadY + mSettings.dpadOffsetY;
+    float dpadArmDist = 38.0f * scale;
+    float dpadArmR = 24.0f * scale;
+    float dpadTotalR = (dpadArmDist + dpadArmR) * 1.15f;
 
     // Stick default position - Bottom left thumb area
     float defaultStickX = 175.0f * scale + mSettings.stickOffsetX;
@@ -578,6 +648,7 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
         touchButtons = 0;
         pad.buttons = 0;
         mBtnAPressed = mBtnBPressed = mBtnZPressed = mBtnSpinPressed = mBtnPlusPressed = false;
+        mBtnDpadLeft = mBtnDpadRight = mBtnDpadUp = mBtnDpadDown = false;
         mDirty = true;
         pad.pointerValid = 1;
         pad.pointerX = mPointerX;
@@ -703,6 +774,31 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
                     mBtnPlusPressed = true;
                     hitButton = true;
                 }
+                if (mSettings.showDpad) {
+                    float dDpadX = px - dpadX;
+                    float dDpadY = py - dpadY;
+                    float distDpad = sqrtf(dDpadX * dDpadX + dDpadY * dDpadY);
+                    if (distDpad <= dpadTotalR) {
+                        hitButton = true;
+                        float deadzone = 8.0f * scale;
+                        if (distDpad > deadzone) {
+                            if (dDpadX < -deadzone && fabsf(dDpadX) > fabsf(dDpadY) * 0.40f) {
+                                touchButtons |= 0x0001; // WPAD_BUTTON_LEFT (rotate cam left)
+                                mBtnDpadLeft = true;
+                            } else if (dDpadX > deadzone && fabsf(dDpadX) > fabsf(dDpadY) * 0.40f) {
+                                touchButtons |= 0x0002; // WPAD_BUTTON_RIGHT (rotate cam right)
+                                mBtnDpadRight = true;
+                            }
+                            if (dDpadY < -deadzone && fabsf(dDpadY) > fabsf(dDpadX) * 0.40f) {
+                                touchButtons |= 0x0008; // WPAD_BUTTON_UP (first-person view / zoom)
+                                mBtnDpadUp = true;
+                            } else if (dDpadY > deadzone && fabsf(dDpadY) > fabsf(dDpadX) * 0.40f) {
+                                touchButtons |= 0x0004; // WPAD_BUTTON_DOWN (recenter camera)
+                                mBtnDpadDown = true;
+                            }
+                        }
+                    }
+                }
             }
 
             // Direct screen touch: exclusively moves the in-game Star Pointer!
@@ -811,6 +907,12 @@ void UIOverlay::render(int screenW, int screenH) {
 
     auto drawCloseIcon = [&](float cx, float cy, float r, const Color& c) {
         addQuad(cx - r, cy - r, cx + r, cy + r, -1.0f, -1.0f, 1.0f, 1.0f, c, 4.0f, 0.0f);
+    };
+
+    auto drawTriangle = [&](float x0, float y0, float x1, float y1, float x2, float y2, const Color& c) {
+        verts.push_back({x0, y0, 0.0f, 0.0f, c.r, c.g, c.b, c.a, 0.0f, 0.0f, 1.0f, 0.0f});
+        verts.push_back({x1, y1, 0.0f, 0.0f, c.r, c.g, c.b, c.a, 0.0f, 0.0f, 1.0f, 0.0f});
+        verts.push_back({x2, y2, 0.0f, 0.0f, c.r, c.g, c.b, c.a, 0.0f, 0.0f, 1.0f, 0.0f});
     };
 
     const ui_font::Face& face = ui_font::kFaces[0];
@@ -947,6 +1049,68 @@ void UIOverlay::render(int screenW, int screenH) {
 
         // Button + (Pause) - Slate
         drawButton(w - 70.0f * scale, 70.0f * scale, 34.0f * scale, "+", 0x475569, mBtnPlusPressed);
+
+        // 3. Camera D-Pad (Limited Camera Controls: Left, Right, Up FPView, Down Recenter)
+        if (mSettings.showDpad) {
+            float baseDpadX = mSettings.dpadOnRight ? (w - 380.0f * scale) : (140.0f * scale);
+            float baseDpadY = mSettings.dpadOnRight ? (h - 220.0f * scale) : (h - 390.0f * scale);
+            float dpadX = baseDpadX + mSettings.dpadOffsetX;
+            float dpadY = baseDpadY + mSettings.dpadOffsetY;
+            float armDist = 38.0f * scale;
+            float armR = 24.0f * scale;
+            float crossW = 34.0f * scale;
+            float crossLen = 50.0f * scale;
+
+            // Cross base backdrops: Horizontal bar & Vertical bar
+            drawRoundRect(dpadX - crossLen, dpadY - crossW * 0.5f, dpadX + crossLen, dpadY + crossW * 0.5f, crossW * 0.35f,
+                          rgba(0.10f, 0.12f, 0.18f, hudOp * 0.50f));
+            drawRoundRect(dpadX - crossW * 0.5f, dpadY - crossLen, dpadX + crossW * 0.5f, dpadY + crossLen, crossW * 0.35f,
+                          rgba(0.10f, 0.12f, 0.18f, hudOp * 0.50f));
+
+            // Outer outline borders for cross
+            drawRoundRect(dpadX - crossLen, dpadY - crossW * 0.5f, dpadX + crossLen, dpadY + crossW * 0.5f, crossW * 0.35f,
+                          rgba(0.50f, 0.70f, 1.0f, hudOp * 0.35f));
+            drawRoundRect(dpadX - crossW * 0.5f, dpadY - crossLen, dpadX + crossW * 0.5f, dpadY + crossLen, crossW * 0.35f,
+                          rgba(0.50f, 0.70f, 1.0f, hudOp * 0.35f));
+
+            auto drawDpadArm = [&](float cx, float cy, float r, bool pressed, int dir) {
+                float pr = pressed ? (r * 0.92f) : r;
+                float discAlpha = pressed ? (hudOp * 0.90f) : (hudOp * 0.40f);
+                float borderAlpha = pressed ? (hudOp * 1.0f) : (hudOp * 0.65f);
+
+                // Arm disc highlight
+                Color armBg = pressed ? hexColor(0x0284C7, discAlpha) : rgba(0.15f, 0.20f, 0.30f, discAlpha);
+                drawCircle(cx, cy, pr, armBg);
+                drawRing(cx, cy, pr, 0.88f, hexColor(0xFFFFFF, borderAlpha));
+
+                // Directional Arrow Triangle
+                float aSize = 8.0f * scale;
+                Color arrowC = pressed ? rgba(1.0f, 1.0f, 1.0f, hudOp * 1.0f) : rgba(0.90f, 0.93f, 1.0f, hudOp * 0.85f);
+                if (dir == 0) { // Left
+                    drawTriangle(cx - aSize * 0.9f, cy, cx + aSize * 0.7f, cy - aSize * 0.85f, cx + aSize * 0.7f, cy + aSize * 0.85f, arrowC);
+                } else if (dir == 1) { // Right
+                    drawTriangle(cx + aSize * 0.9f, cy, cx - aSize * 0.7f, cy - aSize * 0.85f, cx - aSize * 0.7f, cy + aSize * 0.85f, arrowC);
+                } else if (dir == 2) { // Up
+                    drawTriangle(cx, cy - aSize * 0.9f, cx - aSize * 0.85f, cy + aSize * 0.7f, cx + aSize * 0.85f, cy + aSize * 0.7f, arrowC);
+                } else if (dir == 3) { // Down
+                    drawTriangle(cx, cy + aSize * 0.9f, cx - aSize * 0.85f, cy - aSize * 0.7f, cx + aSize * 0.85f, cy - aSize * 0.7f, arrowC);
+                }
+            };
+
+            // Left (Rotate Left)
+            drawDpadArm(dpadX - armDist, dpadY, armR, mBtnDpadLeft, 0);
+            // Right (Rotate Right)
+            drawDpadArm(dpadX + armDist, dpadY, armR, mBtnDpadRight, 1);
+            // Up (First Person View / Zoom)
+            drawDpadArm(dpadX, dpadY - armDist, armR, mBtnDpadUp, 2);
+            // Down (Recenter Camera)
+            drawDpadArm(dpadX, dpadY + armDist, armR, mBtnDpadDown, 3);
+
+            // Center hub disc with "CAM" label
+            drawCircle(dpadX, dpadY, 19.0f * scale, rgba(0.12f, 0.16f, 0.24f, hudOp * 0.85f));
+            drawRing(dpadX, dpadY, 19.0f * scale, 0.88f, rgba(0.40f, 0.65f, 0.98f, hudOp * 0.60f));
+            drawText("CAM", dpadX, dpadY + 4.0f * scale, 0.28f * scale, rgba(0.70f, 0.85f, 1.0f, hudOp * 0.85f), 1);
+        }
     }
 
     // -------------------------------------------------------------
@@ -998,6 +1162,16 @@ void UIOverlay::render(int screenW, int screenH) {
         float btnBaseY = h - 160.0f * scale + mSettings.buttonOffsetY;
         drawRing(btnBaseX - 60.0f * scale, btnBaseY - 60.0f * scale, 160.0f * scale, 0.96f, rgba(0.40f, 0.65f, 0.98f, 0.85f));
         drawText("BUTTONS", btnBaseX - 60.0f * scale, btnBaseY - 230.0f * scale, 0.45f, rgba(0.40f, 0.65f, 0.98f, 0.95f), 1);
+
+        // Camera D-Pad bounding outline
+        if (mSettings.showDpad) {
+            float baseDpadX = mSettings.dpadOnRight ? (w - 380.0f * scale) : (140.0f * scale);
+            float baseDpadY = mSettings.dpadOnRight ? (h - 220.0f * scale) : (h - 390.0f * scale);
+            float curDpadX = baseDpadX + mSettings.dpadOffsetX;
+            float curDpadY = baseDpadY + mSettings.dpadOffsetY;
+            drawRing(curDpadX, curDpadY, 78.0f * scale, 0.96f, rgba(0.40f, 0.65f, 0.98f, 0.85f));
+            drawText("CAMERA D-PAD", curDpadX, curDpadY - 88.0f * scale, 0.42f, rgba(0.40f, 0.65f, 0.98f, 0.95f), 1);
+        }
     }
 
     // -------------------------------------------------------------
@@ -1030,55 +1204,67 @@ void UIOverlay::render(int screenW, int screenH) {
 
         float swW = 50.0f * uiScale, swH = 28.0f * uiScale;
 
-        // Row 1: Visibility Switch (r1Y = 84.0f * uiScale)
-        float r1Y = 84.0f * uiScale;
+        // Row 1: Visibility Switch (r1Y = 78.0f * uiScale)
+        float r1Y = 78.0f * uiScale;
         drawText("On-Screen Controls", drawerX + padX, r1Y + 20.0f * uiScale, 0.40f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
         drawText("Show HUD buttons", drawerX + padX, r1Y + 36.0f * uiScale, 0.29f * uiScale, rgba(0.761f, 0.776f, 0.812f, 0.85f), 0);
         drawM3Switch(drawerX + drawerW - padX - swW, r1Y + 10.0f * uiScale, swW, swH, mSettings.showControls);
 
-        // Row 2: Fullscreen Switch (r2Y = 140.0f * uiScale)
-        float r2Y = 140.0f * uiScale;
-        drawText("Fullscreen", drawerX + padX, r2Y + 20.0f * uiScale, 0.40f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
-        drawText("Native ultrawide (expand Hor+ FOV)", drawerX + padX, r2Y + 36.0f * uiScale, 0.29f * uiScale, rgba(0.761f, 0.776f, 0.812f, 0.85f), 0);
-        drawM3Switch(drawerX + drawerW - padX - swW, r2Y + 10.0f * uiScale, swW, swH, mSettings.fullscreen);
+        // Row 2: Camera D-Pad Switch (r2Y = 130.0f * uiScale)
+        float r2Y = 130.0f * uiScale;
+        drawText("Camera D-Pad", drawerX + padX, r2Y + 20.0f * uiScale, 0.40f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
+        drawText("Limited camera rotation & reset", drawerX + padX, r2Y + 36.0f * uiScale, 0.29f * uiScale, rgba(0.761f, 0.776f, 0.812f, 0.85f), 0);
+        drawM3Switch(drawerX + drawerW - padX - swW, r2Y + 10.0f * uiScale, swW, swH, mSettings.showDpad);
 
-        // Row 3: Joystick Mode Segmented Button (r3Y = 196.0f * uiScale)
-        float r3Y = 196.0f * uiScale;
-        drawText("Joystick Mode", drawerX + padX, r3Y + 14.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
+        // Row 3: D-Pad Position Segmented Button (r3Y = 182.0f * uiScale)
+        float r3Y = 182.0f * uiScale;
+        drawText("D-Pad Position", drawerX + padX, r3Y + 14.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
+        const char* dpadSideOpts[2] = {"Left Side", "Right Side"};
+        drawSegmentedGroup(drawerX + padX, r3Y + 22.0f * uiScale, contentW, 34.0f * uiScale, dpadSideOpts, 2, mSettings.dpadOnRight ? 1 : 0);
+
+        // Row 4: Fullscreen Switch (r4Y = 242.0f * uiScale)
+        float r4Y = 242.0f * uiScale;
+        drawText("Fullscreen", drawerX + padX, r4Y + 20.0f * uiScale, 0.40f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
+        drawText("Native ultrawide (expand Hor+ FOV)", drawerX + padX, r4Y + 36.0f * uiScale, 0.29f * uiScale, rgba(0.761f, 0.776f, 0.812f, 0.85f), 0);
+        drawM3Switch(drawerX + drawerW - padX - swW, r4Y + 10.0f * uiScale, swW, swH, mSettings.fullscreen);
+
+        // Row 5: Joystick Mode Segmented Button (r5Y = 294.0f * uiScale)
+        float r5Y = 294.0f * uiScale;
+        drawText("Joystick Mode", drawerX + padX, r5Y + 14.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
         const char* joyOpts[2] = {"Dynamic", "Fixed"};
-        drawSegmentedGroup(drawerX + padX, r3Y + 22.0f * uiScale, contentW, 34.0f * uiScale, joyOpts, 2, mSettings.dynamicStick ? 0 : 1);
+        drawSegmentedGroup(drawerX + padX, r5Y + 22.0f * uiScale, contentW, 34.0f * uiScale, joyOpts, 2, mSettings.dynamicStick ? 0 : 1);
 
-        // Row 4: Controls Opacity Segmented Button (r4Y = 260.0f * uiScale)
-        float r4Y = 260.0f * uiScale;
-        drawText("Controls Opacity", drawerX + padX, r4Y + 14.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
+        // Row 6: Controls Opacity Segmented Button (r6Y = 354.0f * uiScale)
+        float r6Y = 354.0f * uiScale;
+        drawText("Controls Opacity", drawerX + padX, r6Y + 14.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
         const char* opOpts[4] = {"25%", "50%", "75%", "100%"};
         int opIdx = (fabsf(mSettings.opacity - 0.25f) < 0.12f) ? 0 : (fabsf(mSettings.opacity - 0.50f) < 0.12f) ? 1 : (fabsf(mSettings.opacity - 0.75f) < 0.12f) ? 2 : 3;
-        drawSegmentedGroup(drawerX + padX, r4Y + 22.0f * uiScale, contentW, 34.0f * uiScale, opOpts, 4, opIdx);
+        drawSegmentedGroup(drawerX + padX, r6Y + 22.0f * uiScale, contentW, 34.0f * uiScale, opOpts, 4, opIdx);
 
-        // Row 5: Button Size Segmented Button (r5Y = 324.0f * uiScale)
-        float r5Y = 324.0f * uiScale;
-        drawText("Button Size", drawerX + padX, r5Y + 14.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
+        // Row 7: Button Size Segmented Button (r7Y = 414.0f * uiScale)
+        float r7Y = 414.0f * uiScale;
+        drawText("Button Size", drawerX + padX, r7Y + 14.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
         const char* scOpts[3] = {"Small", "Medium", "Large"};
         int scIdx = (fabsf(mSettings.scale - 0.85f) < 0.08f) ? 0 : (fabsf(mSettings.scale - 1.25f) < 0.08f) ? 2 : 1;
-        drawSegmentedGroup(drawerX + padX, r5Y + 22.0f * uiScale, contentW, 34.0f * uiScale, scOpts, 3, scIdx);
+        drawSegmentedGroup(drawerX + padX, r7Y + 22.0f * uiScale, contentW, 34.0f * uiScale, scOpts, 3, scIdx);
 
-        // Row 6: Layout Edit / Reset Filled Tonal Buttons (r6Y = 388.0f * uiScale)
-        float r6Y = 388.0f * uiScale;
-        drawText("Controls Layout", drawerX + padX, r6Y + 14.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
-        float btn6Y = r6Y + 22.0f * uiScale;
+        // Row 8: Layout Edit / Reset Filled Tonal Buttons (r8Y = 474.0f * uiScale)
+        float r8Y = 474.0f * uiScale;
+        drawText("Controls Layout", drawerX + padX, r8Y + 14.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
+        float btn8Y = r8Y + 22.0f * uiScale;
         float b1X0 = drawerX + padX;
         float b1X1 = drawerX + padX + contentW * 0.56f - 4.0f * uiScale;
         float b2X0 = drawerX + padX + contentW * 0.56f + 4.0f * uiScale;
         float b2X1 = drawerX + drawerW - padX;
         // Reposition Filled Tonal Button
-        drawRoundRect(b1X0, btn6Y, b1X1, btn6Y + 34.0f * uiScale, 14.0f * uiScale, rgba(0.18f, 0.23f, 0.31f, 0.95f));
-        drawText("Reposition", (b1X0 + b1X1) * 0.5f, btn6Y + 22.0f * uiScale, 0.36f * uiScale, rgba(0.659f, 0.780f, 0.980f, 1.0f), 1);
+        drawRoundRect(b1X0, btn8Y, b1X1, btn8Y + 34.0f * uiScale, 14.0f * uiScale, rgba(0.18f, 0.23f, 0.31f, 0.95f));
+        drawText("Reposition", (b1X0 + b1X1) * 0.5f, btn8Y + 22.0f * uiScale, 0.36f * uiScale, rgba(0.659f, 0.780f, 0.980f, 1.0f), 1);
         // Reset Destructive Tonal Button
-        drawRoundRect(b2X0, btn6Y, b2X1, btn6Y + 34.0f * uiScale, 14.0f * uiScale, rgba(0.35f, 0.15f, 0.17f, 0.95f));
-        drawText("Reset", (b2X0 + b2X1) * 0.5f, btn6Y + 22.0f * uiScale, 0.36f * uiScale, rgba(1.0f, 0.72f, 0.72f, 1.0f), 1);
+        drawRoundRect(b2X0, btn8Y, b2X1, btn8Y + 34.0f * uiScale, 14.0f * uiScale, rgba(0.35f, 0.15f, 0.17f, 0.95f));
+        drawText("Reset", (b2X0 + b2X1) * 0.5f, btn8Y + 22.0f * uiScale, 0.36f * uiScale, rgba(1.0f, 0.72f, 0.72f, 1.0f), 1);
 
-        // Row 7: [ Done ] Action Pill Button
-        float doneY = std::min(h - 52.0f * uiScale, 452.0f * uiScale);
+        // Row 9: [ Done ] Action Pill Button
+        float doneY = std::min(h - 52.0f * uiScale, 538.0f * uiScale);
         float doneX0 = drawerX + padX;
         float doneX1 = drawerX + drawerW - padX;
         drawRoundRect(doneX0, doneY, doneX1, doneY + 38.0f * uiScale, 19.0f * uiScale, rgba(0.043f, 0.341f, 0.816f, 1.0f));

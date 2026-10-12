@@ -24,6 +24,11 @@ GalaxyMobile is a **native Android ARM64 port** of Super Mario Galaxy, compiled 
   - Interactive on-screen touch layout editor (drag buttons and stick to your desired positions).
 - **Responsive Touch & Star Pointer Controls**:
   - Ergonomic on-screen virtual stick and colored action buttons (A Jump, B Shoot Star Bit, Emerald Green SPIN, Violet Z Crouch/Ground Pound, + Pause).
+  - **On-Screen Camera D-Pad**: Full 4-way cross directional pad replicating the Wii Remote D-Pad for Super Mario Galaxy's camera controls:
+    - **Left / Right (◀ / ▶)**: Rotate and pivot camera around Mario.
+    - **Down (▼)**: Recenter camera directly behind Mario.
+    - **Up (▲)**: First-Person Look / Zoom mode.
+    - Fully customizable in Settings: toggle visibility, switch between Left and Right sides, or drag anywhere in the Layout Editor!
   - Direct 1:1 Star Pointer finger tracking: touch and drag anywhere on screen to collect and aim star bits.
   - Dedicated **SPIN** button shakes the virtual Wiimote without triggering ground pounds.
   - Dedicated **Z** button handles crouching and ground pounds.

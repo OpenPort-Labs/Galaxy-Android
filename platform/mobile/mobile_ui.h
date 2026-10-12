@@ -17,6 +17,10 @@ struct Settings {
     float stickOffsetY = 0.0f;
     float buttonOffsetX = 0.0f;
     float buttonOffsetY = 0.0f;
+    bool showDpad = true;
+    bool dpadOnRight = false;
+    float dpadOffsetX = 0.0f;
+    float dpadOffsetY = 0.0f;
 
     void load(const std::string& path);
     void save(const std::string& path) const;
@@ -59,6 +63,7 @@ private:
     float mDragStartX = 0.0f, mDragStartY = 0.0f;
     float mInitialStickOfsX = 0.0f, mInitialStickOfsY = 0.0f;
     float mInitialBtnOfsX = 0.0f, mInitialBtnOfsY = 0.0f;
+    float mInitialDpadOfsX = 0.0f, mInitialDpadOfsY = 0.0f;
 
     // Virtual Stick State
     int mStickPointerId = -1;
@@ -74,6 +79,10 @@ private:
     bool mBtnSpinPressed = false;
     bool mBtnPlusPressed = false;
     bool mBtnCfgPressed = false;
+    bool mBtnDpadLeft = false;
+    bool mBtnDpadRight = false;
+    bool mBtnDpadUp = false;
+    bool mBtnDpadDown = false;
 
     // Persistent in-game Star Pointer state (normalized -1..1, default to screen center 0, 0)
     float mPointerX = 0.0f;

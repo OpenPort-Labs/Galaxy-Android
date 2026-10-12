@@ -3,7 +3,7 @@ setlocal
 cd /d "%~dp0"
 
 echo ==============================================
-echo Building GalaxyMobile Installer APK
+echo Building GalaxyInstaller APK
 echo ==============================================
 echo.
 

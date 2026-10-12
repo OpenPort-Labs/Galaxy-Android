@@ -44,7 +44,7 @@ GalaxyMobile is a **native Android ARM64 port** of Super Mario Galaxy, compiled 
 ## Getting Started: How to Run on Android
 
 There are two ways to set up and play GalaxyMobile:
-- **Method 1 (Recommended / 100% PC-Less)**: Use the companion **[GalaxyInstaller.apk](out-mobile/GalaxyInstaller.apk)** directly on your phone — feed it your `.wbfs`, `.iso`, or `.zip` game dump and it handles extraction, decryption, and cooking directly on your phone! Zero PC needed!
+- **Method 1 (Recommended / 100% PC-Less)**: Use the companion **[GalaxyInstaller.apk](out-mobile/GalaxyInstaller.apk)** directly on your phone — feed it your `.rvz`, `.wbfs`, `.iso`, or `.wia` game dump and it handles extraction, decryption, and cooking directly on your phone! Zero PC needed!
 - **Method 2 (Advanced / PC Toolchain)**: Cook assets on your PC using Python and push them via USB (`adb` or `transfer_game.bat`).
 
 ---
@@ -54,27 +54,29 @@ There are two ways to set up and play GalaxyMobile:
 With the dedicated `GalaxyInstaller` app, your phone does everything on-device — no PC, Python setup, or command line required:
 
 1. **Get your Super Mario Galaxy game dump on your phone**:
-   - Download or transfer your game dump directly on your Android device (into your **`Download`** folder).
-   - Supported formats:
+   - Download or transfer your game dump directly onto your Android device (into your **`Download`** folder).
+   - Supported disc formats:
+     - **`.rvz`** (Dolphin modern compressed format — auto-extracted directly on device)
      - **`.wbfs`** (Wii Backup File System — standard format created by CleanRip / USB Loader GX)
      - **`.iso`** (Standard Wii optical disc image)
-     - **`.zip`** (Archive containing game files or dump)
+     - **`.wia`** (Wii ISO Archive format)
+     - **`.zip`** (Archive containing game dump files)
      - *(Or an extracted game folder from Dolphin)*
 2. **Install both APKs on your phone**:
-   - Install [`out-mobile/GalaxyMobile.apk`](out-mobile/GalaxyMobile.apk) (the game engine).
-   - Install [`out-mobile/GalaxyInstaller.apk`](out-mobile/GalaxyInstaller.apk) (the companion installer).
+   - Install [`out-mobile/GalaxyMobile.apk`](out-mobile/GalaxyMobile.apk) (the game engine, package: `com.galaxy.mobile`).
+   - Install [`out-mobile/GalaxyInstaller.apk`](out-mobile/GalaxyInstaller.apk) (the companion installer, package: `com.galaxy.installer`).
 3. **Open GalaxyInstaller**:
    - Open **GalaxyInstaller** from your phone's app drawer.
    - Grant storage permission when prompted.
-   - The app will automatically scan your `Download` folder and detect your `.wbfs`, `.iso`, or `.zip` file!
+   - The app will automatically scan your `Download` folder and detect your `.rvz`, `.wbfs`, `.iso`, or `.wia` dump!
    - *(Or tap **"Select Game Disc (.wbfs / .iso / .zip)"** to pick any file manually).*
 4. **Prepare Assets (1-Tap)**:
-   - Check **"Include Cutscene Movies"** if you want prologue and ending cinematics.
+   - Check **"Include Cutscene Movies"** if you want prologue and ending cinematics (~2.3 GB).
    - Tap **"Start Cooking Game Data"**.
    - The app automatically:
-     1. Decrypts and extracts the Wii optical disc data partition on-device using its native ARM64 AES engine.
-     2. Runs the embedded cooker engine to convert textures, geometry, audio streams, and levels directly into `/sdcard/Download/game`.
-     3. Automatically cleans up temporary cache files so your phone storage is preserved.
+     1. Unpacks and decrypts the optical disc partition on-device using its native ARM64 extraction engine (`libnodtool.so`).
+     2. Runs multi-threaded asset cooking powered by an embedded ARM64 Python runtime and hardware-accelerated native C Yaz0 decompression (`libinstaller.so`), converting textures, geometry, audio streams, and levels directly into `/sdcard/Download/game`.
+     3. Preserves temporary extraction cache across retries and cleans it up only upon successful completion.
 5. **Launch & Play**:
    - Tap **"Launch GalaxyMobile 🚀"** and enjoy native 60 FPS Super Mario Galaxy on Android!
 
@@ -168,9 +170,9 @@ This processes textures, geometry, audio streams, and cinematics into format-opt
 #### Step 5: Install and Run GalaxyMobile
 1. Install [`out-mobile/GalaxyMobile.apk`](out-mobile/GalaxyMobile.apk) on your device:
    ```bash
-   adb install --no-incremental -r out-mobile/GalaxyMobile.apk
+   adb install -r -t -g out-mobile/GalaxyMobile.apk
    ```
-   *(Or double-click `deploy_to_phone.bat` on Windows).*
+   *(Package name: `com.galaxy.mobile`. Or double-click `deploy_to_phone.bat` on Windows).*
 2. Launch **GalaxyMobile** from your phone's app drawer!
 3. Tap the `⚙` gear tab at the top-left of the screen to customize your controls or enable **Fullscreen (Hor+ Ultrawide)** mode.
 
@@ -178,30 +180,37 @@ This processes textures, geometry, audio streams, and cinematics into format-opt
 
 ## Building from Source
 
-To compile the Android APK yourself:
+To compile the Android APKs yourself:
 
 ### Requirements
-- Android NDK `r25` or `r26`
+- Android NDK `r25` or `r26` (or newer)
 - Android SDK (API 32+ and Build-Tools 34+)
 - CMake 3.22+ and Ninja
-- JDK 17+ (for `keytool` and `apksigner`)
+- JDK 17+ (for `javac`, `d8`, and `apksigner`)
+- Python 3.8+
 
 ### Build Commands
 
-#### 1. Building GalaxyMobile (Game APK)
-1. **Configure and compile the native library (`libgame.so`)**:
-   ```bash
-   # From Git Bash or Linux shell:
-   ./build_mobile.sh
-   ```
-2. **Package and sign the APK**:
-   ```bash
-   ./package_mobile_apk.sh
-   ```
+#### 1. Building GalaxyMobile (`com.galaxy.mobile`)
+1. **Configure and compile the native engine library (`libgame.so`)**:
+   - **Windows / Linux / macOS**:
+     ```bash
+     cmake --build build-mobile --target game
+     ```
+     *(Or run `./build_mobile.sh` via Git Bash).*
+2. **Package, align (16KB page-size compatible), and sign the APK**:
+   - **Windows (Python 3)**:
+     ```cmd
+     py package_mobile_apk.py
+     ```
+   - **Linux / macOS**:
+     ```bash
+     ./package_mobile_apk.sh
+     ```
 3. The resulting APK will be saved to `out-mobile/GalaxyMobile.apk`.
 
-#### 2. Building GalaxyInstaller (Companion Installer APK)
-- **Windows (1-Click)**:
+#### 2. Building GalaxyInstaller (`com.galaxy.installer`)
+- **Windows (1-Click Batch)**:
   ```cmd
   build_installer.bat
   ```

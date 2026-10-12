@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">GalaxyMobile Installer</string>
-    <string name="header_title">GalaxyMobile Setup</string>
+    <string name="app_name">GalaxyInstaller</string>
+    <string name="header_title">GalaxyInstaller Setup</string>
     <string name="header_subtitle">Automated Game Data Cooker &amp; Installer</string>
     <string name="section_source">Step 1: Game Data Source (PC-less)</string>
     <string name="btn_select_disc">Select Game Disc (.wbfs / .iso / .zip)</string>

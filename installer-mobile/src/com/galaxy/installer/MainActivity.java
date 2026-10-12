@@ -100,10 +100,10 @@ public class MainActivity extends Activity {
         if (downloadDir != null && downloadDir.exists()) {
             File[] files = downloadDir.listFiles();
             if (files != null) {
-                // Priority 1: .wbfs or .iso files
+                // Priority 1: .rvz, .wbfs, or .iso files
                 for (File f : files) {
                     String name = f.getName().toLowerCase();
-                    if (name.endsWith(".wbfs") || name.endsWith(".iso")) {
+                    if (name.endsWith(".rvz") || name.endsWith(".wbfs") || name.endsWith(".iso")) {
                         selectSource(f.getAbsolutePath(), "Auto-detected disc: " + f.getName());
                         return;
                     }
@@ -269,24 +269,24 @@ public class MainActivity extends Activity {
                 String cookInputPath = sourcePath;
                 File sourceFile = new File(sourcePath);
 
-                // Step 2: Handle Wii Disc Image (.wbfs / .iso) extraction
-                boolean isDisc = false;
-                if (sourceFile.isFile()) {
-                    isDisc = CookerEngine.isWiiDisc(sourcePath) ||
-                             sourcePath.toLowerCase().endsWith(".wbfs") ||
-                             sourcePath.toLowerCase().endsWith(".iso");
-                }
+                // Step 2: Handle Wii Disc Image (.rvz / .wbfs / .iso / .wia / .ciso) extraction
+                String lower = sourcePath.toLowerCase();
+                boolean isDisc = sourceFile.isFile() && (
+                    lower.endsWith(".rvz") || lower.endsWith(".wbfs") || lower.endsWith(".iso") ||
+                    lower.endsWith(".wia") || lower.endsWith(".ciso") || CookerEngine.isWiiDisc(sourcePath)
+                );
 
                 if (isDisc) {
-                    appendLog("[Stage 1/2] Native Wii Optical Disc detected.");
-                    appendLog("[Stage 1/2] Decrypting partition and extracting game files on-device...");
+                    appendLog("[Stage 1/2] Native Wii Disc detected (" + sourceFile.getName() + ").");
+                    appendLog("[Stage 1/2] Decrypting and extracting game data on-device...");
                     mHandler.post(() -> txtProgressStatus.setText("Extracting Wii disc image..."));
 
                     tempExtractionDir = new File(getFilesDir(), "extracted_cache");
                     CookerEngine.deleteRecursive(tempExtractionDir);
                     tempExtractionDir.mkdirs();
 
-                    int extractRet = CookerEngine.extractDisc(
+                    boolean extractSuccess = CookerEngine.extractWithNodtool(
+                        MainActivity.this,
                         sourcePath,
                         tempExtractionDir.getAbsolutePath(),
                         withMovies,
@@ -308,8 +308,34 @@ public class MainActivity extends Activity {
                         }
                     );
 
-                    if (extractRet != 0) {
-                        throw new RuntimeException("Disc extraction failed (code: " + extractRet + ")");
+                    if (!extractSuccess && (lower.endsWith(".wbfs") || lower.endsWith(".iso"))) {
+                        appendLog("[Fallback] Retrying with secondary native C++ decryptor...");
+                        int extractRet = CookerEngine.extractDisc(
+                            sourcePath,
+                            tempExtractionDir.getAbsolutePath(),
+                            withMovies,
+                            new CookerEngine.CookerCallback() {
+                                @Override public void onLog(String line) { appendLog(line); }
+                                @Override
+                                public void onProgress(int percent, String message) {
+                                    mHandler.post(() -> {
+                                        if (percent >= 0) {
+                                            progressBar.setIndeterminate(false);
+                                            progressBar.setProgress(percent);
+                                        }
+                                        if (message != null) {
+                                            txtProgressStatus.setText(message);
+                                        }
+                                    });
+                                }
+                                @Override public void onFinished(boolean success, String message) {}
+                            }
+                        );
+                        extractSuccess = (extractRet == 0);
+                    }
+
+                    if (!extractSuccess) {
+                        throw new RuntimeException("Disc extraction failed.");
                     }
 
                     appendLog("[Stage 1/2] Disc extraction complete.");

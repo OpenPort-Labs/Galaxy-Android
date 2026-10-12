@@ -79,16 +79,86 @@ public class CookerEngine {
         fileOrDirectory.delete();
     }
 
+    public static boolean extractWithNodtool(Context context, String imagePath, String outDir, boolean includeMovies, CookerCallback callback) {
+        File nodtool = new File(context.getFilesDir(), "bin/nodtool");
+        if (!nodtool.exists()) {
+            try {
+                prepareAssets(context, callback);
+            } catch (Exception ignored) {}
+        }
+        nodtool.setExecutable(true, false);
+
+        if (callback != null) callback.onLog("[Extractor] Invoking native disc extractor on: " + new File(imagePath).getName());
+
+        try {
+            ProcessBuilder pb = new ProcessBuilder(
+                nodtool.getAbsolutePath(), "extract", "-p", "data", imagePath, outDir
+            );
+            pb.redirectErrorStream(true);
+            Process proc = pb.start();
+
+            try (java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(proc.getInputStream()))) {
+                String line;
+                int count = 0;
+                while ((line = reader.readLine()) != null) {
+                    if (line.startsWith("Extracting ")) {
+                        count++;
+                        if (count % 35 == 0 && callback != null) {
+                            String rel = line.replace("Extracting ", "").trim();
+                            callback.onProgress(-1, "Extracting: " + rel);
+                        }
+                    } else if (callback != null && !line.trim().isEmpty()) {
+                        callback.onLog(line.trim());
+                    }
+                }
+            }
+
+            int exitCode = proc.waitFor();
+            if (exitCode != 0) {
+                if (callback != null) callback.onLog("[Error] Disc extractor failed with exit code: " + exitCode);
+                return false;
+            }
+
+            if (!includeMovies) {
+                File movieDir = new File(outDir, "files/MovieData");
+                if (movieDir.exists()) {
+                    if (callback != null) callback.onLog("[Extractor] Omitting cutscenes (saving 2.3 GB space)...");
+                    deleteRecursive(movieDir);
+                }
+            }
+
+            if (callback != null) callback.onLog("[Extractor] Disc extraction successfully finished.");
+            return true;
+        } catch (Exception e) {
+            Log.e(TAG, "Nodtool extraction error", e);
+            if (callback != null) callback.onLog("[Error] Failed to extract disc: " + e.getMessage());
+            return false;
+        }
+    }
+
     public static void prepareAssets(Context context, CookerCallback callback) throws Exception {
         File filesDir = context.getFilesDir();
         File pythonHomeDir = new File(filesDir, "pythonhome");
         File scriptsDir = new File(filesDir, "scripts");
+        File binDir = new File(filesDir, "bin");
 
-        if (!pythonHomeDir.exists()) {
-            pythonHomeDir.mkdirs();
-        }
-        if (!scriptsDir.exists()) {
-            scriptsDir.mkdirs();
+        if (!pythonHomeDir.exists()) pythonHomeDir.mkdirs();
+        if (!scriptsDir.exists()) scriptsDir.mkdirs();
+        if (!binDir.exists()) binDir.mkdirs();
+
+        // Unpack nodtool binary
+        File nodtoolFile = new File(binDir, "nodtool");
+        if (!nodtoolFile.exists() || nodtoolFile.length() == 0) {
+            try (InputStream in = context.getAssets().open("bin/nodtool");
+                 OutputStream out = new FileOutputStream(nodtoolFile)) {
+                byte[] buf = new byte[65536];
+                int len;
+                while ((len = in.read(buf)) > 0) {
+                    out.write(buf, 0, len);
+                }
+            }
+            nodtoolFile.setExecutable(true, false);
+            if (callback != null) callback.onLog("[Setup] Native disc extraction tool unpacked.");
         }
 
         // Unpack pythonhome.zip if not already extracted

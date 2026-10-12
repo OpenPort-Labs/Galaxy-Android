@@ -99,6 +99,7 @@ bool checkGameFolder(const std::string& dir, bool* ready) {
 std::string findGameData(const std::string& extDir) {
     std::vector<std::string> candidates = {
         extDir + "/game",
+        "/sdcard/Android/data/com.galaxy.mobile/files/game",
         "/sdcard/Android/data/com.galaxy.quest/files/game",
         "/sdcard/Galaxy/game",
         "/sdcard/GalaxyQuest",
@@ -443,7 +444,7 @@ extern "C" __attribute__((visibility("default"))) void port_android_main(struct 
     a.pad.connected = 1;
     port_input_set(0, &a.pad);
 
-    std::string ext = app->activity->externalDataPath ? app->activity->externalDataPath : "/sdcard/Android/data/com.galaxy.quest/files";
+    std::string ext = app->activity->externalDataPath ? app->activity->externalDataPath : "/sdcard/Android/data/com.galaxy.mobile/files";
     a.saveRoot = std::string(app->activity->internalDataPath) + "/nand";
     mkdir(a.saveRoot.c_str(), 0770);
     mobile_ui::get().setSavePath(a.saveRoot + "/touch_settings.ini");

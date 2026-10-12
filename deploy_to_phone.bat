@@ -27,7 +27,7 @@ if %ERRORLEVEL% neq 0 (
 
 echo.
 echo Launching GalaxyMobile on device...
-%ADB% shell am start -n com.galaxy.quest/android.app.NativeActivity
+%ADB% shell am start -n com.galaxy.mobile/android.app.NativeActivity
 echo.
 echo [SUCCESS] GalaxyMobile updated and launched!
 echo.

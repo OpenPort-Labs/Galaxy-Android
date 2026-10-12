@@ -17,7 +17,7 @@ import sys
 import tarfile
 import tempfile
 
-PACKAGE = 'com.galaxy.quest'
+PACKAGE = 'com.galaxy.mobile'
 DEST = '/sdcard/Android/data/%s/files/game' % PACKAGE
 TMP = '/data/local/tmp/petari_game_data.tar'
 

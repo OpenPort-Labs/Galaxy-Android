@@ -27,19 +27,19 @@ Write-Host "Installing updated GalaxyMobile.apk..."
 & $ADB install --no-incremental -r out-mobile/GalaxyMobile.apk
 
 Write-Host "Checking if MovieData already exists on device..."
-$movieCheck = & $ADB shell "ls -d /sdcard/Android/data/com.galaxy.quest/files/game/files/MovieData 2>/dev/null"
+$movieCheck = & $ADB shell "ls -d /sdcard/Android/data/com.galaxy.mobile/files/game/files/MovieData 2>/dev/null"
 if ($movieCheck -match "MovieData") {
     Write-Host "MovieData already exists on device. Verifying PrologueA.thp..."
-    $prologueCheck = & $ADB shell "ls -l /sdcard/Android/data/com.galaxy.quest/files/game/files/MovieData/PrologueA.thp 2>/dev/null"
+    $prologueCheck = & $ADB shell "ls -l /sdcard/Android/data/com.galaxy.mobile/files/game/files/MovieData/PrologueA.thp 2>/dev/null"
     Write-Host $prologueCheck
 } else {
     Write-Host "Pushing MovieData (2.39 GB)..."
     & $ADB push movies.tar /data/local/tmp/petari_movies.tar
     Write-Host "Extracting MovieData into game storage..."
-    & $ADB shell "mkdir -p /sdcard/Android/data/com.galaxy.quest/files/game/files && cd /sdcard/Android/data/com.galaxy.quest/files/game/files && tar xf /data/local/tmp/petari_movies.tar && rm /data/local/tmp/petari_movies.tar && chmod -R a+rX /sdcard/Android/data/com.galaxy.quest/files/game/files/MovieData"
+    & $ADB shell "mkdir -p /sdcard/Android/data/com.galaxy.mobile/files/game/files && cd /sdcard/Android/data/com.galaxy.mobile/files/game/files && tar xf /data/local/tmp/petari_movies.tar && rm /data/local/tmp/petari_movies.tar && chmod -R a+rX /sdcard/Android/data/com.galaxy.mobile/files/game/files/MovieData"
     Write-Host "MovieData extraction complete!"
 }
 
 Write-Host "Launching GalaxyMobile on device..."
-& $ADB shell am start -n com.galaxy.quest/android.app.NativeActivity
+& $ADB shell am start -n com.galaxy.mobile/android.app.NativeActivity
 Write-Host "GalaxyMobile launched successfully!"

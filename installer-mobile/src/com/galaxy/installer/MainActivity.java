@@ -445,11 +445,16 @@ public class MainActivity extends Activity {
     }
 
     private void launchGalaxyMobile() {
-        Intent launchIntent = getPackageManager().getLaunchIntentForPackage("com.galaxy.quest");
+        Intent launchIntent = getPackageManager().getLaunchIntentForPackage("com.galaxy.mobile");
         if (launchIntent != null) {
             startActivity(launchIntent);
         } else {
-            Toast.makeText(this, "GalaxyMobile (com.galaxy.quest) is not installed yet!", Toast.LENGTH_LONG).show();
+            launchIntent = getPackageManager().getLaunchIntentForPackage("com.galaxy.quest");
+            if (launchIntent != null) {
+                startActivity(launchIntent);
+            } else {
+                Toast.makeText(this, "GalaxyMobile (com.galaxy.mobile) is not installed yet!", Toast.LENGTH_LONG).show();
+            }
         }
     }
 

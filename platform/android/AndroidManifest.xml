@@ -4,7 +4,7 @@
   documentation/native/android/mobile-openxr.md and resources/publish-mobile-manifest.md
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.galaxy.quest"
+    package="com.galaxy.mobile"
     android:versionCode="9"
     android:versionName="0.1.8"
     android:installLocation="auto">

@@ -25,4 +25,5 @@ screen*.png
 out-mobile/apk/
 *.apk
 !out-mobile/GalaxyMobile.apk
+!out-mobile/GalaxyInstaller.apk
 

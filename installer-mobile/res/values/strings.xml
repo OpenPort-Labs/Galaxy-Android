@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">GalaxyMobile Installer</string>
+    <string name="header_title">GalaxyMobile Setup</string>
+    <string name="header_subtitle">Automated Game Data Cooker &amp; Installer</string>
+    <string name="section_source">Step 1: Game Data Source</string>
+    <string name="btn_select_file">Select Disc / Extracted Folder</string>
+    <string name="no_source_selected">No game file or folder selected</string>
+    <string name="section_options">Step 2: Conversion Options</string>
+    <string name="include_movies">Include Cutscene Movies (~2.3 GB)</string>
+    <string name="section_cook">Step 3: Prepare Game Data</string>
+    <string name="btn_start_cook">Start Cooking Game Data</string>
+    <string name="btn_launch_game">Launch GalaxyMobile 🚀</string>
+    <string name="status_ready">Ready to prepare game files.</string>
+    <string name="status_cooking">Cooking game data... Please keep app open.</string>
+    <string name="status_done">All game files cooked successfully! Ready to play.</string>
+    <string name="status_error">An error occurred during cooking.</string>
+</resources>

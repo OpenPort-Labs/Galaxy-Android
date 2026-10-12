@@ -43,7 +43,43 @@ GalaxyMobile is a **native Android ARM64 port** of Super Mario Galaxy, compiled 
 
 ## Getting Started: How to Run on Android
 
-### Prerequisites
+There are two ways to set up and play GalaxyMobile:
+- **Method 1 (Recommended / Easiest)**: Use the companion **[GalaxyInstaller.apk](out-mobile/GalaxyInstaller.apk)** directly on your phone — no Python setup, terminal commands, or manual PC cooking required!
+- **Method 2 (Advanced / PC Toolchain)**: Cook assets on your PC using Python and push them via USB (`adb` or `transfer_game.bat`).
+
+---
+
+### Method 1: On-Device Companion Installer (Easiest)
+
+With the dedicated `GalaxyInstaller` app, your phone does all asset conversions, format optimizations, and filesystem placement automatically:
+
+1. **Extract your game disc on PC**:
+   - Open [Dolphin Emulator](https://dolphin-emu.org/) on your PC.
+   - Right-click **Super Mario Galaxy** > **Properties** > **Filesystem**.
+   - Right-click the top disc entry > **Extract Entire Disc...** into a folder named `extracted` (or `Super Mario Galaxy`).
+   - *(Optional)* Compress the extracted folder into a `.zip` file for faster file transfer.
+2. **Transfer extracted files to your phone**:
+   - Plug your phone into your PC via USB and copy the extracted folder (or `.zip`) into your phone's **`Download`** folder.
+3. **Install both APKs on your phone**:
+   - Install [`out-mobile/GalaxyMobile.apk`](out-mobile/GalaxyMobile.apk) (the game engine).
+   - Install [`out-mobile/GalaxyInstaller.apk`](out-mobile/GalaxyInstaller.apk) (the companion installer).
+4. **Run GalaxyInstaller**:
+   - Open **GalaxyInstaller** from your app drawer.
+   - Grant storage permission when prompted.
+   - Tap **"Auto-Detect"** or **"Browse Folder / ZIP"** to select your extracted game folder.
+   - Check **"Include Cutscenes & Movies"** if you want prologue and ending cinematics.
+   - Tap **"Cook & Prepare Assets"**.
+   - The installer uses its embedded native Python ARM64 engine to convert all textures, models, audio, and scripts directly on your phone.
+5. **Launch & Play**:
+   - Once completed, tap **"Launch GalaxyMobile"** and enjoy 60 FPS Super Mario Galaxy on Android!
+
+---
+
+### Method 2: PC Toolchain (Command Line & ADB)
+
+For users who prefer cooking assets ahead of time on their desktop:
+
+#### Prerequisites
 1. **An Android device**: Phone or tablet with ARM64 (`arm64-v8a`), Android 12 or newer, and ~5 GB of free internal storage.
 2. **A PC** (Windows, macOS, or Linux) with:
    - [Python 3.8 or newer](https://www.python.org/downloads/)
@@ -54,7 +90,7 @@ GalaxyMobile is a **native Android ARM64 port** of Super Mario Galaxy, compiled 
 
 ---
 
-### Step 1: Enable USB Debugging on Your Android Phone
+#### Step 1: Enable USB Debugging on Your Android Phone
 1. Open **Settings > About phone**.
 2. Tap **Build number** 7 times until you see "You are now a developer!".
 3. Go to **Settings > System > Developer options** (or **Developer options** directly).
@@ -69,7 +105,7 @@ adb devices
 
 ---
 
-### Step 2: Extract Your Game Disc
+#### Step 2: Extract Your Game Disc
 1. Open **Dolphin Emulator** on your PC.
 2. In Dolphin's game list, right-click **Super Mario Galaxy** > **Properties** > **Filesystem**.
 3. Right-click the disc entry at the very top of the tree > **Extract Entire Disc...**.
@@ -83,7 +119,7 @@ DolphinTool extract -i "Super Mario Galaxy.rvz" -o extracted
 
 ---
 
-### Step 3: Convert (Cook) the Game Assets
+#### Step 3: Convert (Cook) the Game Assets
 Run the asset converter from the repository root:
 
 - **Windows (Command Prompt / PowerShell)**:
@@ -99,14 +135,14 @@ This processes textures, geometry, audio streams, and cinematics into format-opt
 
 ---
 
-### Step 4: Transfer Game Files to Your Phone
+#### Step 4: Transfer Game Files to Your Phone
 
-#### Option A: 1-Click Automated Script (Recommended on Windows)
+##### Option A: 1-Click Automated Script (Recommended on Windows)
 1. Ensure your phone is plugged in via USB with USB debugging enabled.
 2. Double-click [`transfer_game.bat`](transfer_game.bat) (or run `.\transfer_game.bat` in terminal).
 3. The script automatically bundles the ~3.3 GB cooked assets and streams them directly onto your device in about 2 minutes with zero manual setup.
 
-#### Option B: Command Line (Cross-Platform)
+##### Option B: Command Line (Cross-Platform)
 - **Windows**:
   ```cmd
   py tools\push_data.py cooked
@@ -116,7 +152,7 @@ This processes textures, geometry, audio streams, and cinematics into format-opt
   python3 tools/push_data.py cooked
   ```
 
-#### Option C: Drag-and-Drop via File Explorer (No ADB Needed)
+##### Option C: Drag-and-Drop via File Explorer (No ADB Needed)
 1. Compress your `cooked` folder into a zip file (`game.zip`).
 2. Plug your phone into your PC and drag `game.zip` into your phone's **`Download`** folder.
 3. On your phone, open your file manager (Samsung My Files / Google Files) and extract `game.zip`.
@@ -124,7 +160,7 @@ This processes textures, geometry, audio streams, and cinematics into format-opt
 
 ---
 
-### Step 5: Install and Run GalaxyMobile
+#### Step 5: Install and Run GalaxyMobile
 1. Install [`out-mobile/GalaxyMobile.apk`](out-mobile/GalaxyMobile.apk) on your device:
    ```bash
    adb install --no-incremental -r out-mobile/GalaxyMobile.apk
@@ -146,6 +182,8 @@ To compile the Android APK yourself:
 - JDK 17+ (for `keytool` and `apksigner`)
 
 ### Build Commands
+
+#### 1. Building GalaxyMobile (Game APK)
 1. **Configure and compile the native library (`libgame.so`)**:
    ```bash
    # From Git Bash or Linux shell:
@@ -156,6 +194,17 @@ To compile the Android APK yourself:
    ./package_mobile_apk.sh
    ```
 3. The resulting APK will be saved to `out-mobile/GalaxyMobile.apk`.
+
+#### 2. Building GalaxyInstaller (Companion Installer APK)
+- **Windows (1-Click)**:
+  ```cmd
+  build_installer.bat
+  ```
+- **Cross-Platform / Python**:
+  ```bash
+  python installer-mobile/build.py
+  ```
+- The resulting APK will be saved to `out-mobile/GalaxyInstaller.apk`.
 
 ---
 

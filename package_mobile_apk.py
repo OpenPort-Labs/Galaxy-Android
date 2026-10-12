@@ -53,7 +53,7 @@ def main():
         "-R", res_zip,
         "--auto-add-overlay",
         "-I", ANDROID_JAR,
-        "--min-sdk-version", "32",
+        "--min-sdk-version", "30",
         "--target-sdk-version", "34"
     ])
 

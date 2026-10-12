@@ -94,7 +94,7 @@ With the dedicated `GalaxyInstaller` app, your phone does everything on-device â
      2. Runs multi-threaded asset cooking powered by an embedded ARM64 Python runtime and hardware-accelerated native C Yaz0 decompression (`libinstaller.so`), converting textures, geometry, audio streams, and levels directly into `/sdcard/GalaxyData`.
      3. Preserves temporary extraction cache across retries and cleans it up only upon successful completion.
 5. **Launch & Play**:
-   - Tap **"Launch GalaxyMobile ðŸš€"** or **GalaxyMobile+** and enjoy native 60 FPS Super Mario Galaxy on Android!
+   - Tap **"Launch GalaxyMobile"** or **GalaxyMobile+** and enjoy native 60 FPS Super Mario Galaxy on Android!
 
 ---
 
@@ -103,7 +103,7 @@ With the dedicated `GalaxyInstaller` app, your phone does everything on-device â
 For users who prefer cooking assets ahead of time on their desktop:
 
 #### Prerequisites
-1. **An Android device**: Phone or tablet with ARM64 (`arm64-v8a`), Android 12 or newer, and ~5 GB of free internal storage.
+1. **An Android device**: Phone or tablet with ARM64 (`arm64-v8a`), Android 11 or newer (API 30+), and ~5 GB of free internal storage.
 2. **A PC** (Windows, macOS, or Linux) with:
    - [Python 3.8 or newer](https://www.python.org/downloads/)
    - [Android SDK Platform-Tools (`adb`)](https://developer.android.com/tools/releases/platform-tools)
@@ -213,7 +213,7 @@ To compile the Android APKs yourself:
 
 ### Requirements
 - Android NDK `r25` or `r26` (or newer)
-- Android SDK (API 32+ and Build-Tools 34+)
+- Android SDK (API 30+ and Build-Tools 34+)
 - CMake 3.22+ and Ninja
 - JDK 17+ (for `javac`, `d8`, and `apksigner`)
 - Python 3.8+

@@ -53,7 +53,7 @@ package_flavor() {
 
   rm -f $OUT/base.apk $OUT/aligned.apk
   "$BT/aapt2$EXE" link -o $OUT/base.apk --manifest "$MANIFEST" -R $OUT/res.zip --auto-add-overlay \
-    -I "$(native_path "$PLATFORM/android.jar")" --min-sdk-version 32 --target-sdk-version 34
+    -I "$(native_path "$PLATFORM/android.jar")" --min-sdk-version 30 --target-sdk-version 34
 
   (cd $OUT/apk && py3 - << 'PY'
 import zipfile, os

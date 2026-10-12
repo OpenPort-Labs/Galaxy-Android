@@ -45,7 +45,7 @@ function Build-ApkFlavor {
     if (Test-Path "$out\aligned.apk") { Remove-Item "$out\aligned.apk" -Force }
 
     & "$bt\aapt2.exe" link -o "$out\base.apk" --manifest $Manifest -R "$out\res.zip" --auto-add-overlay `
-      -I "$platform\android.jar" --min-sdk-version 32 --target-sdk-version 34
+      -I "$platform\android.jar" --min-sdk-version 30 --target-sdk-version 34
 
     # Add native libs to base.apk
     $pyCode = @"

@@ -142,6 +142,9 @@ namespace MR {
     }
 
     void loadProjectionMtx() {
+#ifdef TARGET_PC
+        ::getCameraContext()->updateProjectionMtx();
+#endif
         GXSetProjection(::getCameraContext()->mProjection, (GXProjectionType) 0);
     }
 

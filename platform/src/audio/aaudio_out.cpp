@@ -196,7 +196,11 @@ bool openStream(u32 rate) {
     // ring, instead of the default 8.
     int32_t burst = AAudioStream_getFramesPerBurst(sStream);
     if (burst > 0) {
+#if TARGET_MOBILE
+        AAudioStream_setBufferSizeInFrames(sStream, burst * 8);
+#else
         AAudioStream_setBufferSizeInFrames(sStream, burst * 3);
+#endif
     }
     sRingRead.store(sRingWrite.load());
     sResampler = Resampler();

@@ -222,11 +222,13 @@ static void aiClock() {
     // The game answers an interrupt from its audio thread, which only gets
     // the CPU at the running thread's next safe point, sometimes 10-20 ms
     // later.  The queued audio covers that.
+#if TARGET_MOBILE
+    const int64_t kTarget = 48000000;  // 48 ms queue headroom on mobile
+    const int64_t kLow = 16000000;
+#else
     const int64_t kTarget = 32000000;
-    // A block waits for the game to latch a new one until the device is down
-    // to this (two of the Quest's 4 ms bursts); then the latched block plays
-    // again, as on the console.
     const int64_t kLow = 8000000;
+#endif
     int64_t next = port_host_time_ns();  // start of the next block (timer pacing)
     u32 answered = sDmaLatched.load();
     u32 blocks = 0, late = 0;

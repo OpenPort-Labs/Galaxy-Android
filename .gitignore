@@ -1,5 +1,4 @@
 build*/
-*.apk
 *.idsig
 /out/
 build*.log
@@ -10,3 +9,20 @@ tools/cook/native/*.dll
 __pycache__/
 *.pyc
 /third_party/
+
+# Game dumps, disc images, and copyrighted asset data (never commit to git)
+*.rvz
+*.iso
+*.wbfs
+*.gcm
+*.ciso
+cooked/
+extracted/
+movies.tar
+screen*.png
+
+# APK output
+out-mobile/apk/
+*.apk
+!out-mobile/GalaxyMobile.apk
+

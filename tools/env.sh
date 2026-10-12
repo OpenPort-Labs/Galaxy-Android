@@ -21,7 +21,15 @@ esac
 
 # A path as native programs want it (C:/... on Windows).
 native_path() {
-  if [ -n "$IS_WINDOWS" ] && command -v cygpath > /dev/null; then cygpath -m "$1"; else echo "$1"; fi
+  if [ -n "$IS_WINDOWS" ]; then
+    if command -v cygpath > /dev/null 2>&1; then
+      cygpath -m "$1"
+    else
+      echo "$1" | sed -E 's|^/([a-zA-Z])/|\1:/|'
+    fi
+  else
+    echo "$1"
+  fi
 }
 
 first_dir() {
@@ -33,11 +41,12 @@ first_dir() {
 
 find_ndk() {
   first_dir "$ANDROID_NDK_HOME" "$ANDROID_NDK_ROOT" "$ANDROID_NDK" "$LOCAL_TOOLS/android-ndk-r29" \
-    $(ls -d "$(find_sdk 2> /dev/null)"/ndk/29.* 2> /dev/null | sort -V | tail -1)
+    $(ls -d "$(find_sdk 2> /dev/null)"/ndk/29.* 2> /dev/null | sort -V | tail -1) \
+    $(ls -d "$(find_sdk 2> /dev/null)"/ndk/* 2> /dev/null | sort -V | tail -1)
 }
 
 find_sdk() {
-  first_dir "$ANDROID_HOME" "$ANDROID_SDK_ROOT" "$LOCALAPPDATA/Android/Sdk" "$HOME/AppData/Local/Android/Sdk" "$HOME/Android/Sdk" \
+  first_dir "$ANDROID_HOME" "$ANDROID_SDK_ROOT" "$HOME/AppData/Local/Android/Sdk" "$LOCALAPPDATA/Android/Sdk" "$HOME/Android/Sdk" \
     "$HOME/Library/Android/sdk"
 }
 
@@ -56,8 +65,8 @@ find_program() {  # name, then fallbacks
   return 1
 }
 
-find_cmake() { [ -n "$CMAKE" ] && echo "$CMAKE" || find_program cmake $(ls "$LOCAL_TOOLS"/cmake-*/bin/cmake$EXE 2> /dev/null | tail -1); }
-find_ninja() { [ -n "$NINJA" ] && echo "$NINJA" || find_program ninja "$LOCAL_TOOLS/ninja/ninja$EXE"; }
+find_cmake() { [ -n "$CMAKE" ] && echo "$CMAKE" || find_program cmake $(ls "$LOCAL_TOOLS"/cmake-*/bin/cmake$EXE 2> /dev/null | tail -1) $(ls -d "$(find_sdk 2> /dev/null)"/cmake/*/bin/cmake$EXE 2> /dev/null | sort -V | tail -1); }
+find_ninja() { [ -n "$NINJA" ] && echo "$NINJA" || find_program ninja "$LOCAL_TOOLS/ninja/ninja$EXE" $(ls -d "$(find_sdk 2> /dev/null)"/cmake/*/bin/ninja$EXE 2> /dev/null | sort -V | tail -1); }
 
 find_adb() {
   if [ -n "$ADB" ]; then echo "$ADB"; return 0; fi
@@ -67,10 +76,12 @@ find_adb() {
 # A Python 3 that runs (on Windows "python" may be the Microsoft Store stub).
 find_python() {
   if [ -n "$PYTHON" ]; then echo "$PYTHON"; return 0; fi
-  for p in python3 python "$LOCAL_TOOLS/python/python$EXE"; do
-    if command -v "$p" > /dev/null && "$p" -c "import sys; sys.exit(sys.version_info < (3, 8))" 2> /dev/null; then
-      command -v "$p"
-      return 0
+  for p in python3 python "$LOCAL_TOOLS/python/python$EXE" $(ls "$(find_ndk 2> /dev/null)"/toolchains/llvm/prebuilt/*/python3/python$EXE 2> /dev/null | tail -1); do
+    if command -v "$p" > /dev/null 2>&1 || [ -x "$p" ]; then
+      if "$p" -c "import sys; sys.exit(sys.version_info < (3, 8))" 2> /dev/null; then
+        echo "$p"
+        return 0
+      fi
     fi
   done
   if command -v py > /dev/null && py -3 -c "" 2> /dev/null; then

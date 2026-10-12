@@ -166,7 +166,10 @@ void MoviePlayerSimple::exeSimpleOff() {
 
 void MoviePlayerSimple::exeOpen() {
     if (MR::isFirstStep(this)) {
-        mPlayerWrapper->open(mMovie->mMovieName);
+        if (!mPlayerWrapper->open(mMovie->mMovieName)) {
+            stopMovie();
+            return;
+        }
     }
 
     if (mPlayerWrapper->_9) {
@@ -178,6 +181,8 @@ void MoviePlayerSimple::exeOpen() {
         mPlayerWrapper->setBuffer(mMovie->mBuffer);
         mPlayerWrapper->preLoad(_44 != false);
         setNerve(GET_NERVE_ANON(MoviePlayerSimplePreload));
+    } else if (MR::isGreaterStep(this, 120)) {
+        stopMovie();
     }
 }
 

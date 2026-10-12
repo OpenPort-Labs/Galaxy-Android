@@ -201,6 +201,7 @@ bool GameSystem::isPreparedReset() const {
 void GameSystem::frameLoop() {
 #ifdef TARGET_PC
     port_perf_frame_begin();
+#ifndef TARGET_MOBILE
     if (port_skip_fast_forwarding()) {
         // A cutscene being skipped: nothing is drawn (the headset view is
         // dimmed), and the game logic runs as often as fits in a frame.  The
@@ -224,6 +225,19 @@ void GameSystem::frameLoop() {
         MainLoopFramework::sManager->waitForRetrace();
         return;
     }
+#else
+    if (port_skip_fast_forwarding()) {
+        int64_t start = port_host_time_ns();
+        do {
+            update();
+            calcAnim();
+            if (mSceneController->isChangingScene()) {
+                port_skip_scene_change();
+                break;
+            }
+        } while (port_skip_fast_forwarding() && port_host_time_ns() - start < 12000000);
+    }
+#endif
 #endif
     MainLoopFramework::sManager->beginRender();
     draw();

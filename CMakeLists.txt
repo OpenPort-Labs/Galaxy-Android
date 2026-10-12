@@ -44,7 +44,12 @@ set(DECOMP_INCLUDES
   ${DECOMP}/libs/RVLFaceLib/include
 )
 
+option(TARGET_MOBILE "Build flat-screen Android mobile target without OpenXR" OFF)
+
 set(PORT_DEFS TARGET_PC=1 NDEBUG=1 VERSION=0)
+if(TARGET_MOBILE)
+  list(APPEND PORT_DEFS TARGET_MOBILE=1)
+endif()
 
 # Paths in the binaries (__FILE__, debug info) relative to the repository
 # and the NDK, not the machine that built them.
@@ -104,6 +109,7 @@ target_include_directories(decomp PRIVATE ${DECOMP_INCLUDES})
 target_compile_definitions(decomp PRIVATE ${PORT_DEFS})
 target_compile_options(decomp PRIVATE ${PORT_COMMON_FLAGS} $<$<COMPILE_LANGUAGE:CXX>:${PORT_CXX_FLAGS}> $<$<COMPILE_LANGUAGE:C>:${PORT_C_FLAGS}>)
 
+
 # ---------------------------------------------------------------------------
 # Port platform layer + final game library
 # ---------------------------------------------------------------------------
@@ -111,9 +117,20 @@ file(GLOB_RECURSE PLATFORM_SRCS CONFIGURE_DEPENDS
   ${CMAKE_SOURCE_DIR}/platform/src/*.c
   ${CMAKE_SOURCE_DIR}/platform/src/*.cpp)
 
+if(TARGET_MOBILE)
+  list(FILTER PLATFORM_SRCS EXCLUDE REGEX "/xr/(xr_app|vr_game|vr_settings|vr_setup|xr_sim|ui_canvas)\\.cpp$")
+  file(GLOB_RECURSE MOBILE_SRCS CONFIGURE_DEPENDS
+    ${CMAKE_SOURCE_DIR}/platform/mobile/*.cpp
+    ${CMAKE_SOURCE_DIR}/platform/mobile/*.c)
+  list(APPEND PLATFORM_SRCS ${MOBILE_SRCS})
+endif()
+
 add_library(game SHARED $<TARGET_OBJECTS:decomp> ${PLATFORM_SRCS})
-target_include_directories(game PRIVATE ${DECOMP_INCLUDES})
+target_include_directories(game PRIVATE ${DECOMP_INCLUDES} ${CMAKE_SOURCE_DIR}/platform/src)
 target_compile_definitions(game PRIVATE ${PORT_DEFS} PORT_PLATFORM_CODE=1)
+if(TARGET_MOBILE)
+  target_compile_definitions(game PRIVATE TARGET_MOBILE=1)
+endif()
 target_compile_options(game PRIVATE ${PORT_COMMON_FLAGS} $<$<COMPILE_LANGUAGE:CXX>:${PORT_CXX_FLAGS}> $<$<COMPILE_LANGUAGE:C>:${PORT_C_FLAGS}>)
 target_link_options(game PRIVATE -Wl,--no-undefined -Wl,--error-limit=0)
 if(ANDROID)
@@ -124,15 +141,21 @@ if(ANDROID)
 endif()
 
 if(ANDROID)
-  # The Khronos OpenXR loader (tools/fetch_openxr.sh puts it there).
-  set(OPENXR_DIR ${CMAKE_SOURCE_DIR}/third_party/openxr/prefab/modules)
   set(GLUE_DIR ${ANDROID_NDK}/sources/android/native_app_glue)
 
-  add_library(openxr_loader SHARED IMPORTED)
-  set_target_properties(openxr_loader PROPERTIES IMPORTED_LOCATION ${OPENXR_DIR}/openxr_loader/libs/android.arm64-v8a/libopenxr_loader.so)
+  if(TARGET_MOBILE)
+    target_include_directories(game PRIVATE ${GLUE_DIR})
+    target_link_libraries(game PRIVATE EGL GLESv3 aaudio)
+  else()
+    # The Khronos OpenXR loader (tools/fetch_openxr.sh puts it there).
+    set(OPENXR_DIR ${CMAKE_SOURCE_DIR}/third_party/openxr/prefab/modules)
 
-  target_include_directories(game PRIVATE ${OPENXR_DIR}/headers/include ${GLUE_DIR})
-  target_link_libraries(game PRIVATE openxr_loader EGL GLESv3 aaudio)
+    add_library(openxr_loader SHARED IMPORTED)
+    set_target_properties(openxr_loader PROPERTIES IMPORTED_LOCATION ${OPENXR_DIR}/openxr_loader/libs/android.arm64-v8a/libopenxr_loader.so)
+
+    target_include_directories(game PRIVATE ${OPENXR_DIR}/headers/include ${GLUE_DIR})
+    target_link_libraries(game PRIVATE openxr_loader EGL GLESv3 aaudio)
+  endif()
 
   # Launcher: reserves the 32-bit game window and loads libgame.so into it.
   add_library(main SHARED platform/android/launcher.c ${GLUE_DIR}/android_native_app_glue.c)

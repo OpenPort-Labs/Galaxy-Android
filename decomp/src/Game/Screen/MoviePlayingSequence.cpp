@@ -297,6 +297,8 @@ void MoviePlayingSequence::exePlayStart() {
     } else if (MR::isMoviePlayerPlaying()) {
         MR::setMovieVolume(0.0f, 0);
         setNerve(GET_NERVE(MoviePlayingSequence, HostTypePlay));
+    } else if (MR::isGreaterStep(this, 180) || !MR::isActiveMoviePlayer()) {
+        setNerve(GET_NERVE(MoviePlayingSequence, HostTypeEndWait));
     }
 }
 

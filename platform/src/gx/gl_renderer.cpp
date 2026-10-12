@@ -138,7 +138,7 @@ struct Item {
     u32 uid;           // index into Prepared::uids
     GLuint program;    // resolved by the render thread
     GLenum prim;       // GL_TRIANGLES, GL_LINES or GL_POINTS
-    u8 useVr, hud;
+    u8 useVr, hud, hudSafe;
     u8 player;         // between the player markers (SpaceWarp stencil tag)
     u32 flags;
     u32 firstWord;     // first vertex, as a word offset into the frame's vertex data
@@ -162,7 +162,7 @@ struct Item {
 };
 
 bool sameBatchState(const Item& a, const Item& b) {
-    if (a.uid != b.uid || a.prim != b.prim || a.useVr != b.useVr || a.hud != b.hud || a.player != b.player || a.flags != b.flags) return false;
+    if (a.uid != b.uid || a.prim != b.prim || a.useVr != b.useVr || a.hud != b.hud || a.hudSafe != b.hudSafe || a.player != b.player || a.flags != b.flags) return false;
     if (a.blend != b.blend || a.colorMask != b.colorMask || a.depthTest != b.depthTest || a.depthWrite != b.depthWrite || a.cull != b.cull ||
         a.dstAlpha != b.dstAlpha)
         return false;
@@ -1343,6 +1343,8 @@ void Builder::build(std::shared_ptr<const Frame> frame, Prepared& out) {
             // The VR camera applies to the main 3D scene: perspective,
             // full-screen draws after the frame's camera.
             it.useVr = perspective && fullscreen && !inHud && cam.valid;
+            float p1 = bitsToFloat(xfRegs[0x21]);
+            it.hudSafe = inHud && !perspective && (fabsf(p1) < 0.5f);
 
             if (uidDirty || flags != lastUidFlags || inHud != lastUidHud) {
                 ShaderUid uid = makeShaderUid(bp, xfRegs, flags, inHud);
@@ -2025,11 +2027,26 @@ void Renderer::Impl::execute(EfbTarget& efb, const EyeView* eye, EfbTarget* hud,
             setViewport(0, 0, t.width, t.height);
             setScissor(false, 0, 0, 0, 0);
         } else {
-            int vx = (int)lroundf(it.vp[0] * fx), vw = (int)lroundf(it.vp[2] * fx);
+            int vx, vw, sx, sr;
+            float targetAspect = (float)t.width / (float)t.height;
+            const float k169 = 16.0f / 9.0f;
+            if (it.hudSafe && targetAspect > k169 + 0.01f) {
+                float hudW = (float)t.height * k169;
+                float hudOfsX = ((float)t.width - hudW) * 0.5f;
+                float hudFx = hudW / (float)nativeW;
+                vx = (int)lroundf(hudOfsX + it.vp[0] * hudFx);
+                vw = (int)lroundf(it.vp[2] * hudFx);
+                sx = (int)lroundf(hudOfsX + it.sc[0] * hudFx);
+                sr = (int)lroundf(hudOfsX + it.sc[2] * hudFx);
+            } else {
+                vx = (int)lroundf(it.vp[0] * fx);
+                vw = (int)lroundf(it.vp[2] * fx);
+                sx = (int)lroundf(it.sc[0] * fx);
+                sr = (int)lroundf(it.sc[2] * fx);
+            }
             int vh = (int)lroundf(it.vp[3] * fy);
             int vy = t.height - (int)lroundf(it.vp[1] * fy) - vh;
             setViewport(vx, vy, vw, vh);
-            int sx = (int)lroundf(it.sc[0] * fx), sr = (int)lroundf(it.sc[2] * fx);
             int st = (int)lroundf(it.sc[1] * fy), sb = (int)lroundf(it.sc[3] * fy);
             if (it.hud && eye && eye->flatStereo && eye->stereo[3] != 0.0f) {
                 // A stereo pair's HUD is shifted and widened (see the vertex

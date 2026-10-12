@@ -1,0 +1,1125 @@
+#include "mobile_ui.h"
+
+#include <EGL/egl.h>
+#include <GLES3/gl32.h>
+#include <android/input.h>
+#include <android/keycodes.h>
+#include <android/log.h>
+#include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include <algorithm>
+#include <string>
+#include <vector>
+
+#include "xr/ui_font.h"
+
+#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, "MobileUI", __VA_ARGS__)
+#define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, "MobileUI", __VA_ARGS__)
+
+namespace mobile_ui {
+
+namespace {
+
+// In-shader vertex for 2D batching
+struct UIVertex {
+    float x, y;
+    float u, v;
+    float r, g, b, a;
+    float mode;   // 0 = rect, 1 = circle/ring, 2 = font glyph, 3 = cogwheel, 4 = close 'X'
+    float param;  // ring: inner ratio; rect: corner radius ratio; cogwheel: rot angle
+    float aspect; // rect aspect ratio (w/h or h/w)
+    float extra;  // rect: 0 = horiz/square, 1 = vert
+};
+
+struct Color {
+    float r, g, b, a;
+};
+
+inline Color rgba(float r, float g, float b, float a) {
+    return {r, g, b, a};
+}
+
+inline Color hexColor(uint32_t hex, float a) {
+    float r = ((hex >> 16) & 0xFF) / 255.0f;
+    float g = ((hex >> 8) & 0xFF) / 255.0f;
+    float b = (hex & 0xFF) / 255.0f;
+    return {r, g, b, a};
+}
+
+int base64Val(char c) {
+    if (c >= 'A' && c <= 'Z') return c - 'A';
+    if (c >= 'a' && c <= 'z') return c - 'a' + 26;
+    if (c >= '0' && c <= '9') return c - '0' + 52;
+    if (c == '+') return 62;
+    if (c == '/') return 63;
+    return -1;
+}
+
+const char* kVS = R"(#version 300 es
+precision mediump float;
+layout(location = 0) in vec2 aPos;
+layout(location = 1) in vec2 aUv;
+layout(location = 2) in vec4 aColor;
+layout(location = 3) in vec4 aParams;
+
+uniform mat4 uProj;
+
+out vec2 vUv;
+out vec4 vColor;
+out vec4 vParams;
+
+void main() {
+    gl_Position = uProj * vec4(aPos, 0.0, 1.0);
+    vUv = aUv;
+    vColor = aColor;
+    vParams = aParams;
+}
+)";
+
+const char* kFS = R"(#version 300 es
+precision mediump float;
+
+in vec2 vUv;
+in vec4 vColor;
+in vec4 vParams;
+
+uniform sampler2D uFontTex;
+
+out vec4 FragColor;
+
+void main() {
+    float mode = vParams.x;
+    float param = vParams.y;
+    float alpha = 1.0;
+
+    if (mode > 0.5 && mode < 1.5) {
+        // Mode 1: Circle or Ring (vUv in -1..1)
+        float d = length(vUv);
+        float fw = fwidth(d);
+        if (fw < 0.001) fw = 0.005;
+        float outer = smoothstep(1.0, 1.0 - fw, d);
+        if (param > 0.0) {
+            float inner = smoothstep(param - fw, param, d);
+            alpha = outer * inner;
+        } else {
+            alpha = outer;
+        }
+    } else if (mode > 1.5 && mode < 2.5) {
+        // Mode 2: Font glyph texture: sample red channel
+        alpha = texture(uFontTex, vUv).r;
+    } else if (mode > 2.5 && mode < 3.5) {
+        // Mode 3: Iconic Material 3 Settings Cogwheel (⚙)
+        float d = length(vUv);
+        float fw = fwidth(d);
+        if (fw < 0.001) fw = 0.005;
+        float angle = atan(vUv.y, vUv.x) + param;
+        float teeth = cos(8.0 * angle);
+        float rMax = 0.74 + 0.22 * smoothstep(-0.25, 0.25, teeth);
+        float outer = smoothstep(rMax, rMax - fw * 1.5, d);
+        float inner = smoothstep(0.33 - fw * 1.5, 0.33, d);
+        alpha = outer * inner;
+    } else if (mode > 3.5) {
+        // Mode 4: Material 3 Close 'X' icon
+        vec2 p = abs(vUv);
+        float lineDist = abs(p.x - p.y) * 0.7071;
+        float capDist = max(p.x, p.y);
+        float fw = fwidth(lineDist);
+        if (fw < 0.001) fw = 0.005;
+        float line = smoothstep(0.16, 0.16 - fw, lineDist);
+        float box = smoothstep(0.65, 0.65 - fw, capDist);
+        alpha = line * box;
+    } else {
+        // Mode 0: Rounded rectangle with exact aspect ratio
+        if (param > 0.0) {
+            vec2 p = abs(vUv);
+            float aspect = vParams.z;
+            vec2 b = (vParams.w > 0.5) ? vec2(1.0 - param, aspect - param) : vec2(aspect - param, 1.0 - param);
+            vec2 d = p - b;
+            float dist = length(max(d, 0.0)) - param;
+            float fw = fwidth(dist);
+            if (fw < 0.001) fw = 0.005;
+            alpha = smoothstep(0.0, -fw, dist);
+        }
+    }
+
+    if (alpha <= 0.002) discard;
+    FragColor = vec4(vColor.rgb, vColor.a * alpha);
+}
+)";
+
+GLuint compileShader(GLenum type, const char* src) {
+    GLuint s = glCreateShader(type);
+    glShaderSource(s, 1, &src, nullptr);
+    glCompileShader(s);
+    GLint ok = 0;
+    glGetShaderiv(s, GL_COMPILE_STATUS, &ok);
+    if (!ok) {
+        char log[512];
+        glGetShaderInfoLog(s, sizeof(log), nullptr, log);
+        LOGE("Shader compile error: %s", log);
+        glDeleteShader(s);
+        return 0;
+    }
+    return s;
+}
+
+}  // namespace
+
+void Settings::load(const std::string& path) {
+    FILE* f = fopen(path.c_str(), "r");
+    if (!f) return;
+    char line[256];
+    while (fgets(line, sizeof(line), f)) {
+        char key[64];
+        float val = 0.0f;
+        if (sscanf(line, "%63[^=]=%f", key, &val) == 2) {
+            if (!strcmp(key, "show_controls")) showControls = (val > 0.5f);
+            else if (!strcmp(key, "fullscreen")) fullscreen = (val > 0.5f);
+            else if (!strcmp(key, "opacity")) opacity = std::max(0.1f, std::min(1.0f, val));
+            else if (!strcmp(key, "scale")) scale = std::max(0.6f, std::min(1.6f, val));
+            else if (!strcmp(key, "dynamic_stick")) dynamicStick = (val > 0.5f);
+            else if (!strcmp(key, "stick_offset_x")) stickOffsetX = val;
+            else if (!strcmp(key, "stick_offset_y")) stickOffsetY = val;
+            else if (!strcmp(key, "button_offset_x")) buttonOffsetX = val;
+            else if (!strcmp(key, "button_offset_y")) buttonOffsetY = val;
+        }
+    }
+    fclose(f);
+    LOGI("Loaded settings: show=%d, full=%d, op=%.2f, scale=%.2f", showControls, fullscreen, opacity, scale);
+}
+
+void Settings::save(const std::string& path) const {
+    FILE* f = fopen(path.c_str(), "w");
+    if (!f) return;
+    fprintf(f, "show_controls=%d\n", showControls ? 1 : 0);
+    fprintf(f, "fullscreen=%d\n", fullscreen ? 1 : 0);
+    fprintf(f, "opacity=%.2f\n", opacity);
+    fprintf(f, "scale=%.2f\n", scale);
+    fprintf(f, "dynamic_stick=%d\n", dynamicStick ? 1 : 0);
+    fprintf(f, "stick_offset_x=%.1f\n", stickOffsetX);
+    fprintf(f, "stick_offset_y=%.1f\n", stickOffsetY);
+    fprintf(f, "button_offset_x=%.1f\n", buttonOffsetX);
+    fprintf(f, "button_offset_y=%.1f\n", buttonOffsetY);
+    fclose(f);
+    LOGI("Saved settings to %s", path.c_str());
+}
+
+UIOverlay::UIOverlay() {
+    mPointerX = 0.0f; // Screen center
+    mPointerY = 0.0f; // Screen center
+}
+
+UIOverlay& UIOverlay::get() {
+    static UIOverlay sInstance;
+    return sInstance;
+}
+
+void UIOverlay::setSavePath(const std::string& path) {
+    mSavePath = path;
+    mSettings.load(path);
+}
+
+bool UIOverlay::needsRedraw() {
+    float target = mSettingsOpen ? 1.0f : 0.0f;
+    if (fabsf(mDrawerAnim - target) > 0.001f) {
+        return true;
+    }
+    bool d = mDirty;
+    mDirty = false;
+    return d;
+}
+
+void UIOverlay::closeSettings() {
+    mSettingsOpen = false;
+    mDirty = true;
+    if (!mSavePath.empty()) {
+        mSettings.save(mSavePath);
+    }
+}
+
+bool UIOverlay::init() {
+    if (mInitialized) return true;
+
+    GLuint vs = compileShader(GL_VERTEX_SHADER, kVS);
+    GLuint fs = compileShader(GL_FRAGMENT_SHADER, kFS);
+    if (!vs || !fs) return false;
+
+    mProg = glCreateProgram();
+    glAttachShader(mProg, vs);
+    glAttachShader(mProg, fs);
+    glLinkProgram(mProg);
+    glDeleteShader(vs);
+    glDeleteShader(fs);
+
+    GLint ok = 0;
+    glGetProgramiv(mProg, GL_LINK_STATUS, &ok);
+    if (!ok) {
+        char log[512];
+        glGetProgramInfoLog(mProg, sizeof(log), nullptr, log);
+        LOGE("UI program link error: %s", log);
+        return false;
+    }
+
+    glGenVertexArrays(1, &mVao);
+    glGenBuffers(1, &mVbo);
+
+    glBindVertexArray(mVao);
+    glBindBuffer(GL_ARRAY_BUFFER, mVbo);
+
+    // layout 0: pos (vec2)
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(UIVertex), (void*)offsetof(UIVertex, x));
+
+    // layout 1: uv (vec2)
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(UIVertex), (void*)offsetof(UIVertex, u));
+
+    // layout 2: color (vec4)
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, sizeof(UIVertex), (void*)offsetof(UIVertex, r));
+
+    // layout 3: params (vec4)
+    glEnableVertexAttribArray(3);
+    glVertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, sizeof(UIVertex), (void*)offsetof(UIVertex, mode));
+
+    glBindVertexArray(0);
+
+    // Decode font atlas into GL_R8 texture
+    const ui_font::Face& face = ui_font::kFaces[0]; // size 40 Inter Bold
+    mAtlasW = face.width;
+    mAtlasH = face.height;
+
+    std::vector<uint8_t> packed;
+    uint32_t bits = 0;
+    int nbits = 0;
+    for (const char* p = face.atlas; *p; p++) {
+        int v = base64Val(*p);
+        if (v < 0) continue;
+        bits = (bits << 6) | (uint32_t)v;
+        nbits += 6;
+        if (nbits >= 8) {
+            nbits -= 8;
+            packed.push_back((uint8_t)(bits >> nbits));
+        }
+    }
+
+    std::vector<uint8_t> coverage((size_t)face.width * face.height, 0);
+    for (size_t i = 0; i < coverage.size(); i++) {
+        uint8_t b = (i / 2 < packed.size()) ? packed[i / 2] : 0;
+        coverage[i] = (uint8_t)(((i & 1) ? (b & 15) : (b >> 4)) * 17);
+    }
+
+    glGenTextures(1, &mFontTex);
+    glBindTexture(GL_TEXTURE_2D, mFontTex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, face.width, face.height, 0, GL_RED, GL_UNSIGNED_BYTE, coverage.data());
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+    mInitialized = true;
+    LOGI("Mobile UI initialized successfully (Atlas %dx%d)", mAtlasW, mAtlasH);
+    return true;
+}
+
+bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& spinFrames,
+                            int screenW, int screenH, int vpX, int vpY, int vpW, int vpH) {
+    int32_t eventType = AInputEvent_getType(event);
+    if (eventType != AINPUT_EVENT_TYPE_MOTION) {
+        return false;
+    }
+
+    int32_t actionWithIndex = AMotionEvent_getAction(event);
+    int32_t action = actionWithIndex & AMOTION_EVENT_ACTION_MASK;
+    int32_t pointerIndex = (actionWithIndex & AMOTION_EVENT_ACTION_POINTER_INDEX_MASK) >> AMOTION_EVENT_ACTION_POINTER_INDEX_SHIFT;
+    size_t pointerCount = AMotionEvent_getPointerCount(event);
+
+    // Responsive scaling based on screen height
+    float baseDpi = (float)screenH / 650.0f;
+    float uiScale = baseDpi;
+    float scale = baseDpi * mSettings.scale;
+    float w = (float)screenW;
+    float h = (float)screenH;
+
+    // Material 3 Settings Tab Dock (Top-Left Edge)
+    float tabW = 56.0f * uiScale;
+    float tabH = 48.0f * uiScale;
+    float tabY = 22.0f * uiScale;
+
+    // Side Sheet Drawer Dimensions
+    float drawerW = std::min(w * 0.44f, 390.0f * uiScale);
+    float drawerX = (mDrawerAnim - 1.0f) * drawerW;
+
+    // Check Settings Tab tap (when drawer is closed or nearly closed)
+    if (!mSettingsOpen && mDrawerAnim < 0.15f) {
+        if (action == AMOTION_EVENT_ACTION_DOWN || action == AMOTION_EVENT_ACTION_POINTER_DOWN) {
+            float px = AMotionEvent_getX(event, pointerIndex);
+            float py = AMotionEvent_getY(event, pointerIndex);
+            if (px >= 0.0f && px <= tabW + 16.0f * uiScale && py >= tabY - 8.0f * uiScale && py <= tabY + tabH + 8.0f * uiScale) {
+                mSettingsOpen = true;
+                mBtnCfgPressed = true;
+                mDirty = true;
+                return true;
+            }
+        }
+    } else if (action == AMOTION_EVENT_ACTION_UP || action == AMOTION_EVENT_ACTION_CANCEL) {
+        mBtnCfgPressed = false;
+    }
+
+    // Handle Edit Layout Mode
+    if (mEditLayoutMode) {
+        if (action == AMOTION_EVENT_ACTION_DOWN || action == AMOTION_EVENT_ACTION_POINTER_DOWN) {
+            float px = AMotionEvent_getX(event, pointerIndex);
+            float py = AMotionEvent_getY(event, pointerIndex);
+
+            // Check Top buttons: Save or Reset
+            float saveBtnX = w * 0.5f - 110.0f, saveBtnY = 50.0f;
+            if (px >= saveBtnX && px <= saveBtnX + 100.0f && py >= saveBtnY && py <= saveBtnY + 50.0f) {
+                mEditLayoutMode = false;
+                if (!mSavePath.empty()) mSettings.save(mSavePath);
+                mDirty = true;
+                return true;
+            }
+            float rstBtnX = w * 0.5f + 10.0f, rstBtnY = 50.0f;
+            if (px >= rstBtnX && px <= rstBtnX + 100.0f && py >= rstBtnY && py <= rstBtnY + 50.0f) {
+                mSettings.stickOffsetX = 0.0f;
+                mSettings.stickOffsetY = 0.0f;
+                mSettings.buttonOffsetX = 0.0f;
+                mSettings.buttonOffsetY = 0.0f;
+                if (!mSavePath.empty()) mSettings.save(mSavePath);
+                mDirty = true;
+                return true;
+            }
+
+            // Start dragging stick cluster or button cluster
+            if (px < w * 0.45f) {
+                mDraggingCluster = 1; // stick
+                mDragStartX = px;
+                mDragStartY = py;
+                mInitialStickOfsX = mSettings.stickOffsetX;
+                mInitialStickOfsY = mSettings.stickOffsetY;
+            } else {
+                mDraggingCluster = 2; // button cluster
+                mDragStartX = px;
+                mDragStartY = py;
+                mInitialBtnOfsX = mSettings.buttonOffsetX;
+                mInitialBtnOfsY = mSettings.buttonOffsetY;
+            }
+            mDirty = true;
+            return true;
+        } else if (action == AMOTION_EVENT_ACTION_MOVE) {
+            float px = AMotionEvent_getX(event, 0);
+            float py = AMotionEvent_getY(event, 0);
+            if (mDraggingCluster == 1) {
+                mSettings.stickOffsetX = mInitialStickOfsX + (px - mDragStartX);
+                mSettings.stickOffsetY = mInitialStickOfsY + (py - mDragStartY);
+            } else if (mDraggingCluster == 2) {
+                mSettings.buttonOffsetX = mInitialBtnOfsX + (px - mDragStartX);
+                mSettings.buttonOffsetY = mInitialBtnOfsY + (py - mDragStartY);
+            }
+            mDirty = true;
+            return true;
+        } else if (action == AMOTION_EVENT_ACTION_UP || action == AMOTION_EVENT_ACTION_CANCEL) {
+            mDraggingCluster = 0;
+            if (!mSavePath.empty()) mSettings.save(mSavePath);
+            mDirty = true;
+            return true;
+        }
+        return true;
+    }
+
+    // Handle Material 3 Side Sheet Drawer Touches
+    if (mSettingsOpen || mDrawerAnim > 0.05f) {
+        if (action == AMOTION_EVENT_ACTION_DOWN || action == AMOTION_EVENT_ACTION_POINTER_DOWN) {
+            float px = AMotionEvent_getX(event, pointerIndex);
+            float py = AMotionEvent_getY(event, pointerIndex);
+
+            // Outside drawer tap (scrim) closes settings
+            if (px > drawerX + drawerW) {
+                mSettingsOpen = false;
+                if (!mSavePath.empty()) mSettings.save(mSavePath);
+                mDirty = true;
+                return true;
+            }
+
+            // Inside drawer tap
+            float padX = 22.0f * uiScale;
+            float contentW = drawerW - padX * 2.0f;
+
+            // Close [X] button at top-right of drawer
+            float closeBtnX = drawerX + drawerW - 36.0f * uiScale;
+            float closeBtnY = 44.0f * uiScale;
+            float dx = px - closeBtnX;
+            float dy = py - closeBtnY;
+            if (dx * dx + dy * dy <= 26.0f * uiScale * 26.0f * uiScale) {
+                mSettingsOpen = false;
+                if (!mSavePath.empty()) mSettings.save(mSavePath);
+                mDirty = true;
+                return true;
+            }
+
+            // Row 1: Visibility Switch (r1Y = 84.0f * uiScale)
+            float r1Y = 84.0f * uiScale;
+            if (py >= r1Y && py <= r1Y + 50.0f * uiScale) {
+                mSettings.showControls = !mSettings.showControls;
+            }
+
+            // Row 2: Fullscreen Switch (r2Y = 140.0f * uiScale)
+            float r2Y = 140.0f * uiScale;
+            if (py >= r2Y && py <= r2Y + 50.0f * uiScale) {
+                mSettings.fullscreen = !mSettings.fullscreen;
+            }
+
+            // Row 3: Joystick Mode Segmented Button (r3Y = 196.0f * uiScale)
+            float r3Y = 196.0f * uiScale;
+            float seg3Y = r3Y + 22.0f * uiScale;
+            if (py >= seg3Y && py <= seg3Y + 36.0f * uiScale) {
+                float midX = drawerX + padX + contentW * 0.5f;
+                if (px < midX) mSettings.dynamicStick = true;
+                else mSettings.dynamicStick = false;
+            }
+
+            // Row 4: Opacity Segmented Button (r4Y = 260.0f * uiScale)
+            float r4Y = 260.0f * uiScale;
+            float seg4Y = r4Y + 22.0f * uiScale;
+            if (py >= seg4Y && py <= seg4Y + 36.0f * uiScale) {
+                float segW = contentW / 4.0f;
+                int idx = (int)((px - (drawerX + padX)) / segW);
+                if (idx <= 0) mSettings.opacity = 0.25f;
+                else if (idx == 1) mSettings.opacity = 0.50f;
+                else if (idx == 2) mSettings.opacity = 0.75f;
+                else mSettings.opacity = 1.00f;
+            }
+
+            // Row 5: Button Scale Segmented Button (r5Y = 324.0f * uiScale)
+            float r5Y = 324.0f * uiScale;
+            float seg5Y = r5Y + 22.0f * uiScale;
+            if (py >= seg5Y && py <= seg5Y + 36.0f * uiScale) {
+                float segW = contentW / 3.0f;
+                int idx = (int)((px - (drawerX + padX)) / segW);
+                if (idx <= 0) mSettings.scale = 0.85f;
+                else if (idx == 1) mSettings.scale = 1.00f;
+                else mSettings.scale = 1.25f;
+            }
+
+            // Row 6: Layout Edit / Reset (r6Y = 388.0f * uiScale)
+            float r6Y = 388.0f * uiScale;
+            float btn6Y = r6Y + 22.0f * uiScale;
+            if (py >= btn6Y && py <= btn6Y + 38.0f * uiScale) {
+                float splitX = drawerX + padX + contentW * 0.56f;
+                if (px < splitX) {
+                    mSettingsOpen = false;
+                    mEditLayoutMode = true;
+                } else {
+                    mSettings.stickOffsetX = 0.0f;
+                    mSettings.stickOffsetY = 0.0f;
+                    mSettings.buttonOffsetX = 0.0f;
+                    mSettings.buttonOffsetY = 0.0f;
+                }
+            }
+
+            // Row 7: [ Done ] Action Pill Button
+            float doneY = std::min(h - 52.0f * uiScale, 452.0f * uiScale);
+            if (py >= doneY && py <= doneY + 42.0f * uiScale) {
+                mSettingsOpen = false;
+            }
+
+            if (!mSavePath.empty()) mSettings.save(mSavePath);
+            mDirty = true;
+            return true;
+        }
+        return true;
+    }
+
+    // -------------------------------------------------------------
+    // Live Virtual Controls Handling
+    // -------------------------------------------------------------
+    pad.connected = 1;
+    uint32_t touchButtons = 0;
+
+    // Reset button press highlights
+    mBtnAPressed = false;
+    mBtnBPressed = false;
+    mBtnZPressed = false;
+    mBtnSpinPressed = false;
+    mBtnPlusPressed = false;
+
+    // Button layout positions
+    float btnBaseX = w - 160.0f * scale + mSettings.buttonOffsetX;
+    float btnBaseY = h - 160.0f * scale + mSettings.buttonOffsetY;
+
+    // A (Jump) - Primary action
+    float aX = btnBaseX, aY = btnBaseY, aR = 54.0f * scale;
+    // B (Shoot Star Bit) - Lower left of A
+    float bX = btnBaseX - 120.0f * scale, bY = btnBaseY + 25.0f * scale, bR = 45.0f * scale;
+    // SPIN - Top right of A
+    float spinX = btnBaseX + 35.0f * scale, spinY = btnBaseY - 130.0f * scale, spinR = 48.0f * scale;
+    // Z (Crouch) - Top left of A
+    float zX = btnBaseX - 90.0f * scale, zY = btnBaseY - 105.0f * scale, zR = 44.0f * scale;
+    // Plus (+) - Top right
+    float plusX = w - 70.0f * scale, plusY = 70.0f * scale, plusR = 34.0f * scale;
+
+    // Stick default position - Bottom left thumb area
+    float defaultStickX = 175.0f * scale + mSettings.stickOffsetX;
+    float defaultStickY = h - 175.0f * scale + mSettings.stickOffsetY;
+    float stickBaseR = 95.0f * scale;
+    float stickMaxR = 100.0f * scale;
+
+    // Complete release: when all fingers are lifted or gesture canceled
+    if (action == AMOTION_EVENT_ACTION_UP || action == AMOTION_EVENT_ACTION_CANCEL) {
+        mStickPointerId = -1;
+        mStickKnobX = mStickBaseX;
+        mStickKnobY = mStickBaseY;
+        pad.stickX = 0.0f;
+        pad.stickY = 0.0f;
+        touchButtons = 0;
+        pad.buttons = 0;
+        mBtnAPressed = mBtnBPressed = mBtnZPressed = mBtnSpinPressed = mBtnPlusPressed = false;
+        mDirty = true;
+        pad.pointerValid = 1;
+        pad.pointerX = mPointerX;
+        pad.pointerY = mPointerY;
+        pad.pointerDist = 2.0f;
+        return true;
+    }
+
+    // Single finger release during multi-touch
+    if (action == AMOTION_EVENT_ACTION_POINTER_UP) {
+        int32_t liftedPid = AMotionEvent_getPointerId(event, pointerIndex);
+        if (liftedPid == mStickPointerId) {
+            mStickPointerId = -1;
+            mStickKnobX = mStickBaseX;
+            mStickKnobY = mStickBaseY;
+            pad.stickX = 0.0f;
+            pad.stickY = 0.0f;
+            mDirty = true;
+        }
+    }
+
+    // 1. Virtual Stick Acquisition:
+    // Only captures fresh touches in the designated bottom-left thumb zone!
+    if (mSettings.showControls && (action == AMOTION_EVENT_ACTION_DOWN || action == AMOTION_EVENT_ACTION_POINTER_DOWN)) {
+        float px = AMotionEvent_getX(event, pointerIndex);
+        float py = AMotionEvent_getY(event, pointerIndex);
+        int32_t pid = AMotionEvent_getPointerId(event, pointerIndex);
+
+        bool stickEligible = false;
+        if (mSettings.dynamicStick) {
+            // Strictly bottom-left quadrant: left 36% of screen AND bottom 50% of screen
+            stickEligible = (px <= w * 0.36f && py >= h * 0.50f);
+        } else {
+            // Fixed mode: within 1.6x of stick center
+            float d2 = (px - defaultStickX) * (px - defaultStickX) + (py - defaultStickY) * (py - defaultStickY);
+            stickEligible = (d2 <= (stickBaseR * 1.6f) * (stickBaseR * 1.6f));
+        }
+
+        if (stickEligible && mStickPointerId < 0) {
+            mStickPointerId = pid;
+            if (mSettings.dynamicStick) {
+                mStickBaseX = px;
+                mStickBaseY = py;
+            } else {
+                mStickBaseX = defaultStickX;
+                mStickBaseY = defaultStickY;
+            }
+            mStickKnobX = px;
+            mStickKnobY = py;
+            mDirty = true;
+        }
+    }
+
+    // 2. Iterate Active Pointers
+    bool stickFound = false;
+    for (size_t i = 0; i < pointerCount; i++) {
+        // Skip pointer that is releasing right now
+        if (action == AMOTION_EVENT_ACTION_POINTER_UP && (int32_t)i == pointerIndex) {
+            continue;
+        }
+
+        int32_t pid = AMotionEvent_getPointerId(event, i);
+        float px = AMotionEvent_getX(event, i);
+        float py = AMotionEvent_getY(event, i);
+
+        if (pid == mStickPointerId) {
+            stickFound = true;
+            float dx = px - mStickBaseX;
+            float dy = py - mStickBaseY;
+            float dist = sqrtf(dx * dx + dy * dy);
+            float deadzone = 8.0f * scale;
+
+            if (dist > stickMaxR && dist > 0.001f) {
+                mStickKnobX = mStickBaseX + (dx / dist) * stickMaxR;
+                mStickKnobY = mStickBaseY + (dy / dist) * stickMaxR;
+                pad.stickX = dx / dist;
+                pad.stickY = -dy / dist;
+            } else if (dist > deadzone) {
+                mStickKnobX = px;
+                mStickKnobY = py;
+                float norm = (dist - deadzone) / (stickMaxR - deadzone);
+                pad.stickX = (dx / dist) * norm;
+                pad.stickY = -(dy / dist) * norm;
+            } else {
+                mStickKnobX = px;
+                mStickKnobY = py;
+                pad.stickX = 0.0f;
+                pad.stickY = 0.0f;
+            }
+            pad.stickX = std::max(-1.0f, std::min(1.0f, pad.stickX));
+            pad.stickY = std::max(-1.0f, std::min(1.0f, pad.stickY));
+        } else {
+            // Button hit testing
+            auto inRadius = [](float tx, float ty, float cx, float cy, float r) {
+                float d2 = (tx - cx) * (tx - cx) + (ty - cy) * (ty - cy);
+                return d2 <= (r * 1.30f) * (r * 1.30f);
+            };
+
+            bool hitButton = false;
+            if (mSettings.showControls) {
+                if (inRadius(px, py, aX, aY, aR)) {
+                    touchButtons |= 0x0800; // WPAD_BUTTON_A
+                    mBtnAPressed = true;
+                    hitButton = true;
+                }
+                if (inRadius(px, py, bX, bY, bR)) {
+                    touchButtons |= 0x0400; // WPAD_BUTTON_B
+                    mBtnBPressed = true;
+                    hitButton = true;
+                }
+                if (inRadius(px, py, spinX, spinY, spinR)) {
+                    spinFrames = 6;
+                    mBtnSpinPressed = true;
+                    hitButton = true;
+                }
+                if (inRadius(px, py, zX, zY, zR)) {
+                    touchButtons |= 0x2000; // WPAD_BUTTON_Z
+                    mBtnZPressed = true;
+                    hitButton = true;
+                }
+                if (inRadius(px, py, plusX, plusY, plusR)) {
+                    touchButtons |= 0x0010; // WPAD_BUTTON_PLUS
+                    mBtnPlusPressed = true;
+                    hitButton = true;
+                }
+            }
+
+            // Direct screen touch: exclusively moves the in-game Star Pointer!
+            // No phantom buttons behind the HUD: button A is exclusively pressed via the on-screen [A] button!
+            if (!hitButton && vpW > 0 && vpH > 0) {
+                mPointerX = ((px - vpX) / (float)vpW) * 2.0f - 1.0f;
+                mPointerY = ((py - vpY) / (float)vpH) * 2.0f - 1.0f;
+                mPointerX = std::max(-1.0f, std::min(1.0f, mPointerX));
+                mPointerY = std::max(-1.0f, std::min(1.0f, mPointerY));
+            }
+        }
+    }
+
+    if (!stickFound && mStickPointerId >= 0) {
+        mStickPointerId = -1;
+        mStickKnobX = mStickBaseX;
+        mStickKnobY = mStickBaseY;
+        pad.stickX = 0.0f;
+        pad.stickY = 0.0f;
+        mDirty = true;
+    }
+
+    pad.buttons = touchButtons;
+    pad.pointerValid = 1;
+    pad.pointerX = mPointerX;
+    pad.pointerY = mPointerY;
+    pad.pointerDist = 2.0f;
+
+    return true;
+}
+
+void UIOverlay::render(int screenW, int screenH) {
+    if (!init()) return;
+
+    std::vector<UIVertex> verts;
+    verts.reserve(1024);
+
+    float baseDpi = (float)screenH / 650.0f;
+    float uiScale = baseDpi;
+    float scale = baseDpi * mSettings.scale;
+    float op = mSettings.opacity;
+    float w = (float)screenW;
+    float h = (float)screenH;
+
+    // Animation progress calculation
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    int64_t now = (int64_t)ts.tv_sec * 1000000000ll + ts.tv_nsec;
+    if (mLastAnimTime == 0) mLastAnimTime = now;
+    float dt = (float)(now - mLastAnimTime) / 1e9f;
+    mLastAnimTime = now;
+    if (dt < 0.0001f) dt = 0.016f;
+    if (dt > 0.1f) dt = 0.1f;
+
+    float target = mSettingsOpen ? 1.0f : 0.0f;
+    if (fabsf(mDrawerAnim - target) > 0.0005f) {
+        float speed = 14.0f; // Material 3 snappy deceleration
+        mDrawerAnim += (target - mDrawerAnim) * (1.0f - expf(-speed * dt));
+        if (fabsf(mDrawerAnim - target) < 0.001f) {
+            mDrawerAnim = target;
+        }
+        mDirty = true;
+    }
+
+    float drawerW = std::min(w * 0.44f, 390.0f * uiScale);
+    float drawerX = (mDrawerAnim - 1.0f) * drawerW;
+    float cogRot = mDrawerAnim * 1.5707963f; // Smooth 90-degree cogwheel turn
+
+    auto addQuad = [&](float x0, float y0, float x1, float y1, float u0, float v0, float u1, float v1,
+                       const Color& c, float mode, float param, float aspect = 1.0f, float extra = 0.0f) {
+        verts.push_back({x0, y0, u0, v0, c.r, c.g, c.b, c.a, mode, param, aspect, extra});
+        verts.push_back({x1, y0, u1, v0, c.r, c.g, c.b, c.a, mode, param, aspect, extra});
+        verts.push_back({x1, y1, u1, v1, c.r, c.g, c.b, c.a, mode, param, aspect, extra});
+
+        verts.push_back({x0, y0, u0, v0, c.r, c.g, c.b, c.a, mode, param, aspect, extra});
+        verts.push_back({x1, y1, u1, v1, c.r, c.g, c.b, c.a, mode, param, aspect, extra});
+        verts.push_back({x0, y1, u0, v1, c.r, c.g, c.b, c.a, mode, param, aspect, extra});
+    };
+
+    auto drawCircle = [&](float cx, float cy, float r, const Color& c) {
+        addQuad(cx - r, cy - r, cx + r, cy + r, -1.0f, -1.0f, 1.0f, 1.0f, c, 1.0f, 0.0f);
+    };
+
+    auto drawRing = [&](float cx, float cy, float r, float innerRatio, const Color& c) {
+        addQuad(cx - r, cy - r, cx + r, cy + r, -1.0f, -1.0f, 1.0f, 1.0f, c, 1.0f, innerRatio);
+    };
+
+    auto drawRoundRect = [&](float x0, float y0, float x1, float y1, float radius, const Color& c) {
+        float rw = x1 - x0;
+        float rh = y1 - y0;
+        if (rw <= 0.0f || rh <= 0.0f) return;
+        if (rw >= rh) {
+            float aspect = rw / rh;
+            float rNorm = std::min(1.0f, radius / (rh * 0.5f));
+            addQuad(x0, y0, x1, y1, -aspect, -1.0f, aspect, 1.0f, c, 0.0f, rNorm, aspect, 0.0f);
+        } else {
+            float aspect = rh / rw;
+            float rNorm = std::min(1.0f, radius / (rw * 0.5f));
+            addQuad(x0, y0, x1, y1, -1.0f, -aspect, 1.0f, aspect, c, 0.0f, rNorm, aspect, 1.0f);
+        }
+    };
+
+    auto drawCogwheel = [&](float cx, float cy, float r, const Color& c, float rot = 0.0f) {
+        addQuad(cx - r, cy - r, cx + r, cy + r, -1.0f, -1.0f, 1.0f, 1.0f, c, 3.0f, rot);
+    };
+
+    auto drawCloseIcon = [&](float cx, float cy, float r, const Color& c) {
+        addQuad(cx - r, cy - r, cx + r, cy + r, -1.0f, -1.0f, 1.0f, 1.0f, c, 4.0f, 0.0f);
+    };
+
+    const ui_font::Face& face = ui_font::kFaces[0];
+    auto drawText = [&](const char* text, float x, float baseline, float sizeScale, const Color& c, int align = 0) {
+        float strW = 0.0f;
+        for (const char* p = text; *p; p++) {
+            char ch = *p;
+            if (ch >= 32 && ch < 127) {
+                strW += (face.glyphs[ch - 32].advance * 0.25f) * sizeScale;
+            }
+        }
+        float curX = x;
+        if (align == 1) curX -= strW * 0.5f;      // Center
+        else if (align == 2) curX -= strW;        // Right
+
+        for (const char* p = text; *p; p++) {
+            char ch = *p;
+            if (ch < 32 || ch >= 127) continue;
+            const ui_font::Glyph& g = face.glyphs[ch - 32];
+            float gx = curX + g.left * sizeScale;
+            float gy = baseline - g.top * sizeScale;
+            float gw = g.w * sizeScale;
+            float gh = g.h * sizeScale;
+            float u0 = (float)g.x / (float)face.width;
+            float v0 = (float)g.y / (float)face.height;
+            float u1 = (float)(g.x + g.w) / (float)face.width;
+            float v1 = (float)(g.y + g.h) / (float)face.height;
+
+            addQuad(gx, gy, gx + gw, gy + gh, u0, v0, u1, v1, c, 2.0f, 0.0f);
+            curX += (g.advance * 0.25f) * sizeScale;
+        }
+    };
+
+    auto drawM3Switch = [&](float x, float y, float swW, float swH, bool on) {
+        float r = swH * 0.5f;
+        if (on) {
+            // Track: Primary Container (#0B57D0)
+            drawRoundRect(x, y, x + swW, y + swH, r, rgba(0.043f, 0.341f, 0.816f, 1.0f));
+            // Thumb: High-contrast white disc at right
+            float thumbR = r * 0.70f;
+            drawCircle(x + swW - r, y + r, thumbR, rgba(1.0f, 1.0f, 1.0f, 1.0f));
+        } else {
+            // Track: Surface Container Highest (#303239) with subtle outline
+            drawRoundRect(x, y, x + swW, y + swH, r, rgba(0.188f, 0.196f, 0.224f, 0.95f));
+            drawRoundRect(x + 1.0f, y + 1.0f, x + swW - 1.0f, y + swH - 1.0f, r - 1.0f, rgba(0.267f, 0.278f, 0.310f, 0.60f));
+            // Thumb: Outline disc at left
+            float thumbR = r * 0.56f;
+            drawCircle(x + r, y + r, thumbR, rgba(0.60f, 0.64f, 0.72f, 1.0f));
+        }
+    };
+
+    auto drawSegmentedGroup = [&](float x, float y, float grpW, float grpH, const char** labels, int count, int activeIdx) {
+        float r = 12.0f * uiScale;
+        // Group container: Surface Container High (#26282E) with outline
+        drawRoundRect(x, y, x + grpW, y + grpH, r, rgba(0.149f, 0.157f, 0.180f, 0.95f));
+        drawRoundRect(x, y, x + grpW, y + grpH, r, rgba(0.267f, 0.278f, 0.310f, 0.50f));
+
+        float segW = grpW / (float)count;
+        for (int i = 0; i < count; i++) {
+            float sx0 = x + i * segW;
+            float sx1 = sx0 + segW;
+            bool active = (i == activeIdx);
+            if (active) {
+                // Active pill: Primary Container (#0B57D0)
+                drawRoundRect(sx0 + 2.0f, y + 2.0f, sx1 - 2.0f, y + grpH - 2.0f, r - 2.0f, rgba(0.043f, 0.341f, 0.816f, 1.0f));
+                drawText(labels[i], (sx0 + sx1) * 0.5f, y + grpH * 0.64f, 0.36f * uiScale, rgba(1.0f, 1.0f, 1.0f, 1.0f), 1);
+            } else {
+                drawText(labels[i], (sx0 + sx1) * 0.5f, y + grpH * 0.64f, 0.36f * uiScale, rgba(0.761f, 0.776f, 0.812f, 0.95f), 1);
+                if (i > 0 && (i - 1) != activeIdx) {
+                    drawRoundRect(sx0 - 0.5f, y + 6.0f, sx0 + 0.5f, y + grpH - 6.0f, 0.0f, rgba(0.267f, 0.278f, 0.310f, 0.40f));
+                }
+            }
+        }
+    };
+
+    // -------------------------------------------------------------
+    // Draw On-Screen Controls (HUD)
+    // -------------------------------------------------------------
+    if (mSettings.showControls && mDrawerAnim < 0.98f) {
+        float hudOp = op * (1.0f - mDrawerAnim * 0.75f);
+
+        // 1. Virtual Stick
+        float defaultStickX = 175.0f * scale + mSettings.stickOffsetX;
+        float defaultStickY = h - 175.0f * scale + mSettings.stickOffsetY;
+        float baseX = (mStickPointerId >= 0) ? mStickBaseX : defaultStickX;
+        float baseY = (mStickPointerId >= 0) ? mStickBaseY : defaultStickY;
+        float knobX = (mStickPointerId >= 0) ? mStickKnobX : baseX;
+        float knobY = (mStickPointerId >= 0) ? mStickKnobY : baseY;
+        float baseR = 95.0f * scale;
+        float knobR = 42.0f * scale;
+
+        // Stick outer ring and inner subtle disc
+        drawCircle(baseX, baseY, baseR, rgba(0.10f, 0.12f, 0.18f, hudOp * 0.40f));
+        drawRing(baseX, baseY, baseR, 0.94f, rgba(0.50f, 0.70f, 1.0f, hudOp * 0.65f));
+
+        // Center crosshair dots
+        drawCircle(baseX, baseY, 3.0f * scale, rgba(1.0f, 1.0f, 1.0f, hudOp * 0.5f));
+
+        // Thumb Knob
+        drawCircle(knobX, knobY, knobR, rgba(0.15f, 0.20f, 0.32f, hudOp * 0.85f));
+        drawRing(knobX, knobY, knobR, 0.88f, rgba(0.38f, 0.74f, 1.0f, hudOp * 0.95f));
+        drawCircle(knobX, knobY, knobR * 0.40f, rgba(1.0f, 1.0f, 1.0f, hudOp * 0.45f));
+
+        // 2. Action Buttons
+        float btnBaseX = w - 160.0f * scale + mSettings.buttonOffsetX;
+        float btnBaseY = h - 160.0f * scale + mSettings.buttonOffsetY;
+
+        auto drawButton = [&](float cx, float cy, float r, const char* label, uint32_t colorHex, bool pressed) {
+            float pr = pressed ? (r * 0.92f) : r;
+            float discAlpha = pressed ? (hudOp * 0.85f) : (hudOp * 0.55f);
+            float borderAlpha = pressed ? (hudOp * 1.0f) : (hudOp * 0.80f);
+
+            // Filled core
+            drawCircle(cx, cy, pr, hexColor(colorHex, discAlpha));
+            // Outer bright border
+            drawRing(cx, cy, pr, 0.90f, hexColor(0xFFFFFF, borderAlpha));
+            // Label
+            float textSize = (r > 40.0f * scale) ? (0.65f * scale) : (0.50f * scale);
+            if (strlen(label) > 1) textSize *= 0.75f;
+            drawText(label, cx, cy + 12.0f * scale, textSize, rgba(1.0f, 1.0f, 1.0f, hudOp * 0.95f), 1);
+        };
+
+        // Button A (Jump) - Vibrant Blue
+        drawButton(btnBaseX, btnBaseY, 54.0f * scale, "A", 0x0284C7, mBtnAPressed);
+
+        // Button B (Star Bit Shoot) - Star Amber
+        drawButton(btnBaseX - 120.0f * scale, btnBaseY + 25.0f * scale, 45.0f * scale, "B", 0xD97706, mBtnBPressed);
+
+        // Button SPIN - Emerald Green
+        drawButton(btnBaseX + 35.0f * scale, btnBaseY - 130.0f * scale, 48.0f * scale, "SPIN", 0x059669, mBtnSpinPressed);
+
+        // Button Z (Crouch) - Violet
+        drawButton(btnBaseX - 90.0f * scale, btnBaseY - 105.0f * scale, 44.0f * scale, "Z", 0x7C3AED, mBtnZPressed);
+
+        // Button + (Pause) - Slate
+        drawButton(w - 70.0f * scale, 70.0f * scale, 34.0f * scale, "+", 0x475569, mBtnPlusPressed);
+    }
+
+    // -------------------------------------------------------------
+    // Material 3 Settings Tab Dock (Pinned to Top-Left Edge ⚙)
+    // -------------------------------------------------------------
+    if (mDrawerAnim < 0.95f) {
+        float tabW = 56.0f * uiScale;
+        float tabH = 48.0f * uiScale;
+        float tabY = 22.0f * uiScale;
+        float tabPr = mBtnCfgPressed ? 0.92f : 1.0f;
+
+        // Docked pill container: rounded right edge
+        drawRoundRect(-10.0f, tabY, tabW * tabPr, tabY + tabH, 24.0f * uiScale, rgba(0.149f, 0.157f, 0.180f, 0.94f));
+        drawRoundRect(-10.0f, tabY, tabW * tabPr, tabY + tabH, 24.0f * uiScale, rgba(0.267f, 0.278f, 0.310f, 0.60f));
+
+        // Rotating Material 3 Cogwheel icon in Google Accent Blue
+        drawCogwheel(tabW * 0.50f, tabY + tabH * 0.5f, 15.0f * uiScale, rgba(0.659f, 0.780f, 0.980f, 1.0f), cogRot);
+    }
+
+    // -------------------------------------------------------------
+    // Draw Edit Layout Overlay
+    // -------------------------------------------------------------
+    if (mEditLayoutMode) {
+        // Scrim
+        drawRoundRect(0, 0, w, h, 0.0f, rgba(0.0f, 0.0f, 0.0f, 0.45f));
+
+        // M3 Top bar card
+        drawRoundRect(w * 0.5f - 240.0f, 30.0f, w * 0.5f + 240.0f, 95.0f, 20.0f, rgba(0.12f, 0.14f, 0.18f, 0.96f));
+        drawText("DRAG TO REPOSITION CONTROLS", w * 0.5f, 55.0f, 0.46f, rgba(0.90f, 0.92f, 0.96f, 1.0f), 1);
+
+        // Save button (M3 Primary Pill)
+        float saveBtnX = w * 0.5f - 110.0f;
+        drawRoundRect(saveBtnX, 65.0f, saveBtnX + 100.0f, 90.0f, 12.0f, rgba(0.043f, 0.341f, 0.816f, 0.95f));
+        drawText("SAVE", saveBtnX + 50.0f, 83.0f, 0.42f, rgba(1.0f, 1.0f, 1.0f, 1.0f), 1);
+
+        // Reset button (M3 Outline Pill)
+        float rstBtnX = w * 0.5f + 10.0f;
+        drawRoundRect(rstBtnX, 65.0f, rstBtnX + 100.0f, 90.0f, 12.0f, rgba(0.35f, 0.18f, 0.20f, 0.95f));
+        drawText("RESET", rstBtnX + 50.0f, 83.0f, 0.42f, rgba(1.0f, 1.0f, 1.0f, 1.0f), 1);
+
+        // Stick cluster bounding outline
+        float defaultStickX = 175.0f * scale + mSettings.stickOffsetX;
+        float defaultStickY = h - 175.0f * scale + mSettings.stickOffsetY;
+        drawRing(defaultStickX, defaultStickY, 120.0f * scale, 0.96f, rgba(0.40f, 0.65f, 0.98f, 0.85f));
+        drawText("JOYSTICK", defaultStickX, defaultStickY - 130.0f * scale, 0.45f, rgba(0.40f, 0.65f, 0.98f, 0.95f), 1);
+
+        // Button cluster bounding outline
+        float btnBaseX = w - 160.0f * scale + mSettings.buttonOffsetX;
+        float btnBaseY = h - 160.0f * scale + mSettings.buttonOffsetY;
+        drawRing(btnBaseX - 60.0f * scale, btnBaseY - 60.0f * scale, 160.0f * scale, 0.96f, rgba(0.40f, 0.65f, 0.98f, 0.85f));
+        drawText("BUTTONS", btnBaseX - 60.0f * scale, btnBaseY - 230.0f * scale, 0.45f, rgba(0.40f, 0.65f, 0.98f, 0.95f), 1);
+    }
+
+    // -------------------------------------------------------------
+    // Material 3 Side Sheet Navigation Drawer
+    // -------------------------------------------------------------
+    if (mDrawerAnim > 0.001f) {
+        // Scrim backdrop (smoothly fades with animation)
+        drawRoundRect(0, 0, w, h, 0.0f, rgba(0.0f, 0.0f, 0.0f, mDrawerAnim * 0.52f));
+
+        // Side Sheet container: Surface Container (#1B1D23) with 28dp rounded right corners
+        drawRoundRect(drawerX - 60.0f, 0.0f, drawerX + drawerW, h, 28.0f * uiScale, rgba(0.106f, 0.114f, 0.137f, 0.98f));
+        // Right edge outline border
+        drawRoundRect(drawerX + drawerW - 2.0f, 0.0f, drawerX + drawerW, h, 0.0f, rgba(0.267f, 0.278f, 0.310f, 0.55f));
+
+        float padX = 22.0f * uiScale;
+        float contentW = drawerW - padX * 2.0f;
+
+        // Header: Iconic Cogwheel + "Settings" Title + Close Button
+        drawCogwheel(drawerX + padX + 16.0f * uiScale, 44.0f * uiScale, 16.0f * uiScale, rgba(0.659f, 0.780f, 0.980f, 1.0f), cogRot);
+        drawText("Settings", drawerX + padX + 42.0f * uiScale, 52.0f * uiScale, 0.56f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
+
+        // Close [X] circular tonal button
+        float closeBtnX = drawerX + drawerW - 36.0f * uiScale;
+        float closeBtnY = 44.0f * uiScale;
+        drawCircle(closeBtnX, closeBtnY, 18.0f * uiScale, rgba(0.188f, 0.196f, 0.224f, 0.95f));
+        drawCloseIcon(closeBtnX, closeBtnY, 10.0f * uiScale, rgba(0.761f, 0.776f, 0.812f, 0.95f));
+
+        // Divider
+        drawRoundRect(drawerX + padX, 70.0f * uiScale, drawerX + drawerW - padX, 72.0f * uiScale, 1.0f, rgba(0.267f, 0.278f, 0.310f, 0.40f));
+
+        float swW = 50.0f * uiScale, swH = 28.0f * uiScale;
+
+        // Row 1: Visibility Switch (r1Y = 84.0f * uiScale)
+        float r1Y = 84.0f * uiScale;
+        drawText("On-Screen Controls", drawerX + padX, r1Y + 20.0f * uiScale, 0.40f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
+        drawText("Show HUD buttons", drawerX + padX, r1Y + 36.0f * uiScale, 0.29f * uiScale, rgba(0.761f, 0.776f, 0.812f, 0.85f), 0);
+        drawM3Switch(drawerX + drawerW - padX - swW, r1Y + 10.0f * uiScale, swW, swH, mSettings.showControls);
+
+        // Row 2: Fullscreen Switch (r2Y = 140.0f * uiScale)
+        float r2Y = 140.0f * uiScale;
+        drawText("Fullscreen", drawerX + padX, r2Y + 20.0f * uiScale, 0.40f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
+        drawText("Native ultrawide (expand Hor+ FOV)", drawerX + padX, r2Y + 36.0f * uiScale, 0.29f * uiScale, rgba(0.761f, 0.776f, 0.812f, 0.85f), 0);
+        drawM3Switch(drawerX + drawerW - padX - swW, r2Y + 10.0f * uiScale, swW, swH, mSettings.fullscreen);
+
+        // Row 3: Joystick Mode Segmented Button (r3Y = 196.0f * uiScale)
+        float r3Y = 196.0f * uiScale;
+        drawText("Joystick Mode", drawerX + padX, r3Y + 14.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
+        const char* joyOpts[2] = {"Dynamic", "Fixed"};
+        drawSegmentedGroup(drawerX + padX, r3Y + 22.0f * uiScale, contentW, 34.0f * uiScale, joyOpts, 2, mSettings.dynamicStick ? 0 : 1);
+
+        // Row 4: Controls Opacity Segmented Button (r4Y = 260.0f * uiScale)
+        float r4Y = 260.0f * uiScale;
+        drawText("Controls Opacity", drawerX + padX, r4Y + 14.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
+        const char* opOpts[4] = {"25%", "50%", "75%", "100%"};
+        int opIdx = (fabsf(mSettings.opacity - 0.25f) < 0.12f) ? 0 : (fabsf(mSettings.opacity - 0.50f) < 0.12f) ? 1 : (fabsf(mSettings.opacity - 0.75f) < 0.12f) ? 2 : 3;
+        drawSegmentedGroup(drawerX + padX, r4Y + 22.0f * uiScale, contentW, 34.0f * uiScale, opOpts, 4, opIdx);
+
+        // Row 5: Button Size Segmented Button (r5Y = 324.0f * uiScale)
+        float r5Y = 324.0f * uiScale;
+        drawText("Button Size", drawerX + padX, r5Y + 14.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
+        const char* scOpts[3] = {"Small", "Medium", "Large"};
+        int scIdx = (fabsf(mSettings.scale - 0.85f) < 0.08f) ? 0 : (fabsf(mSettings.scale - 1.25f) < 0.08f) ? 2 : 1;
+        drawSegmentedGroup(drawerX + padX, r5Y + 22.0f * uiScale, contentW, 34.0f * uiScale, scOpts, 3, scIdx);
+
+        // Row 6: Layout Edit / Reset Filled Tonal Buttons (r6Y = 388.0f * uiScale)
+        float r6Y = 388.0f * uiScale;
+        drawText("Controls Layout", drawerX + padX, r6Y + 14.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
+        float btn6Y = r6Y + 22.0f * uiScale;
+        float b1X0 = drawerX + padX;
+        float b1X1 = drawerX + padX + contentW * 0.56f - 4.0f * uiScale;
+        float b2X0 = drawerX + padX + contentW * 0.56f + 4.0f * uiScale;
+        float b2X1 = drawerX + drawerW - padX;
+        // Reposition Filled Tonal Button
+        drawRoundRect(b1X0, btn6Y, b1X1, btn6Y + 34.0f * uiScale, 14.0f * uiScale, rgba(0.18f, 0.23f, 0.31f, 0.95f));
+        drawText("Reposition", (b1X0 + b1X1) * 0.5f, btn6Y + 22.0f * uiScale, 0.36f * uiScale, rgba(0.659f, 0.780f, 0.980f, 1.0f), 1);
+        // Reset Destructive Tonal Button
+        drawRoundRect(b2X0, btn6Y, b2X1, btn6Y + 34.0f * uiScale, 14.0f * uiScale, rgba(0.35f, 0.15f, 0.17f, 0.95f));
+        drawText("Reset", (b2X0 + b2X1) * 0.5f, btn6Y + 22.0f * uiScale, 0.36f * uiScale, rgba(1.0f, 0.72f, 0.72f, 1.0f), 1);
+
+        // Row 7: [ Done ] Action Pill Button
+        float doneY = std::min(h - 52.0f * uiScale, 452.0f * uiScale);
+        float doneX0 = drawerX + padX;
+        float doneX1 = drawerX + drawerW - padX;
+        drawRoundRect(doneX0, doneY, doneX1, doneY + 38.0f * uiScale, 19.0f * uiScale, rgba(0.043f, 0.341f, 0.816f, 1.0f));
+        drawText("Done", (doneX0 + doneX1) * 0.5f, doneY + 24.0f * uiScale, 0.40f * uiScale, rgba(1.0f, 1.0f, 1.0f, 1.0f), 1);
+    }
+
+    if (verts.empty()) return;
+
+    // -------------------------------------------------------------
+    // Single GLES Draw Call
+    // -------------------------------------------------------------
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_CULL_FACE);
+    glDisable(GL_SCISSOR_TEST);
+
+    glUseProgram(mProg);
+
+    float proj[16] = {
+        2.0f / w, 0.0f,      0.0f, 0.0f,
+        0.0f,     -2.0f / h, 0.0f, 0.0f,
+        0.0f,     0.0f,     -1.0f, 0.0f,
+        -1.0f,    1.0f,      0.0f, 1.0f
+    };
+    GLint uProjLoc = glGetUniformLocation(mProg, "uProj");
+    glUniformMatrix4fv(uProjLoc, 1, GL_FALSE, proj);
+
+    GLint uFontLoc = glGetUniformLocation(mProg, "uFontTex");
+    glUniform1i(uFontLoc, 0);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, mFontTex);
+
+    glBindVertexArray(mVao);
+    glBindBuffer(GL_ARRAY_BUFFER, mVbo);
+    glBufferData(GL_ARRAY_BUFFER, verts.size() * sizeof(UIVertex), verts.data(), GL_STREAM_DRAW);
+
+    glDrawArrays(GL_TRIANGLES, 0, (GLsizei)verts.size());
+
+    glBindVertexArray(0);
+    glDisable(GL_BLEND);
+}
+
+}  // namespace mobile_ui

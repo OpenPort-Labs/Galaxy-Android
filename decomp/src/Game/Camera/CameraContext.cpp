@@ -43,6 +43,12 @@ const TPos3f& CameraContext::getInvViewMtx() const {
 }
 
 f32 CameraContext::getAspect() const {
+#ifdef TARGET_PC
+    if (port_is_fullscreen_aspect()) {
+        float a = port_get_display_aspect();
+        if (a > 0.1f) return a;
+    }
+#endif
     if (MR::isScreen16Per9()) {
         return 16.0f / 9.0f;
     } else {

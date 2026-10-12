@@ -80,11 +80,10 @@ public class CookerEngine {
     }
 
     public static boolean extractWithNodtool(Context context, String imagePath, String outDir, boolean includeMovies, CookerCallback callback) {
-        File nodtool = new File(context.getFilesDir(), "bin/nodtool");
+        File libDir = new File(context.getApplicationInfo().nativeLibraryDir);
+        File nodtool = new File(libDir, "libnodtool.so");
         if (!nodtool.exists()) {
-            try {
-                prepareAssets(context, callback);
-            } catch (Exception ignored) {}
+            nodtool = new File(context.getFilesDir(), "bin/nodtool");
         }
         nodtool.setExecutable(true, false);
 
@@ -140,26 +139,9 @@ public class CookerEngine {
         File filesDir = context.getFilesDir();
         File pythonHomeDir = new File(filesDir, "pythonhome");
         File scriptsDir = new File(filesDir, "scripts");
-        File binDir = new File(filesDir, "bin");
 
         if (!pythonHomeDir.exists()) pythonHomeDir.mkdirs();
         if (!scriptsDir.exists()) scriptsDir.mkdirs();
-        if (!binDir.exists()) binDir.mkdirs();
-
-        // Unpack nodtool binary
-        File nodtoolFile = new File(binDir, "nodtool");
-        if (!nodtoolFile.exists() || nodtoolFile.length() == 0) {
-            try (InputStream in = context.getAssets().open("bin/nodtool");
-                 OutputStream out = new FileOutputStream(nodtoolFile)) {
-                byte[] buf = new byte[65536];
-                int len;
-                while ((len = in.read(buf)) > 0) {
-                    out.write(buf, 0, len);
-                }
-            }
-            nodtoolFile.setExecutable(true, false);
-            if (callback != null) callback.onLog("[Setup] Native disc extraction tool unpacked.");
-        }
 
         // Unpack pythonhome.zip if not already extracted
         File stdlibMarker = new File(pythonHomeDir, ".extracted");

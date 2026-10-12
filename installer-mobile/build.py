@@ -152,6 +152,7 @@ with zipfile.ZipFile(base_apk, 'a', zipfile.ZIP_DEFLATED) as z:
         (os.path.join(INSTALLER_DIR, 'vendor', 'python', 'lib', 'arm64-v8a', 'libpython3.10.so'), 'lib/arm64-v8a/libpython3.10.so'),
         (os.path.join(INSTALLER_DIR, 'vendor', 'python', 'lib', 'arm64-v8a', 'libbz2.so'), 'lib/arm64-v8a/libbz2.so'),
         (os.path.join(INSTALLER_DIR, 'vendor', 'python', 'lib', 'arm64-v8a', 'liblzma.so'), 'lib/arm64-v8a/liblzma.so'),
+        (os.path.join(INSTALLER_DIR, 'vendor', 'nodtool', 'libnodtool.so'), 'lib/arm64-v8a/libnodtool.so'),
     ]
     for src, arc in libs:
         if os.path.exists(src):

@@ -15,6 +15,12 @@ if os.path.exists(_dll_path):
 def yaz0_decompress(data):
     if data[:4] != b'Yaz0':
         return data
+    try:
+        import android_bridge
+        if hasattr(android_bridge, 'yaz0_decompress'):
+            return android_bridge.yaz0_decompress(data)
+    except Exception:
+        pass
     if _dll is not None:
         size = struct.unpack_from('>I', data, 4)[0]
         out = ctypes.create_string_buffer(size)

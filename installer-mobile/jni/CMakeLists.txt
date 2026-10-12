@@ -17,6 +17,7 @@ add_library(installer SHARED
     py_bridge.cpp
     wii_extractor.cpp
     aes.c
+    yaz0.c
 )
 
 target_link_libraries(installer

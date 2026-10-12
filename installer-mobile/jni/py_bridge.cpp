@@ -5,6 +5,7 @@
 #include <unistd.h>
 #include <Python.h>
 #include "wii_extractor.h"
+#include "yaz0.h"
 
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, "CookerBridge", __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, "CookerBridge", __VA_ARGS__)
@@ -67,8 +68,50 @@ static PyObject* py_log_wrapper(PyObject* self, PyObject* args) {
     Py_RETURN_NONE;
 }
 
+static PyObject* py_progress_wrapper(PyObject* self, PyObject* args) {
+    int percent = 0;
+    const char* str = nullptr;
+    if (PyArg_ParseTuple(args, "is", &percent, &str)) {
+        if (str) {
+            sendProgressToJava(percent, str);
+        }
+    }
+    Py_RETURN_NONE;
+}
+
+static PyObject* py_yaz0_decompress(PyObject* self, PyObject* args) {
+    Py_buffer view;
+    if (!PyArg_ParseTuple(args, "y*", &view)) {
+        return NULL;
+    }
+    const uint8_t* data = (const uint8_t*)view.buf;
+    size_t len = (size_t)view.len;
+    if (len < 16 || memcmp(data, "Yaz0", 4) != 0) {
+        PyObject* ret = PyBytes_FromStringAndSize((const char*)data, len);
+        PyBuffer_Release(&view);
+        return ret;
+    }
+    uint32_t decompSize = ((uint32_t)data[4] << 24) | ((uint32_t)data[5] << 16) | ((uint32_t)data[6] << 8) | (uint32_t)data[7];
+    PyObject* outObj = PyBytes_FromStringAndSize(NULL, decompSize);
+    if (!outObj) {
+        PyBuffer_Release(&view);
+        return PyErr_NoMemory();
+    }
+    char* dst = PyBytes_AS_STRING(outObj);
+    long long n = yaz0_decode(data, len, (uint8_t*)dst, decompSize);
+    PyBuffer_Release(&view);
+    if (n != (long long)decompSize) {
+        Py_DECREF(outObj);
+        PyErr_SetString(PyExc_ValueError, "bad Yaz0 stream");
+        return NULL;
+    }
+    return outObj;
+}
+
 static PyMethodDef BridgeMethods[] = {
     {"log_bridge", py_log_wrapper, METH_VARARGS, "Send logs to Android UI"},
+    {"progress_bridge", py_progress_wrapper, METH_VARARGS, "Send progress to Android UI"},
+    {"yaz0_decompress", py_yaz0_decompress, METH_VARARGS, "Decompress Yaz0 natively in C"},
     {NULL, NULL, 0, NULL}
 };
 
@@ -184,26 +227,49 @@ Java_com_galaxy_installer_CookerEngine_runCooker(
 
     PyRun_SimpleString(setupScript.c_str());
 
-    // Execute cook.py
+    // Execute cook.py conversion
     std::string runScript =
-        "import cook\n"
-        "args = ['cook.py', '" + std::string(inputDir) + "', '" + std::string(outputDir) + "']\n";
-    if (withMovies) {
-        runScript += "args.append('--with-movies')\n";
-    }
-    runScript +=
+        "import cook, android_bridge, traceback\n"
+        "def on_progress(done, total):\n"
+        "    pct = int(done * 100 / total) if total > 0 else 0\n"
+        "    android_bridge.progress_bridge(pct, f'Cooking assets: {done}/{total} ({pct}%)')\n"
         "try:\n"
         "    print('[Engine] Beginning conversion...')\n"
-        "    cook.main(args)\n"
+        "    ret = cook.convert(\n"
+        "        data_dir='" + std::string(inputDir) + "',\n"
+        "        out_dir='" + std::string(outputDir) + "',\n"
+        "        with_movies=" + (withMovies ? "True" : "False") + ",\n"
+        "        progress=on_progress\n"
+        "    )\n"
+        "    if ret != 0:\n"
+        "        raise RuntimeError(f'cook.convert returned non-zero code {ret}')\n"
         "    print('[Engine] Cooking completed successfully!')\n"
-        "except Exception as e:\n"
+        "except BaseException as e:\n"
         "    import traceback\n"
         "    print('[ERROR] ' + str(e))\n"
         "    traceback.print_exc()\n"
         "    raise\n";
 
-    sendLogToJava("[Native] Invoking cook.main()...");
+    sendLogToJava("[Native] Invoking cook.convert()...");
     int result = PyRun_SimpleString(runScript.c_str());
+    if (result != 0) {
+        PyObject *ptype = nullptr, *pvalue = nullptr, *ptraceback = nullptr;
+        PyErr_Fetch(&ptype, &pvalue, &ptraceback);
+        if (pvalue) {
+            PyObject *pStr = PyObject_Str(pvalue);
+            if (pStr) {
+                const char *errText = PyUnicode_AsUTF8(pStr);
+                if (errText) {
+                    sendLogToJava(("[Python Error] " + std::string(errText)).c_str());
+                }
+                Py_DECREF(pStr);
+            }
+            Py_DECREF(pvalue);
+        }
+        if (ptype) Py_DECREF(ptype);
+        if (ptraceback) Py_DECREF(ptraceback);
+        PyErr_Clear();
+    }
 
     Py_Finalize();
     if (wHome) {

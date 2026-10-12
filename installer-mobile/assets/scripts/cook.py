@@ -184,8 +184,6 @@ def process(job):
     src, dst, mode = job
     stats = collections.Counter()
     notes = []
-    for mod in (j3d, lyt, jpa, jaudio):
-        del mod.warnings[:]
     try:
         os.makedirs(os.path.dirname(dst), exist_ok=True)
         if mode == 'archive':
@@ -206,7 +204,7 @@ def process(job):
         os.replace(dst + '.tmp', dst)
     except Exception as e:  # report and continue with the other files
         return stats, notes, '%s: %r' % (src, e)
-    return stats, notes + j3d.warnings + lyt.warnings + jpa.warnings + jaudio.warnings, None
+    return stats, notes, None
 
 
 def cook_dol_data(data_dir, out_dir):
@@ -274,12 +272,21 @@ def convert(data_dir, out_dir, jobs=None, only=None, no_audio=False,
                               jobs=jobs or os.cpu_count(), only=only,
                               no_audio=no_audio, with_movies=with_movies)
     # The game partition holds sys/ and files/; Dolphin extracts it to DATA/
-    # under the folder it was given.
+    # under the folder it was given; nodtool extracts directly or into DATA.
     if not os.path.isfile(os.path.join(args.data_dir, 'sys', 'fst.bin')):
         inner = os.path.join(args.data_dir, 'DATA')
-        if not os.path.isfile(os.path.join(inner, 'sys', 'fst.bin')):
-            sys.exit('%s holds no sys/fst.bin: give the folder the game partition was extracted to (with sys/ and files/)' % args.data_dir)
-        args.data_dir = inner
+        if os.path.isfile(os.path.join(inner, 'sys', 'fst.bin')):
+            args.data_dir = inner
+        else:
+            found_data = None
+            for root, dirs, files in os.walk(args.data_dir):
+                if 'fst.bin' in files and os.path.basename(root).lower() == 'sys':
+                    found_data = os.path.dirname(root)
+                    break
+            if found_data:
+                args.data_dir = found_data
+            else:
+                raise FileNotFoundError(f"{args.data_dir} holds no sys/fst.bin: extraction directory may be empty or incomplete")
 
     os.makedirs(os.path.join(args.out_dir, 'sys'), exist_ok=True)
     shutil.copyfile(os.path.join(args.data_dir, 'sys', 'fst.bin'), os.path.join(args.out_dir, 'sys', 'fst.bin'))
@@ -291,11 +298,11 @@ def convert(data_dir, out_dir, jobs=None, only=None, no_audio=False,
     t0 = time.time()
     total = collections.Counter()
     notes = collections.Counter()
-    # The desktop installer calls this from a thread while Tk is running.
-    # Spawn fresh workers rather than forking the GUI process on Linux.
-    with concurrent.futures.ProcessPoolExecutor(max_workers=args.jobs,
-            mp_context=multiprocessing.get_context('spawn')) as ex:
-        for done, (stats, n, err) in enumerate(ex.map(process, jobs, chunksize=8), 1):
+    # On Android embedded Python, child processes cannot be spawned,
+    # so we use ThreadPoolExecutor which runs natively within the app.
+    workers = min(4, args.jobs or 4)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as ex:
+        for done, (stats, n, err) in enumerate(ex.map(process, jobs), 1):
             total.update(stats)
             notes.update(n)
             if err:
@@ -312,7 +319,7 @@ def convert(data_dir, out_dir, jobs=None, only=None, no_audio=False,
     return 1 if errors else 0
 
 
-def main():
+def main(args=None):
     ap = argparse.ArgumentParser()
     ap.add_argument('data_dir')
     ap.add_argument('out_dir')
@@ -320,7 +327,8 @@ def main():
     ap.add_argument('--only')
     ap.add_argument('--no-audio', action='store_true')
     ap.add_argument('--with-movies', action='store_true')
-    return convert(**vars(ap.parse_args()))
+    parsed = ap.parse_args(args[1:] if args and len(args) > 1 else None)
+    return convert(**vars(parsed))
 
 
 if __name__ == '__main__':

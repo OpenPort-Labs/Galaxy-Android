@@ -282,35 +282,19 @@ public class MainActivity extends Activity {
                     mHandler.post(() -> txtProgressStatus.setText("Extracting Wii disc image..."));
 
                     tempExtractionDir = new File(getFilesDir(), "extracted_cache");
-                    CookerEngine.deleteRecursive(tempExtractionDir);
-                    tempExtractionDir.mkdirs();
+                    File fstCheck = new File(tempExtractionDir, "sys/fst.bin");
+                    if (!fstCheck.exists()) {
+                        fstCheck = new File(tempExtractionDir, "DATA/sys/fst.bin");
+                    }
+                    boolean extractSuccess = true;
+                    if (fstCheck.exists() && fstCheck.length() > 0) {
+                        appendLog("[Stage 1/2] Valid disc cache found from previous extraction. Skipping re-extract.");
+                    } else {
+                        CookerEngine.deleteRecursive(tempExtractionDir);
+                        tempExtractionDir.mkdirs();
 
-                    boolean extractSuccess = CookerEngine.extractWithNodtool(
-                        MainActivity.this,
-                        sourcePath,
-                        tempExtractionDir.getAbsolutePath(),
-                        withMovies,
-                        new CookerEngine.CookerCallback() {
-                            @Override public void onLog(String line) { appendLog(line); }
-                            @Override
-                            public void onProgress(int percent, String message) {
-                                mHandler.post(() -> {
-                                    if (percent >= 0) {
-                                        progressBar.setIndeterminate(false);
-                                        progressBar.setProgress(percent);
-                                    }
-                                    if (message != null) {
-                                        txtProgressStatus.setText(message);
-                                    }
-                                });
-                            }
-                            @Override public void onFinished(boolean success, String message) {}
-                        }
-                    );
-
-                    if (!extractSuccess && (lower.endsWith(".wbfs") || lower.endsWith(".iso"))) {
-                        appendLog("[Fallback] Retrying with secondary native C++ decryptor...");
-                        int extractRet = CookerEngine.extractDisc(
+                        extractSuccess = CookerEngine.extractWithNodtool(
+                            MainActivity.this,
                             sourcePath,
                             tempExtractionDir.getAbsolutePath(),
                             withMovies,
@@ -331,7 +315,32 @@ public class MainActivity extends Activity {
                                 @Override public void onFinished(boolean success, String message) {}
                             }
                         );
-                        extractSuccess = (extractRet == 0);
+
+                        if (!extractSuccess && (lower.endsWith(".wbfs") || lower.endsWith(".iso"))) {
+                            appendLog("[Fallback] Retrying with secondary native C++ decryptor...");
+                            int extractRet = CookerEngine.extractDisc(
+                                sourcePath,
+                                tempExtractionDir.getAbsolutePath(),
+                                withMovies,
+                                new CookerEngine.CookerCallback() {
+                                    @Override public void onLog(String line) { appendLog(line); }
+                                    @Override
+                                    public void onProgress(int percent, String message) {
+                                        mHandler.post(() -> {
+                                            if (percent >= 0) {
+                                                progressBar.setIndeterminate(false);
+                                                progressBar.setProgress(percent);
+                                            }
+                                            if (message != null) {
+                                                txtProgressStatus.setText(message);
+                                            }
+                                        });
+                                    }
+                                    @Override public void onFinished(boolean success, String message) {}
+                                }
+                            );
+                            extractSuccess = (extractRet == 0);
+                        }
                     }
 
                     if (!extractSuccess) {
@@ -396,24 +405,20 @@ public class MainActivity extends Activity {
                     }
                 );
 
-                // Clean up temporary cache to free device storage
-                if (tempExtractionDir != null && tempExtractionDir.exists()) {
-                    appendLog("[Clean] Freeing temporary cache storage...");
-                    CookerEngine.deleteRecursive(tempExtractionDir);
-                }
-
                 if (ret != 0) {
                     mHandler.post(() -> onCookingCompleted(false, "Cooker returned error code: " + ret));
                 } else {
+                    // Clean up temporary cache on success to free device storage
+                    if (tempExtractionDir != null && tempExtractionDir.exists()) {
+                        appendLog("[Clean] Freeing temporary cache storage...");
+                        CookerEngine.deleteRecursive(tempExtractionDir);
+                    }
                     mHandler.post(() -> onCookingCompleted(true, "All game assets cooked successfully!"));
                 }
 
             } catch (Exception e) {
                 Log.e(TAG, "Cooking failed with exception", e);
                 appendLog("[ERROR] " + e.getMessage());
-                if (tempExtractionDir != null && tempExtractionDir.exists()) {
-                    CookerEngine.deleteRecursive(tempExtractionDir);
-                }
                 mHandler.post(() -> onCookingCompleted(false, e.getMessage()));
             }
         }).start();

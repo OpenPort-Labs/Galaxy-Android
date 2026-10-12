@@ -1,4 +1,5 @@
 #include "Game/LiveActor/HitSensor.hpp"
+#include "port/port.h"
 #include "Game/MapObj/BlackHole.hpp"
 #include "Game/Player/MarioActor.hpp"
 #include "Game/Player/MarioAnimator.hpp"
@@ -382,6 +383,10 @@ bool MarioActor::receiveOtherMsg(u32 msg, HitSensor* pSender, HitSensor* pReceiv
 
         mBlackHolePosition = pSender->mPosition;
         mBlackHole = static_cast< BlackHole* >(pSender->mHost);
+        if (port_is_infinite_health()) {
+            teleportToOriginalSpot();
+            return false;
+        }
         forceGameOverBlackHole();
         return true;
     case ACTMES_REFLECT_V:

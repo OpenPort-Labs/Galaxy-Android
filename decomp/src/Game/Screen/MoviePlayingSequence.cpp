@@ -1,4 +1,5 @@
 #include "Game/Screen/MoviePlayingSequence.hpp"
+#include "port/port.h"
 #include "Game/Demo/DemoPadRumbler.hpp"
 #include "Game/LiveActor/Nerve.hpp"
 #include "Game/Player/MarioAccess.hpp"
@@ -260,6 +261,17 @@ void MoviePlayingSequence::exeWait() {
 }
 
 void MoviePlayingSequence::exePlayWait() {
+    if (port_is_skip_cutscenes()) {
+        if (MR::isEqualStringCase(mInfo->mMovieName, "/MovieData/PrologueA.thp")) {
+            MarioAccess::readyRemoteDemo();
+            MR::setPlayerPosOnGroundAndWait("\x83\x8a\x83\x58\x83\x5e\x81\x5b\x83\x67");
+            MR::startBckPlayer("Wait");
+        }
+        MR::forceCloseWipeFade();
+        setNerve(GET_NERVE(MoviePlayingSequence, HostTypeEndWait));
+        return;
+    }
+
     if (MR::isFirstStep(this)) {
         MR::startStarPointerModeDemo(this);
         MR::stopSubBGM(60);
@@ -291,6 +303,12 @@ void MoviePlayingSequence::exePlayWait() {
 }
 
 void MoviePlayingSequence::exePlayStart() {
+    if (port_is_skip_cutscenes()) {
+        MR::forceCloseWipeFade();
+        setNerve(GET_NERVE(MoviePlayingSequence, HostTypeEndWait));
+        return;
+    }
+
     if (MR::isFirstStep(this)) {
         MR::startMoviePlayer(::getMovieName(mInfo));
         MR::tryFrameToScreenCinemaFrame();
@@ -364,6 +382,15 @@ bool MoviePlayingSequence::tryEnd() {
 }
 
 bool MoviePlayingSequence::trySkip() {
+    if (port_is_skip_cutscenes()) {
+        if (MR::isActiveMoviePlayer()) {
+            MR::stopMoviePlayer();
+        }
+        MR::forceCloseWipeFade();
+        setNerve(GET_NERVE(MoviePlayingSequence, HostTypeEndWait));
+        return true;
+    }
+
     if (!MR::isActiveMoviePlayer()) {
         return false;
     }

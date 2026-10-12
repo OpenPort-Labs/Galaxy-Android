@@ -1,4 +1,5 @@
 #include "Game/Player/MarioDamage.hpp"
+#include "port/port.h"
 #include "Game/Enemy/KarikariDirector.hpp"
 #include "Game/Map/CollisionCode.hpp"
 #include "Game/Map/HitInfo.hpp"
@@ -663,6 +664,11 @@ void MarioFireDamage::decAfterTimer() {
 }
 
 bool Mario::doAbyssDamage() {
+    if (port_is_infinite_health()) {
+        mActor->teleportToOriginalSpot();
+        return false;
+    }
+
     if (getCurrentStatus() == MarioStatus_AbyssDamage) {
         return false;
     }
@@ -682,6 +688,10 @@ MarioAbyssDamage::MarioAbyssDamage(MarioActor* pActor) : MarioState(pActor, Mari
 }
 
 bool MarioAbyssDamage::start() {
+    if (port_is_infinite_health()) {
+        mActor->teleportToOriginalSpot();
+        return false;
+    }
     _12 = 0;
     _14 = 0;
     mActor->forceGameOverAbyss();

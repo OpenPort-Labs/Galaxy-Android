@@ -1,4 +1,5 @@
 #include "Game/LiveActor/HitSensor.hpp"
+#include "port/port.h"
 #include "Game/Player/MarioActor.hpp"
 #include "Game/Player/MarioAnimator.hpp"
 #include "Game/Player/MarioFpView.hpp"
@@ -14,6 +15,10 @@
 #include "Game/Util/StarPointerUtil.hpp"
 
 void MarioActor::forceKill(u32 type) {
+    if (port_is_infinite_health()) {
+        teleportToOriginalSpot();
+        return;
+    }
     if (mMario->getMovementStates()._1F) {
         return;
     }
@@ -86,6 +91,10 @@ void MarioActor::forceKill(u32 type) {
 }
 
 void MarioActor::exeGameOver() {
+    if (port_is_infinite_health()) {
+        teleportToOriginalSpot();
+        return;
+    }
     mVelocity.zero();
     calcHeadPos();
     updateRealMtx();
@@ -135,6 +144,10 @@ void MarioActor::exeGameOver() {
 }
 
 void MarioActor::exeGameOverAbyss() {
+    if (port_is_infinite_health()) {
+        teleportToOriginalSpot();
+        return;
+    }
     mVelocity = getLastMove() * 0.99f + mCamDirZ * 35.0f * 0.01f;
     mLastMove = mVelocity;
 
@@ -161,6 +174,10 @@ void MarioActor::exeGameOverAbyss() {
 }
 
 void MarioActor::exeGameOverFire() {
+    if (port_is_infinite_health()) {
+        teleportToOriginalSpot();
+        return;
+    }
     mVelocity.zero();
     calcHeadPos();
     updateRealMtx();
@@ -188,6 +205,10 @@ void MarioActor::exeGameOverFire() {
 }
 
 void MarioActor::exeGameOverSink() {
+    if (port_is_infinite_health()) {
+        teleportToOriginalSpot();
+        return;
+    }
     mVelocity.zero();
     calcHeadPos();
     updateRealMtx();
@@ -238,6 +259,10 @@ void MarioActor::exeGameOverSink() {
 }
 
 void MarioActor::exeGameOverNonStop() {
+    if (port_is_infinite_health()) {
+        teleportToOriginalSpot();
+        return;
+    }
     if (!MR::isFirstStep(this)) {
         return;
     }

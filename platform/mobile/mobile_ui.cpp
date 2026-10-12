@@ -245,10 +245,14 @@ void Settings::load(const std::string& path) {
             else if (!strcmp(key, "dpad_on_right")) dpadOnRight = (val > 0.5f);
             else if (!strcmp(key, "dpad_offset_x")) dpadOffsetX = val;
             else if (!strcmp(key, "dpad_offset_y")) dpadOffsetY = val;
+            else if (!strcmp(key, "mod_fly")) modFly = (val > 0.5f);
+            else if (!strcmp(key, "mod_skip_cutscenes")) modSkipCutscenes = (val > 0.5f);
+            else if (!strcmp(key, "mod_infinite_health")) modInfiniteHealth = (val > 0.5f);
         }
     }
     fclose(f);
-    LOGI("Loaded settings: show=%d, full=%d, op=%.2f, scale=%.2f, dpad=%d", showControls, fullscreen, opacity, scale, showDpad);
+    LOGI("Loaded settings: show=%d, full=%d, op=%.2f, scale=%.2f, dpad=%d, fly=%d, skip=%d, infHp=%d",
+         showControls, fullscreen, opacity, scale, showDpad, modFly, modSkipCutscenes, modInfiniteHealth);
 }
 
 void Settings::save(const std::string& path) const {
@@ -267,6 +271,9 @@ void Settings::save(const std::string& path) const {
     fprintf(f, "dpad_on_right=%d\n", dpadOnRight ? 1 : 0);
     fprintf(f, "dpad_offset_x=%.1f\n", dpadOffsetX);
     fprintf(f, "dpad_offset_y=%.1f\n", dpadOffsetY);
+    fprintf(f, "mod_fly=%d\n", modFly ? 1 : 0);
+    fprintf(f, "mod_skip_cutscenes=%d\n", modSkipCutscenes ? 1 : 0);
+    fprintf(f, "mod_infinite_health=%d\n", modInfiniteHealth ? 1 : 0);
     fclose(f);
     LOGI("Saved settings to %s", path.c_str());
 }
@@ -520,11 +527,136 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
         return true;
     }
 
-    // Handle Material 3 Side Sheet Drawer Touches
+    // Handle Material 3 Side Sheet Drawer Touches (Tabbed & Scrollable)
     if (mSettingsOpen || mDrawerAnim > 0.05f) {
+        float padX = 22.0f * uiScale;
+        float contentW = drawerW - padX * 2.0f;
+        float contentTop = 112.0f * uiScale;
+        float contentBottom = h - 56.0f * uiScale;
+        float totalContentH = (mSettingsTab == 0) ? (455.0f * uiScale) : (340.0f * uiScale);
+        float maxScroll = std::max(0.0f, totalContentH - (contentBottom - contentTop));
+
+        // 1. Move Gesture for Smooth Scrolling
+        if (action == AMOTION_EVENT_ACTION_MOVE && mDrawerScrollPointerId >= 0) {
+            for (size_t i = 0; i < pointerCount; i++) {
+                int32_t pid = AMotionEvent_getPointerId(event, i);
+                if (pid == mDrawerScrollPointerId) {
+                    float py = AMotionEvent_getY(event, i);
+                    float deltaY = py - mDrawerTouchStartY;
+                    if (fabsf(deltaY) > 6.0f * uiScale || mDrawerIsScrolling) {
+                        mDrawerIsScrolling = true;
+                        mDrawerScrollTarget = std::max(0.0f, std::min(mDrawerScrollStartOffset - deltaY, maxScroll));
+                        mDirty = true;
+                    }
+                    return true;
+                }
+            }
+        }
+
+        // 2. Up / Pointer Up / Cancel: Finish Drag or Handle Row Tap
+        if (action == AMOTION_EVENT_ACTION_UP || action == AMOTION_EVENT_ACTION_POINTER_UP || action == AMOTION_EVENT_ACTION_CANCEL) {
+            int32_t liftedPid = AMotionEvent_getPointerId(event, pointerIndex);
+            if (liftedPid == mDrawerScrollPointerId) {
+                if (!mDrawerIsScrolling && action != AMOTION_EVENT_ACTION_CANCEL) {
+                    float px = AMotionEvent_getX(event, pointerIndex);
+                    float py = AMotionEvent_getY(event, pointerIndex);
+                    float contentRelY = py - contentTop + mDrawerScrollY;
+
+                    if (mSettingsTab == 0) {
+                        // General Tab items
+                        // Row 0: Visibility Switch
+                        if (contentRelY >= 0.0f && contentRelY <= 48.0f * uiScale) {
+                            mSettings.showControls = !mSettings.showControls;
+                        }
+                        // Row 1: Camera D-Pad Switch
+                        else if (contentRelY >= 50.0f * uiScale && contentRelY <= 98.0f * uiScale) {
+                            mSettings.showDpad = !mSettings.showDpad;
+                        }
+                        // Row 2: D-Pad Position Segmented
+                        else if (contentRelY >= 104.0f * uiScale && contentRelY <= 156.0f * uiScale) {
+                            float midX = drawerX + padX + contentW * 0.5f;
+                            if (px < midX) {
+                                mSettings.dpadOnRight = false;
+                                mSettings.dpadOffsetX = 0.0f;
+                                mSettings.dpadOffsetY = 0.0f;
+                            } else {
+                                mSettings.dpadOnRight = true;
+                                mSettings.dpadOffsetX = 0.0f;
+                                mSettings.dpadOffsetY = 0.0f;
+                            }
+                        }
+                        // Row 3: Fullscreen Switch
+                        else if (contentRelY >= 160.0f * uiScale && contentRelY <= 208.0f * uiScale) {
+                            mSettings.fullscreen = !mSettings.fullscreen;
+                        }
+                        // Row 4: Joystick Mode Segmented
+                        else if (contentRelY >= 212.0f * uiScale && contentRelY <= 266.0f * uiScale) {
+                            float midX = drawerX + padX + contentW * 0.5f;
+                            if (px < midX) mSettings.dynamicStick = true;
+                            else mSettings.dynamicStick = false;
+                        }
+                        // Row 5: Controls Opacity Segmented
+                        else if (contentRelY >= 270.0f * uiScale && contentRelY <= 324.0f * uiScale) {
+                            float segW = contentW / 4.0f;
+                            int idx = (int)((px - (drawerX + padX)) / segW);
+                            if (idx <= 0) mSettings.opacity = 0.25f;
+                            else if (idx == 1) mSettings.opacity = 0.50f;
+                            else if (idx == 2) mSettings.opacity = 0.75f;
+                            else mSettings.opacity = 1.00f;
+                        }
+                        // Row 6: Button Size Segmented
+                        else if (contentRelY >= 328.0f * uiScale && contentRelY <= 382.0f * uiScale) {
+                            float segW = contentW / 3.0f;
+                            int idx = (int)((px - (drawerX + padX)) / segW);
+                            if (idx <= 0) mSettings.scale = 0.85f;
+                            else if (idx == 1) mSettings.scale = 1.00f;
+                            else mSettings.scale = 1.25f;
+                        }
+                        // Row 7: Layout Reposition / Reset
+                        else if (contentRelY >= 386.0f * uiScale && contentRelY <= 442.0f * uiScale) {
+                            float splitX = drawerX + padX + contentW * 0.56f;
+                            if (px < splitX) {
+                                mSettingsOpen = false;
+                                mEditLayoutMode = true;
+                            } else {
+                                mSettings.stickOffsetX = 0.0f;
+                                mSettings.stickOffsetY = 0.0f;
+                                mSettings.buttonOffsetX = 0.0f;
+                                mSettings.buttonOffsetY = 0.0f;
+                                mSettings.dpadOffsetX = 0.0f;
+                                mSettings.dpadOffsetY = 0.0f;
+                            }
+                        }
+                    } else {
+                        // Advanced Tab items
+                        // Mod 1: Fly Mode Switch
+                        if (contentRelY >= 48.0f * uiScale && contentRelY <= 106.0f * uiScale) {
+                            mSettings.modFly = !mSettings.modFly;
+                        }
+                        // Mod 2: Cutscene Prevention Switch
+                        else if (contentRelY >= 110.0f * uiScale && contentRelY <= 168.0f * uiScale) {
+                            mSettings.modSkipCutscenes = !mSettings.modSkipCutscenes;
+                        }
+                        // Mod 3: Infinite Health Switch
+                        else if (contentRelY >= 172.0f * uiScale && contentRelY <= 230.0f * uiScale) {
+                            mSettings.modInfiniteHealth = !mSettings.modInfiniteHealth;
+                        }
+                    }
+
+                    if (!mSavePath.empty()) mSettings.save(mSavePath);
+                }
+                mDrawerScrollPointerId = -1;
+                mDrawerIsScrolling = false;
+                mDirty = true;
+                return true;
+            }
+        }
+
+        // 3. Down / Pointer Down: Fixed Buttons, Tabs, or Start Content Scroll
         if (action == AMOTION_EVENT_ACTION_DOWN || action == AMOTION_EVENT_ACTION_POINTER_DOWN) {
             float px = AMotionEvent_getX(event, pointerIndex);
             float py = AMotionEvent_getY(event, pointerIndex);
+            int32_t pid = AMotionEvent_getPointerId(event, pointerIndex);
 
             // Outside drawer tap (scrim) closes settings
             if (px > drawerX + drawerW) {
@@ -533,10 +665,6 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
                 mDirty = true;
                 return true;
             }
-
-            // Inside drawer tap
-            float padX = 22.0f * uiScale;
-            float contentW = drawerW - padX * 2.0f;
 
             // Close [X] button at top-right of drawer
             float closeBtnX = drawerX + drawerW - 36.0f * uiScale;
@@ -550,98 +678,37 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
                 return true;
             }
 
-            // Row 1: Visibility Switch (r1Y = 78.0f * uiScale)
-            float r1Y = 78.0f * uiScale;
-            if (py >= r1Y && py <= r1Y + 48.0f * uiScale) {
-                mSettings.showControls = !mSettings.showControls;
-            }
-
-            // Row 2: Camera D-Pad Switch (r2Y = 130.0f * uiScale)
-            float r2Y = 130.0f * uiScale;
-            if (py >= r2Y && py <= r2Y + 48.0f * uiScale) {
-                mSettings.showDpad = !mSettings.showDpad;
-            }
-
-            // Row 3: D-Pad Position Segmented (r3Y = 182.0f * uiScale)
-            float r3Y = 182.0f * uiScale;
-            float seg3Y = r3Y + 22.0f * uiScale;
-            if (py >= seg3Y && py <= seg3Y + 36.0f * uiScale) {
+            // Tab Bar Tap (General vs Advanced)
+            if (py >= 58.0f * uiScale && py <= 104.0f * uiScale) {
                 float midX = drawerX + padX + contentW * 0.5f;
-                if (px < midX) {
-                    mSettings.dpadOnRight = false;
-                    mSettings.dpadOffsetX = 0.0f;
-                    mSettings.dpadOffsetY = 0.0f;
-                } else {
-                    mSettings.dpadOnRight = true;
-                    mSettings.dpadOffsetX = 0.0f;
-                    mSettings.dpadOffsetY = 0.0f;
+                int newTab = (px < midX) ? 0 : 1;
+                if (newTab != mSettingsTab) {
+                    mSettingsTab = newTab;
+                    mDrawerScrollY = 0.0f;
+                    mDrawerScrollTarget = 0.0f;
                 }
+                mDirty = true;
+                return true;
             }
 
-            // Row 4: Fullscreen Switch (r4Y = 242.0f * uiScale)
-            float r4Y = 242.0f * uiScale;
-            if (py >= r4Y && py <= r4Y + 48.0f * uiScale) {
-                mSettings.fullscreen = !mSettings.fullscreen;
-            }
-
-            // Row 5: Joystick Mode Segmented Button (r5Y = 294.0f * uiScale)
-            float r5Y = 294.0f * uiScale;
-            float seg5Y = r5Y + 22.0f * uiScale;
-            if (py >= seg5Y && py <= seg5Y + 36.0f * uiScale) {
-                float midX = drawerX + padX + contentW * 0.5f;
-                if (px < midX) mSettings.dynamicStick = true;
-                else mSettings.dynamicStick = false;
-            }
-
-            // Row 6: Opacity Segmented Button (r6Y = 354.0f * uiScale)
-            float r6Y = 354.0f * uiScale;
-            float seg6Y = r6Y + 22.0f * uiScale;
-            if (py >= seg6Y && py <= seg6Y + 36.0f * uiScale) {
-                float segW = contentW / 4.0f;
-                int idx = (int)((px - (drawerX + padX)) / segW);
-                if (idx <= 0) mSettings.opacity = 0.25f;
-                else if (idx == 1) mSettings.opacity = 0.50f;
-                else if (idx == 2) mSettings.opacity = 0.75f;
-                else mSettings.opacity = 1.00f;
-            }
-
-            // Row 7: Button Scale Segmented Button (r7Y = 414.0f * uiScale)
-            float r7Y = 414.0f * uiScale;
-            float seg7Y = r7Y + 22.0f * uiScale;
-            if (py >= seg7Y && py <= seg7Y + 36.0f * uiScale) {
-                float segW = contentW / 3.0f;
-                int idx = (int)((px - (drawerX + padX)) / segW);
-                if (idx <= 0) mSettings.scale = 0.85f;
-                else if (idx == 1) mSettings.scale = 1.00f;
-                else mSettings.scale = 1.25f;
-            }
-
-            // Row 8: Layout Edit / Reset (r8Y = 474.0f * uiScale)
-            float r8Y = 474.0f * uiScale;
-            float btn8Y = r8Y + 22.0f * uiScale;
-            if (py >= btn8Y && py <= btn8Y + 38.0f * uiScale) {
-                float splitX = drawerX + padX + contentW * 0.56f;
-                if (px < splitX) {
-                    mSettingsOpen = false;
-                    mEditLayoutMode = true;
-                } else {
-                    mSettings.stickOffsetX = 0.0f;
-                    mSettings.stickOffsetY = 0.0f;
-                    mSettings.buttonOffsetX = 0.0f;
-                    mSettings.buttonOffsetY = 0.0f;
-                    mSettings.dpadOffsetX = 0.0f;
-                    mSettings.dpadOffsetY = 0.0f;
-                }
-            }
-
-            // Row 9: [ Done ] Action Pill Button
-            float doneY = std::min(h - 52.0f * uiScale, 538.0f * uiScale);
-            if (py >= doneY && py <= doneY + 42.0f * uiScale) {
+            // Fixed [ Done ] button at bottom
+            if (py >= contentBottom) {
                 mSettingsOpen = false;
+                if (!mSavePath.empty()) mSettings.save(mSavePath);
+                mDirty = true;
+                return true;
             }
 
-            if (!mSavePath.empty()) mSettings.save(mSavePath);
-            mDirty = true;
+            // Content Viewport Touch Acquisition
+            if (py >= contentTop && py < contentBottom) {
+                mDrawerScrollPointerId = pid;
+                mDrawerTouchStartY = py;
+                mDrawerTouchStartX = px;
+                mDrawerScrollStartOffset = mDrawerScrollY;
+                mDrawerIsScrolling = false;
+                return true;
+            }
+
             return true;
         }
         return true;
@@ -1310,7 +1377,7 @@ void UIOverlay::render(int screenW, int screenH) {
     }
 
     // -------------------------------------------------------------
-    // Material 3 Side Sheet Navigation Drawer
+    // Material 3 Side Sheet Navigation Drawer (Tabbed & Scrollable)
     // -------------------------------------------------------------
     if (mDrawerAnim > 0.001f) {
         // Scrim backdrop (smoothly fades with animation)
@@ -1323,83 +1390,197 @@ void UIOverlay::render(int screenW, int screenH) {
 
         float padX = 22.0f * uiScale;
         float contentW = drawerW - padX * 2.0f;
+        float contentTop = 112.0f * uiScale;
+        float contentBottom = h - 56.0f * uiScale;
+        float totalContentH = (mSettingsTab == 0) ? (455.0f * uiScale) : (340.0f * uiScale);
+        float maxScroll = std::max(0.0f, totalContentH - (contentBottom - contentTop));
 
-        // Header: Iconic Cogwheel + "Settings" Title + Close Button
-        drawCogwheel(drawerX + padX + 16.0f * uiScale, 44.0f * uiScale, 16.0f * uiScale, rgba(0.659f, 0.780f, 0.980f, 1.0f), cogRot);
-        drawText("Settings", drawerX + padX + 42.0f * uiScale, 52.0f * uiScale, 0.56f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
-
-        // Close [X] circular tonal button
-        float closeBtnX = drawerX + drawerW - 36.0f * uiScale;
-        float closeBtnY = 44.0f * uiScale;
-        drawCircle(closeBtnX, closeBtnY, 18.0f * uiScale, rgba(0.188f, 0.196f, 0.224f, 0.95f));
-        drawCloseIcon(closeBtnX, closeBtnY, 10.0f * uiScale, rgba(0.761f, 0.776f, 0.812f, 0.95f));
-
-        // Divider
-        drawRoundRect(drawerX + padX, 70.0f * uiScale, drawerX + drawerW - padX, 72.0f * uiScale, 1.0f, rgba(0.267f, 0.278f, 0.310f, 0.40f));
+        // Smooth scroll damping
+        if (fabsf(mDrawerScrollY - mDrawerScrollTarget) > 0.5f) {
+            mDrawerScrollY += (mDrawerScrollTarget - mDrawerScrollY) * (1.0f - expf(-18.0f * dt));
+            mDirty = true;
+        } else {
+            mDrawerScrollY = mDrawerScrollTarget;
+        }
+        mDrawerScrollY = std::max(0.0f, std::min(mDrawerScrollY, maxScroll));
+        mDrawerScrollTarget = std::max(0.0f, std::min(mDrawerScrollTarget, maxScroll));
 
         float swW = 50.0f * uiScale, swH = 28.0f * uiScale;
 
-        // Row 1: Visibility Switch (r1Y = 78.0f * uiScale)
-        float r1Y = 78.0f * uiScale;
-        drawText("On-Screen Controls", drawerX + padX, r1Y + 20.0f * uiScale, 0.40f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
-        drawText("Show HUD buttons", drawerX + padX, r1Y + 36.0f * uiScale, 0.29f * uiScale, rgba(0.761f, 0.776f, 0.812f, 0.85f), 0);
-        drawM3Switch(drawerX + drawerW - padX - swW, r1Y + 10.0f * uiScale, swW, swH, mSettings.showControls);
+        // ---------------------------------------------------------
+        // A. Scrollable Content Layer
+        // ---------------------------------------------------------
+        if (mSettingsTab == 0) {
+            // General Tab Settings Items
+            auto renderRow = [&](float relY, float rowH, auto func) {
+                float drawY = contentTop + relY - mDrawerScrollY;
+                if (drawY + rowH >= contentTop - 12.0f && drawY <= contentBottom + 12.0f) {
+                    func(drawY);
+                }
+            };
 
-        // Row 2: Camera D-Pad Switch (r2Y = 130.0f * uiScale)
-        float r2Y = 130.0f * uiScale;
-        drawText("Camera D-Pad", drawerX + padX, r2Y + 20.0f * uiScale, 0.40f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
-        drawText("Limited camera rotation & reset", drawerX + padX, r2Y + 36.0f * uiScale, 0.29f * uiScale, rgba(0.761f, 0.776f, 0.812f, 0.85f), 0);
-        drawM3Switch(drawerX + drawerW - padX - swW, r2Y + 10.0f * uiScale, swW, swH, mSettings.showDpad);
+            // Row 0: Visibility Switch
+            renderRow(8.0f * uiScale, 46.0f * uiScale, [&](float y) {
+                drawText("On-Screen Controls", drawerX + padX, y + 20.0f * uiScale, 0.40f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
+                drawText("Show HUD buttons", drawerX + padX, y + 36.0f * uiScale, 0.29f * uiScale, rgba(0.761f, 0.776f, 0.812f, 0.85f), 0);
+                drawM3Switch(drawerX + drawerW - padX - swW, y + 10.0f * uiScale, swW, swH, mSettings.showControls);
+            });
 
-        // Row 3: D-Pad Position Segmented Button (r3Y = 182.0f * uiScale)
-        float r3Y = 182.0f * uiScale;
-        drawText("D-Pad Position", drawerX + padX, r3Y + 14.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
-        const char* dpadSideOpts[2] = {"Left Side", "Right Side"};
-        drawSegmentedGroup(drawerX + padX, r3Y + 22.0f * uiScale, contentW, 34.0f * uiScale, dpadSideOpts, 2, mSettings.dpadOnRight ? 1 : 0);
+            // Row 1: Camera D-Pad Switch
+            renderRow(58.0f * uiScale, 46.0f * uiScale, [&](float y) {
+                drawText("Camera D-Pad", drawerX + padX, y + 20.0f * uiScale, 0.40f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
+                drawText("Limited camera rotation & reset", drawerX + padX, y + 36.0f * uiScale, 0.29f * uiScale, rgba(0.761f, 0.776f, 0.812f, 0.85f), 0);
+                drawM3Switch(drawerX + drawerW - padX - swW, y + 10.0f * uiScale, swW, swH, mSettings.showDpad);
+            });
 
-        // Row 4: Fullscreen Switch (r4Y = 242.0f * uiScale)
-        float r4Y = 242.0f * uiScale;
-        drawText("Fullscreen", drawerX + padX, r4Y + 20.0f * uiScale, 0.40f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
-        drawText("Native ultrawide (expand Hor+ FOV)", drawerX + padX, r4Y + 36.0f * uiScale, 0.29f * uiScale, rgba(0.761f, 0.776f, 0.812f, 0.85f), 0);
-        drawM3Switch(drawerX + drawerW - padX - swW, r4Y + 10.0f * uiScale, swW, swH, mSettings.fullscreen);
+            // Row 2: D-Pad Position Segmented Button
+            renderRow(108.0f * uiScale, 54.0f * uiScale, [&](float y) {
+                drawText("D-Pad Position", drawerX + padX, y + 14.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
+                const char* dpadSideOpts[2] = {"Left Side", "Right Side"};
+                drawSegmentedGroup(drawerX + padX, y + 22.0f * uiScale, contentW, 34.0f * uiScale, dpadSideOpts, 2, mSettings.dpadOnRight ? 1 : 0);
+            });
 
-        // Row 5: Joystick Mode Segmented Button (r5Y = 294.0f * uiScale)
-        float r5Y = 294.0f * uiScale;
-        drawText("Joystick Mode", drawerX + padX, r5Y + 14.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
-        const char* joyOpts[2] = {"Dynamic", "Fixed"};
-        drawSegmentedGroup(drawerX + padX, r5Y + 22.0f * uiScale, contentW, 34.0f * uiScale, joyOpts, 2, mSettings.dynamicStick ? 0 : 1);
+            // Row 3: Fullscreen Switch
+            renderRow(166.0f * uiScale, 46.0f * uiScale, [&](float y) {
+                drawText("Fullscreen", drawerX + padX, y + 20.0f * uiScale, 0.40f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
+                drawText("Native ultrawide (expand Hor+ FOV)", drawerX + padX, y + 36.0f * uiScale, 0.29f * uiScale, rgba(0.761f, 0.776f, 0.812f, 0.85f), 0);
+                drawM3Switch(drawerX + drawerW - padX - swW, y + 10.0f * uiScale, swW, swH, mSettings.fullscreen);
+            });
 
-        // Row 6: Controls Opacity Segmented Button (r6Y = 354.0f * uiScale)
-        float r6Y = 354.0f * uiScale;
-        drawText("Controls Opacity", drawerX + padX, r6Y + 14.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
-        const char* opOpts[4] = {"25%", "50%", "75%", "100%"};
-        int opIdx = (fabsf(mSettings.opacity - 0.25f) < 0.12f) ? 0 : (fabsf(mSettings.opacity - 0.50f) < 0.12f) ? 1 : (fabsf(mSettings.opacity - 0.75f) < 0.12f) ? 2 : 3;
-        drawSegmentedGroup(drawerX + padX, r6Y + 22.0f * uiScale, contentW, 34.0f * uiScale, opOpts, 4, opIdx);
+            // Row 4: Joystick Mode Segmented Button
+            renderRow(216.0f * uiScale, 54.0f * uiScale, [&](float y) {
+                drawText("Joystick Mode", drawerX + padX, y + 14.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
+                const char* joyOpts[2] = {"Dynamic", "Fixed"};
+                drawSegmentedGroup(drawerX + padX, y + 22.0f * uiScale, contentW, 34.0f * uiScale, joyOpts, 2, mSettings.dynamicStick ? 0 : 1);
+            });
 
-        // Row 7: Button Size Segmented Button (r7Y = 414.0f * uiScale)
-        float r7Y = 414.0f * uiScale;
-        drawText("Button Size", drawerX + padX, r7Y + 14.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
-        const char* scOpts[3] = {"Small", "Medium", "Large"};
-        int scIdx = (fabsf(mSettings.scale - 0.85f) < 0.08f) ? 0 : (fabsf(mSettings.scale - 1.25f) < 0.08f) ? 2 : 1;
-        drawSegmentedGroup(drawerX + padX, r7Y + 22.0f * uiScale, contentW, 34.0f * uiScale, scOpts, 3, scIdx);
+            // Row 5: Controls Opacity Segmented Button
+            renderRow(274.0f * uiScale, 54.0f * uiScale, [&](float y) {
+                drawText("Controls Opacity", drawerX + padX, y + 14.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
+                const char* opOpts[4] = {"25%", "50%", "75%", "100%"};
+                int opIdx = (fabsf(mSettings.opacity - 0.25f) < 0.12f) ? 0 : (fabsf(mSettings.opacity - 0.50f) < 0.12f) ? 1 : (fabsf(mSettings.opacity - 0.75f) < 0.12f) ? 2 : 3;
+                drawSegmentedGroup(drawerX + padX, y + 22.0f * uiScale, contentW, 34.0f * uiScale, opOpts, 4, opIdx);
+            });
 
-        // Row 8: Layout Edit / Reset Filled Tonal Buttons (r8Y = 474.0f * uiScale)
-        float r8Y = 474.0f * uiScale;
-        drawText("Controls Layout", drawerX + padX, r8Y + 14.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
-        float btn8Y = r8Y + 22.0f * uiScale;
-        float b1X0 = drawerX + padX;
-        float b1X1 = drawerX + padX + contentW * 0.56f - 4.0f * uiScale;
-        float b2X0 = drawerX + padX + contentW * 0.56f + 4.0f * uiScale;
-        float b2X1 = drawerX + drawerW - padX;
-        // Reposition Filled Tonal Button
-        drawRoundRect(b1X0, btn8Y, b1X1, btn8Y + 34.0f * uiScale, 14.0f * uiScale, rgba(0.18f, 0.23f, 0.31f, 0.95f));
-        drawText("Reposition", (b1X0 + b1X1) * 0.5f, btn8Y + 22.0f * uiScale, 0.36f * uiScale, rgba(0.659f, 0.780f, 0.980f, 1.0f), 1);
-        // Reset Destructive Tonal Button
-        drawRoundRect(b2X0, btn8Y, b2X1, btn8Y + 34.0f * uiScale, 14.0f * uiScale, rgba(0.35f, 0.15f, 0.17f, 0.95f));
-        drawText("Reset", (b2X0 + b2X1) * 0.5f, btn8Y + 22.0f * uiScale, 0.36f * uiScale, rgba(1.0f, 0.72f, 0.72f, 1.0f), 1);
+            // Row 6: Button Size Segmented Button
+            renderRow(332.0f * uiScale, 54.0f * uiScale, [&](float y) {
+                drawText("Button Size", drawerX + padX, y + 14.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
+                const char* scOpts[3] = {"Small", "Medium", "Large"};
+                int scIdx = (fabsf(mSettings.scale - 0.85f) < 0.08f) ? 0 : (fabsf(mSettings.scale - 1.25f) < 0.08f) ? 2 : 1;
+                drawSegmentedGroup(drawerX + padX, y + 22.0f * uiScale, contentW, 34.0f * uiScale, scOpts, 3, scIdx);
+            });
 
-        // Row 9: [ Done ] Action Pill Button
-        float doneY = std::min(h - 52.0f * uiScale, 538.0f * uiScale);
+            // Row 7: Layout Reposition & Reset Buttons
+            renderRow(390.0f * uiScale, 54.0f * uiScale, [&](float y) {
+                drawText("Controls Layout", drawerX + padX, y + 14.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
+                float btnY = y + 22.0f * uiScale;
+                float b1X0 = drawerX + padX;
+                float b1X1 = drawerX + padX + contentW * 0.56f - 4.0f * uiScale;
+                float b2X0 = drawerX + padX + contentW * 0.56f + 4.0f * uiScale;
+                float b2X1 = drawerX + drawerW - padX;
+                drawRoundRect(b1X0, btnY, b1X1, btnY + 34.0f * uiScale, 14.0f * uiScale, rgba(0.18f, 0.23f, 0.31f, 0.95f));
+                drawText("Reposition", (b1X0 + b1X1) * 0.5f, btnY + 22.0f * uiScale, 0.36f * uiScale, rgba(0.659f, 0.780f, 0.980f, 1.0f), 1);
+                drawRoundRect(b2X0, btnY, b2X1, btnY + 34.0f * uiScale, 14.0f * uiScale, rgba(0.35f, 0.15f, 0.17f, 0.95f));
+                drawText("Reset", (b2X0 + b2X1) * 0.5f, btnY + 22.0f * uiScale, 0.36f * uiScale, rgba(1.0f, 0.72f, 0.72f, 1.0f), 1);
+            });
+        } else {
+            // Advanced Tab Settings Items (Gameplay Mods)
+            auto renderRow = [&](float relY, float rowH, auto func) {
+                float drawY = contentTop + relY - mDrawerScrollY;
+                if (drawY + rowH >= contentTop - 12.0f && drawY <= contentBottom + 12.0f) {
+                    func(drawY);
+                }
+            };
+
+            // Section Header
+            renderRow(6.0f * uiScale, 36.0f * uiScale, [&](float y) {
+                drawText("Special Game Mods", drawerX + padX, y + 16.0f * uiScale, 0.40f * uiScale, rgba(0.92f, 0.94f, 0.98f, 1.0f), 0);
+                drawText("Cheats & speedrun tools", drawerX + padX, y + 32.0f * uiScale, 0.28f * uiScale, rgba(0.65f, 0.75f, 0.90f, 0.85f), 0);
+            });
+
+            // Mod 1: Fly Mode Switch
+            renderRow(48.0f * uiScale, 52.0f * uiScale, [&](float y) {
+                drawText("Fly Mode", drawerX + padX, y + 20.0f * uiScale, 0.40f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
+                drawText("Hold A button to levitate / fly up", drawerX + padX, y + 36.0f * uiScale, 0.28f * uiScale, rgba(0.761f, 0.776f, 0.812f, 0.85f), 0);
+                drawM3Switch(drawerX + drawerW - padX - swW, y + 10.0f * uiScale, swW, swH, mSettings.modFly);
+            });
+
+            // Mod 2: Cutscene Prevention Switch
+            renderRow(110.0f * uiScale, 52.0f * uiScale, [&](float y) {
+                drawText("Cutscene Prevention", drawerX + padX, y + 20.0f * uiScale, 0.40f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
+                drawText("Instantly skip video cutscenes", drawerX + padX, y + 36.0f * uiScale, 0.28f * uiScale, rgba(0.761f, 0.776f, 0.812f, 0.85f), 0);
+                drawM3Switch(drawerX + drawerW - padX - swW, y + 10.0f * uiScale, swW, swH, mSettings.modSkipCutscenes);
+            });
+
+            // Mod 3: Infinite Health Switch
+            renderRow(172.0f * uiScale, 52.0f * uiScale, [&](float y) {
+                drawText("Infinite Health", drawerX + padX, y + 20.0f * uiScale, 0.40f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
+                drawText("Invincible; teleports out of black holes", drawerX + padX, y + 36.0f * uiScale, 0.28f * uiScale, rgba(0.761f, 0.776f, 0.812f, 0.85f), 0);
+                drawM3Switch(drawerX + drawerW - padX - swW, y + 10.0f * uiScale, swW, swH, mSettings.modInfiniteHealth);
+            });
+
+            // Info Card
+            renderRow(238.0f * uiScale, 84.0f * uiScale, [&](float y) {
+                drawRoundRect(drawerX + padX, y + 6.0f * uiScale, drawerX + drawerW - padX, y + 80.0f * uiScale, 14.0f * uiScale, rgba(0.14f, 0.17f, 0.22f, 0.95f));
+                drawRoundRect(drawerX + padX, y + 6.0f * uiScale, drawerX + drawerW - padX, y + 80.0f * uiScale, 14.0f * uiScale, rgba(0.24f, 0.32f, 0.45f, 0.60f));
+                drawText("MOD STATUS", drawerX + padX + 16.0f * uiScale, y + 26.0f * uiScale, 0.32f * uiScale, rgba(0.38f, 0.74f, 0.98f, 0.95f), 0);
+                drawText("Mods take effect in real-time during gameplay.", drawerX + padX + 16.0f * uiScale, y + 44.0f * uiScale, 0.27f * uiScale, rgba(0.80f, 0.84f, 0.90f, 0.85f), 0);
+                drawText("Turn toggles ON to activate each special ability.", drawerX + padX + 16.0f * uiScale, y + 62.0f * uiScale, 0.27f * uiScale, rgba(0.80f, 0.84f, 0.90f, 0.85f), 0);
+            });
+        }
+
+        // Scrollbar Thumb (rendered inside content area)
+        if (maxScroll > 1.0f) {
+            float trackH = contentBottom - contentTop;
+            float thumbH = std::max(28.0f * uiScale, trackH * (trackH / totalContentH));
+            float thumbY = contentTop + (mDrawerScrollY / maxScroll) * (trackH - thumbH);
+            drawRoundRect(drawerX + drawerW - 5.0f * uiScale, thumbY, drawerX + drawerW - 2.0f * uiScale, thumbY + thumbH, 1.5f * uiScale, rgba(0.85f, 0.92f, 1.0f, 0.40f));
+        }
+
+        // ---------------------------------------------------------
+        // B. Fixed Top Header & Tab Bar Mask Overlay
+        // ---------------------------------------------------------
+        drawRoundRect(drawerX - 60.0f, 0.0f, drawerX + drawerW, contentTop, 0.0f, rgba(0.106f, 0.114f, 0.137f, 1.0f));
+
+        // Header Title & Cogwheel
+        drawCogwheel(drawerX + padX + 16.0f * uiScale, 36.0f * uiScale, 15.0f * uiScale, rgba(0.659f, 0.780f, 0.980f, 1.0f), cogRot);
+        drawText("Settings", drawerX + padX + 40.0f * uiScale, 44.0f * uiScale, 0.54f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
+
+        // Close [X] circular tonal button
+        float closeBtnX = drawerX + drawerW - 36.0f * uiScale;
+        float closeBtnY = 36.0f * uiScale;
+        drawCircle(closeBtnX, closeBtnY, 17.0f * uiScale, rgba(0.188f, 0.196f, 0.224f, 0.95f));
+        drawCloseIcon(closeBtnX, closeBtnY, 9.0f * uiScale, rgba(0.761f, 0.776f, 0.812f, 0.95f));
+
+        // Material 3 Tab Dock ([ General ]  [ Advanced ])
+        float tabBoxY0 = 62.0f * uiScale;
+        float tabBoxY1 = 98.0f * uiScale;
+        drawRoundRect(drawerX + padX, tabBoxY0, drawerX + drawerW - padX, tabBoxY1, 18.0f * uiScale, rgba(0.149f, 0.160f, 0.190f, 0.95f));
+        drawRoundRect(drawerX + padX, tabBoxY0, drawerX + drawerW - padX, tabBoxY1, 18.0f * uiScale, rgba(0.24f, 0.26f, 0.30f, 0.50f));
+
+        float tabMidX = drawerX + padX + contentW * 0.5f;
+        if (mSettingsTab == 0) {
+            // General Tab Active
+            drawRoundRect(drawerX + padX + 2.0f * uiScale, tabBoxY0 + 2.0f * uiScale, tabMidX - 2.0f * uiScale, tabBoxY1 - 2.0f * uiScale, 16.0f * uiScale, rgba(0.14f, 0.28f, 0.48f, 0.95f));
+            drawText("General", (drawerX + padX + tabMidX) * 0.5f, tabBoxY0 + 23.0f * uiScale, 0.36f * uiScale, rgba(1.0f, 1.0f, 1.0f, 1.0f), 1);
+            drawText("Advanced", (tabMidX + drawerX + drawerW - padX) * 0.5f, tabBoxY0 + 23.0f * uiScale, 0.36f * uiScale, rgba(0.68f, 0.71f, 0.77f, 0.75f), 1);
+        } else {
+            // Advanced Tab Active
+            drawRoundRect(tabMidX + 2.0f * uiScale, tabBoxY0 + 2.0f * uiScale, drawerX + drawerW - padX - 2.0f * uiScale, tabBoxY1 - 2.0f * uiScale, 16.0f * uiScale, rgba(0.14f, 0.28f, 0.48f, 0.95f));
+            drawText("General", (drawerX + padX + tabMidX) * 0.5f, tabBoxY0 + 23.0f * uiScale, 0.36f * uiScale, rgba(0.68f, 0.71f, 0.77f, 0.75f), 1);
+            drawText("Advanced", (tabMidX + drawerX + drawerW - padX) * 0.5f, tabBoxY0 + 23.0f * uiScale, 0.36f * uiScale, rgba(1.0f, 1.0f, 1.0f, 1.0f), 1);
+        }
+
+        // Divider below tab bar
+        drawRoundRect(drawerX + padX, contentTop - 1.0f, drawerX + drawerW - padX, contentTop, 0.5f, rgba(0.267f, 0.278f, 0.310f, 0.45f));
+
+        // ---------------------------------------------------------
+        // C. Fixed Bottom Bar Mask Overlay & [ Done ] Button
+        // ---------------------------------------------------------
+        drawRoundRect(drawerX - 60.0f, contentBottom, drawerX + drawerW, h, 0.0f, rgba(0.106f, 0.114f, 0.137f, 1.0f));
+        drawRoundRect(drawerX + padX, contentBottom, drawerX + drawerW - padX, contentBottom + 1.0f, 0.5f, rgba(0.267f, 0.278f, 0.310f, 0.45f));
+
+        float doneY = h - 48.0f * uiScale;
         float doneX0 = drawerX + padX;
         float doneX1 = drawerX + drawerW - padX;
         drawRoundRect(doneX0, doneY, doneX1, doneY + 38.0f * uiScale, 19.0f * uiScale, rgba(0.043f, 0.341f, 0.816f, 1.0f));

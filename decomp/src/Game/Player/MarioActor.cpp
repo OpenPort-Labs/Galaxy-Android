@@ -1,4 +1,5 @@
 #include "Game/Player/MarioActor.hpp"
+#include "port/port.h"
 #include "Game/Animation/XanimeCore.hpp"
 #include "Game/Camera/CameraTargetArg.hpp"
 #include "Game/Enemy/KarikariDirector.hpp"
@@ -39,6 +40,8 @@
 #include "Game/Util/ModelUtil.hpp"
 #include "Game/Util/MtxUtil.hpp"
 #include "Game/Util/ObjUtil.hpp"
+#include "Game/Util/PlayerUtil.hpp"
+#include "Game/Util/GamePadUtil.hpp"
 #include "Game/Util/ScreenUtil.hpp"
 #include "Game/Util/SoundUtil.hpp"
 #include "Game/Util/StarPointerUtil.hpp"
@@ -329,11 +332,43 @@ void MarioActor::init(const JMapInfoIter& rInfo) {
     init2(position, rotation, initialAnimation);
 }
 
-struct DUMMY {
-    u8 _0[0x30];
-};
+static TVec3f sOriginalSpawnPos(0.0f, 0.0f, 0.0f);
+static bool sHasSpawnPos = false;
+
+void MarioActor::teleportToOriginalSpot() {
+    if (!sHasSpawnPos) {
+        return;
+    }
+
+    mPosition = sOriginalSpawnPos;
+    mVelocity.zero();
+    mScale.set(TVec3f(1.0f, 1.0f, 1.0f));
+    _F44 = true;
+    _482 = false;
+    _A6E = 0;
+    MR::showPlayer();
+    mHealth = mMaxHealth;
+    _388 = 0;
+
+    if (mMario) {
+        mMario->mPosition = sOriginalSpawnPos;
+        mMario->mVelocity.zero();
+        mMario->mVelocityAfter.zero();
+        mMario->mAirGravityVec.zero();
+        mMario->mMovementStates._3C = false;
+        mMario->mMovementStates._1 = false;
+        mMario->stopJump();
+        mMario->stopWalk();
+        mMario->changeAnimationNonStop("Wait");
+    }
+
+    MR::activateDefaultGameLayout();
+    setNerve(GET_NERVE(MarioActor, MarioActorNrvWait));
+}
 
 void MarioActor::init2(const TVec3f& rA, const TVec3f& rB, s32 initialAnimation) {
+    sOriginalSpawnPos = rA;
+    sHasSpawnPos = true;
     _8C = 1;
     gIsLuigi = false;
     if (MR::isPlayerLuigi()) {
@@ -1036,6 +1071,19 @@ void MarioActor::controlMain() {
         updateFairyStar();
         _930 = 0;
     }
+
+    if (port_is_fly_mode() && MR::testCorePadButtonA(WPAD_CHAN0)) {
+        TVec3f up = -getGravityVec();
+        if (MR::normalizeOrZero(&up)) {
+            f32 curUp = mMario->mVelocity.dot(up);
+            f32 targetUp = 22.0f;
+            if (curUp < targetUp) {
+                mMario->mVelocity += up * (targetUp - curUp) * 0.45f;
+            }
+            mMario->addTrans(up * 5.0f, nullptr);
+            mPosition = mMario->mPosition;
+        }
+    }
 }
 
 void MarioActor::updateBehavior() {
@@ -1501,6 +1549,11 @@ void MarioActor::setUpperRotateY(f32 angle) {
 }
 
 void MarioActor::decLife(u16 amt) {
+    if (port_is_infinite_health()) {
+        mHealth = mMaxHealth;
+        return;
+    }
+
     if (getMovementStates()._1F) {
         return;
     }
@@ -1560,6 +1613,12 @@ void MarioActor::resetWaterLife() {
 }
 
 void MarioActor::updateLife() {
+    if (port_is_infinite_health()) {
+        mHealth = mMaxHealth;
+        _388 = 0;
+        return;
+    }
+
     if (!_388) {
         return;
     }
@@ -2849,6 +2908,11 @@ bool MarioActor::isEnableNerveChange() const {
 }
 
 void MarioActor::forceGameOver() {
+    if (port_is_infinite_health()) {
+        teleportToOriginalSpot();
+        return;
+    }
+
     if (!isEnableNerveChange()) {
         return;
     }
@@ -2857,6 +2921,11 @@ void MarioActor::forceGameOver() {
 }
 
 void MarioActor::forceGameOverAbyss() {
+    if (port_is_infinite_health()) {
+        teleportToOriginalSpot();
+        return;
+    }
+
     if (!isEnableNerveChange()) {
         return;
     }
@@ -2865,6 +2934,11 @@ void MarioActor::forceGameOverAbyss() {
 }
 
 void MarioActor::forceGameOverBlackHole() {
+    if (port_is_infinite_health()) {
+        teleportToOriginalSpot();
+        return;
+    }
+
     if (!isEnableNerveChange()) {
         return;
     }
@@ -2873,6 +2947,11 @@ void MarioActor::forceGameOverBlackHole() {
 }
 
 void MarioActor::forceGameOverNonStop() {
+    if (port_is_infinite_health()) {
+        teleportToOriginalSpot();
+        return;
+    }
+
     if (!isEnableNerveChange()) {
         return;
     }
@@ -2881,6 +2960,11 @@ void MarioActor::forceGameOverNonStop() {
 }
 
 void MarioActor::forceGameOverSink() {
+    if (port_is_infinite_health()) {
+        teleportToOriginalSpot();
+        return;
+    }
+
     if (!isEnableNerveChange()) {
         return;
     }

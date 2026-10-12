@@ -1,4 +1,5 @@
 #include "Game/Enemy/KariKariDirector.hpp"
+#include "port/port.h"
 #include "Game/MapObj/BlackHole.hpp"
 #include "Game/Player/MarioActor.hpp"
 #include "Game/Player/MarioConst.hpp"
@@ -40,6 +41,10 @@ void MarioActor::initBlackHoleOut() {
 }
 
 void MarioActor::exeGameOverBlackHole2() {
+    if (port_is_infinite_health()) {
+        teleportToOriginalSpot();
+        return;
+    }
     if (MR::isFirstStep(this)) {
         MR::setCubeBgmChangeInvalid();
         MR::clearBgmQueue();

@@ -188,7 +188,12 @@ This processes textures, geometry, audio streams, and cinematics into format-opt
    ```
    *(Package name: `com.galaxy.mobile`. Or double-click `deploy_to_phone.bat` on Windows).*
 2. Launch **GalaxyMobile** from your phone's app drawer!
-3. Tap the `⚙` gear tab at the top-left of the screen to customize your controls or enable **Fullscreen (Hor+ Ultrawide)** mode.
+3. Tap the `⚙` gear tab at the top-left of the screen to open the scrollable Material 3 Settings Drawer:
+   - **General Tab**: Customize on-screen controls visibility, Camera D-Pad, joystick mode (Dynamic vs. Fixed), opacity, button scale, layout repositioning, and **Fullscreen (Hor+ Ultrawide)** mode.
+   - **Advanced Tab**: Toggle special gameplay mods (all disabled by default):
+     - **Fly Mode**: Hold the **A** button to smoothly levitate and fly upwards in any planet gravity field.
+     - **Cutscene Prevention**: Instantly skip video cutscenes and THP cinematics without delay.
+     - **Infinite Health**: Mario becomes invincible and never loses health; falling into black holes or abysses teleports Mario safely back to the stage's starting point.
 
 ---
 

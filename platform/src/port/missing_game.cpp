@@ -42,3 +42,11 @@ namespace nw4r {
         }
     }  // namespace ut
 }  // namespace nw4r
+
+extern "C" {
+__attribute__((weak)) int port_is_fullscreen_aspect(void) { return 0; }
+__attribute__((weak)) float port_get_display_aspect(void) { return 16.0f / 9.0f; }
+__attribute__((weak)) int port_is_fly_mode(void) { return 0; }
+__attribute__((weak)) int port_is_skip_cutscenes(void) { return 0; }
+__attribute__((weak)) int port_is_infinite_health(void) { return 0; }
+}

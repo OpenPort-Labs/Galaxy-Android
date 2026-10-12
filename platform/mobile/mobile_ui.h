@@ -22,6 +22,11 @@ struct Settings {
     float dpadOffsetX = 0.0f;
     float dpadOffsetY = 0.0f;
 
+    // Advanced Mods (off by default)
+    bool modFly = false;
+    bool modSkipCutscenes = false;
+    bool modInfiniteHealth = false;
+
     void load(const std::string& path);
     void save(const std::string& path) const;
 };
@@ -64,6 +69,16 @@ private:
     float mInitialStickOfsX = 0.0f, mInitialStickOfsY = 0.0f;
     float mInitialBtnOfsX = 0.0f, mInitialBtnOfsY = 0.0f;
     float mInitialDpadOfsX = 0.0f, mInitialDpadOfsY = 0.0f;
+
+    // Settings Navigation & Scrolling
+    int mSettingsTab = 0;              // 0 = General, 1 = Advanced
+    float mDrawerScrollY = 0.0f;       // Current scroll offset (pixels)
+    float mDrawerScrollTarget = 0.0f;
+    bool mDrawerIsScrolling = false;
+    int mDrawerScrollPointerId = -1;
+    float mDrawerTouchStartY = 0.0f;
+    float mDrawerTouchStartX = 0.0f;
+    float mDrawerScrollStartOffset = 0.0f;
 
     // Virtual Stick State
     int mStickPointerId = -1;

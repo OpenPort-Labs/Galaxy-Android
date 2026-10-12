@@ -138,6 +138,9 @@ void port_input_set_camera_inverted(int inverted);
 int port_input_camera_inverted(void);
 float port_get_display_aspect(void);
 int port_is_fullscreen_aspect(void);
+int port_is_fly_mode(void);
+int port_is_skip_cutscenes(void);
+int port_is_infinite_health(void);
 
 // Frame-time statistics (platform/src/port/perf.cpp), logged every 10 s.
 void port_perf_frame_begin(void);      // the game thread starts a frame

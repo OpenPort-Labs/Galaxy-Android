@@ -92,6 +92,7 @@ public:
     virtual void getFrontVec(TVec3f*) const;
 
     void init2(const TVec3f&, const TVec3f&, s32);
+    void teleportToOriginalSpot();
     void initAfterOpeningDemo();
     void calcBaseFrontVec(const TVec3f&);
     void playSound(const char*, s32);

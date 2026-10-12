@@ -616,5 +616,17 @@ float port_get_display_aspect(void) {
 int port_is_fullscreen_aspect(void) {
     return mobile_ui::UIOverlay::get().settings().fullscreen ? 1 : 0;
 }
+
+int port_is_fly_mode(void) {
+    return mobile_ui::UIOverlay::get().settings().modFly ? 1 : 0;
+}
+
+int port_is_skip_cutscenes(void) {
+    return mobile_ui::UIOverlay::get().settings().modSkipCutscenes ? 1 : 0;
+}
+
+int port_is_infinite_health(void) {
+    return mobile_ui::UIOverlay::get().settings().modInfiniteHealth ? 1 : 0;
+}
 }
 

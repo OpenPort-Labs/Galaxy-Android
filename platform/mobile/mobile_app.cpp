@@ -537,6 +537,7 @@ extern "C" __attribute__((visibility("default"))) void port_android_main(struct 
     }
 
     mobile_ui::get().setPlusEdition(isPlus);
+    port_skip_set_hold_seconds(isPlus ? 1.0f : 0.0f);
     LOGI("GalaxyMobile edition detected: %s (internalDataPath: %s, externalPath: %s)", isPlus ? "GalaxyMobile+" : "GalaxyMobile (Standard)", internalPath.c_str(), externalPath.c_str());
 
     std::string ext = app->activity->externalDataPath ? app->activity->externalDataPath : (isPlus ? "/sdcard/Android/data/com.galaxy.mobile.plus/files" : "/sdcard/Android/data/com.galaxy.mobile/files");
@@ -713,6 +714,18 @@ float port_get_display_aspect(void) {
 
 int port_is_fullscreen_aspect(void) {
     return mobile_ui::UIOverlay::get().settings().fullscreen ? 1 : 0;
+}
+
+int port_is_plus_edition(void) {
+    return mobile_ui::UIOverlay::get().isPlusEdition() ? 1 : 0;
+}
+
+int port_is_early_luigi_unlocked(void) {
+    return mobile_ui::UIOverlay::get().isPlusEdition() ? 1 : 0;
+}
+
+int port_is_modern_boo_flight(void) {
+    return mobile_ui::UIOverlay::get().isPlusEdition() ? 1 : 0;
 }
 
 int port_is_skip_cutscenes(void) {

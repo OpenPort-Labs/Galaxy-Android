@@ -175,6 +175,9 @@ int port_input_real_a(void);
 // Display aspect ratio query for native Hor+ ultrawide rendering
 float port_get_display_aspect(void);
 int port_is_fullscreen_aspect(void);
+int port_is_plus_edition(void);
+int port_is_early_luigi_unlocked(void);
+int port_is_modern_boo_flight(void);
 int port_is_skip_cutscenes(void);
 int port_is_infinite_health(void);
 int64_t port_host_time_ns(void);

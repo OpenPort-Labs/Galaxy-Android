@@ -198,13 +198,14 @@ void FileSelectInfo::reflectInfo() {
         MR::hidePane(this, "Complete2");
     }
 
-#ifdef TARGET_PC
-    // Every file can be played with Mario or Luigi (FileSelector::isUserFileAppearLuigi):
-    // always say which one is selected.
-    bool bVar1 = true;
-#else
-    bool bVar1 = !mIsSelectedMarioPrev || mIsViewCompleteEnding;
-#endif
+    bool bVar1;
+    if (port_is_early_luigi_unlocked()) {
+        // Every file can be played with Mario or Luigi (FileSelector::isUserFileAppearLuigi):
+        // always say which one is selected.
+        bVar1 = true;
+    } else {
+        bVar1 = !mIsSelectedMarioPrev || mIsViewCompleteEnding;
+    }
 
     if (bVar1) {
         MR::showPane(this, "BrosIcon");

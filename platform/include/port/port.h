@@ -138,6 +138,9 @@ void port_input_set_camera_inverted(int inverted);
 int port_input_camera_inverted(void);
 float port_get_display_aspect(void);
 int port_is_fullscreen_aspect(void);
+int port_is_plus_edition(void);
+int port_is_early_luigi_unlocked(void);
+int port_is_modern_boo_flight(void);
 int port_is_skip_cutscenes(void);
 int port_is_infinite_health(void);
 

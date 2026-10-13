@@ -812,16 +812,15 @@ bool FileSelector::isUserFileCorrupted(s32 id) const {
 }
 
 bool FileSelector::isUserFileAppearLuigi(s32 id) const {
-#ifdef TARGET_PC
-    // Luigi can be chosen for every file, new ones included, without first
-    // finishing the game with Mario: the Mario/Luigi switch shows on each
-    // file's start screen, and the Luigi icon in the icon choice.
-    return true;
-#else
-    id--;
+    if (port_is_early_luigi_unlocked()) {
+        // Luigi can be chosen for every file, new ones included, without first
+        // finishing the game with Mario: the Mario/Luigi switch shows on each
+        // file's start screen, and the Luigi icon in the icon choice.
+        return true;
+    }
 
+    id--;
     return !mUserFile[id].mIsPlayerMario || mUserFile[id].isViewCompleteEnding();
-#endif
 }
 
 bool FileSelector::isUserFileLuigi(s32 id) const {

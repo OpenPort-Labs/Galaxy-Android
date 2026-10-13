@@ -217,13 +217,16 @@ f32 MarioTeresa::checkHeight() {
 }
 
 void MarioTeresa::checkAccel() {
-#ifdef TARGET_PC
-    // Keep lifting while the Quest jump button is held, as with the other
-    // flying power-ups. An edge trigger only gives Boo a short initial puff.
-    if (checkLvlA()) {
-#else
-    if (checkTrgA()) {
-#endif
+    bool doAccel;
+    if (port_is_modern_boo_flight()) {
+        // Keep lifting while the jump button is held in GalaxyMobile+
+        doAccel = checkLvlA();
+    } else {
+        // Authentic Wii edge trigger (tap A for puff) in GalaxyMobile (Vanilla)
+        doAccel = checkTrgA();
+    }
+
+    if (doAccel) {
         if (!_44) {
             getPlayer()->_1C._4 = true;
         }

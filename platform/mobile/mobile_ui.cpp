@@ -245,14 +245,13 @@ void Settings::load(const std::string& path) {
             else if (!strcmp(key, "dpad_on_right")) dpadOnRight = (val > 0.5f);
             else if (!strcmp(key, "dpad_offset_x")) dpadOffsetX = val;
             else if (!strcmp(key, "dpad_offset_y")) dpadOffsetY = val;
-            else if (!strcmp(key, "mod_fly")) modFly = (val > 0.5f);
             else if (!strcmp(key, "mod_skip_cutscenes")) modSkipCutscenes = (val > 0.5f);
             else if (!strcmp(key, "mod_infinite_health")) modInfiniteHealth = (val > 0.5f);
         }
     }
     fclose(f);
-    LOGI("Loaded settings: show=%d, full=%d, op=%.2f, scale=%.2f, dpad=%d, fly=%d, skip=%d, infHp=%d",
-         showControls, fullscreen, opacity, scale, showDpad, modFly, modSkipCutscenes, modInfiniteHealth);
+    LOGI("Loaded settings: show=%d, full=%d, op=%.2f, scale=%.2f, dpad=%d, skip=%d, infHp=%d",
+         showControls, fullscreen, opacity, scale, showDpad, modSkipCutscenes, modInfiniteHealth);
 }
 
 void Settings::save(const std::string& path) const {
@@ -271,7 +270,6 @@ void Settings::save(const std::string& path) const {
     fprintf(f, "dpad_on_right=%d\n", dpadOnRight ? 1 : 0);
     fprintf(f, "dpad_offset_x=%.1f\n", dpadOffsetX);
     fprintf(f, "dpad_offset_y=%.1f\n", dpadOffsetY);
-    fprintf(f, "mod_fly=%d\n", modFly ? 1 : 0);
     fprintf(f, "mod_skip_cutscenes=%d\n", modSkipCutscenes ? 1 : 0);
     fprintf(f, "mod_infinite_health=%d\n", modInfiniteHealth ? 1 : 0);
     fclose(f);
@@ -292,7 +290,6 @@ void UIOverlay::setSavePath(const std::string& path) {
     mSavePath = path;
     mSettings.load(path);
     if (!mPlusEdition) {
-        mSettings.modFly = false;
         mSettings.modSkipCutscenes = false;
         mSettings.modInfiniteHealth = false;
         mSettingsTab = 0;
@@ -539,7 +536,7 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
         float contentW = drawerW - padX * 2.0f;
         float contentTop = mPlusEdition ? (112.0f * uiScale) : (68.0f * uiScale);
         float contentBottom = h - 56.0f * uiScale;
-        float totalContentH = (mSettingsTab == 0 || !mPlusEdition) ? (455.0f * uiScale) : (340.0f * uiScale);
+        float totalContentH = (mSettingsTab == 0 || !mPlusEdition) ? (455.0f * uiScale) : (278.0f * uiScale);
         float maxScroll = std::max(0.0f, totalContentH - (contentBottom - contentTop));
 
         // 1. Move Gesture for Smooth Scrolling
@@ -635,16 +632,12 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
                         }
                     } else {
                         // Advanced Tab items
-                        // Mod 1: Fly Mode Switch
+                        // Mod 1: Cutscene Prevention Switch
                         if (contentRelY >= 48.0f * uiScale && contentRelY <= 106.0f * uiScale) {
-                            mSettings.modFly = !mSettings.modFly;
-                        }
-                        // Mod 2: Cutscene Prevention Switch
-                        else if (contentRelY >= 110.0f * uiScale && contentRelY <= 168.0f * uiScale) {
                             mSettings.modSkipCutscenes = !mSettings.modSkipCutscenes;
                         }
-                        // Mod 3: Infinite Health Switch
-                        else if (contentRelY >= 172.0f * uiScale && contentRelY <= 230.0f * uiScale) {
+                        // Mod 2: Infinite Health Switch
+                        else if (contentRelY >= 110.0f * uiScale && contentRelY <= 168.0f * uiScale) {
                             mSettings.modInfiniteHealth = !mSettings.modInfiniteHealth;
                         }
                     }
@@ -1398,7 +1391,7 @@ void UIOverlay::render(int screenW, int screenH) {
         float contentW = drawerW - padX * 2.0f;
         float contentTop = mPlusEdition ? (112.0f * uiScale) : (68.0f * uiScale);
         float contentBottom = h - 56.0f * uiScale;
-        float totalContentH = (mSettingsTab == 0 || !mPlusEdition) ? (455.0f * uiScale) : (340.0f * uiScale);
+        float totalContentH = (mSettingsTab == 0 || !mPlusEdition) ? (455.0f * uiScale) : (278.0f * uiScale);
         float maxScroll = std::max(0.0f, totalContentH - (contentBottom - contentTop));
 
         // Smooth scroll damping
@@ -1504,29 +1497,22 @@ void UIOverlay::render(int screenW, int screenH) {
                 drawText("Cheats & speedrun tools", drawerX + padX, y + 32.0f * uiScale, 0.28f * uiScale, rgba(0.65f, 0.75f, 0.90f, 0.85f), 0);
             });
 
-            // Mod 1: Fly Mode Switch
+            // Mod 1: Cutscene Prevention Switch
             renderRow(48.0f * uiScale, 52.0f * uiScale, [&](float y) {
-                drawText("Fly Mode", drawerX + padX, y + 20.0f * uiScale, 0.40f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
-                drawText("Hold A to fly up, hold Z to fly down", drawerX + padX, y + 36.0f * uiScale, 0.28f * uiScale, rgba(0.761f, 0.776f, 0.812f, 0.85f), 0);
-                drawM3Switch(drawerX + drawerW - padX - swW, y + 10.0f * uiScale, swW, swH, mSettings.modFly);
-            });
-
-            // Mod 2: Cutscene Prevention Switch
-            renderRow(110.0f * uiScale, 52.0f * uiScale, [&](float y) {
                 drawText("Cutscene Prevention", drawerX + padX, y + 20.0f * uiScale, 0.40f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
                 drawText("Instantly skip video cutscenes", drawerX + padX, y + 36.0f * uiScale, 0.28f * uiScale, rgba(0.761f, 0.776f, 0.812f, 0.85f), 0);
                 drawM3Switch(drawerX + drawerW - padX - swW, y + 10.0f * uiScale, swW, swH, mSettings.modSkipCutscenes);
             });
 
-            // Mod 3: Infinite Health Switch
-            renderRow(172.0f * uiScale, 52.0f * uiScale, [&](float y) {
+            // Mod 2: Infinite Health Switch
+            renderRow(110.0f * uiScale, 52.0f * uiScale, [&](float y) {
                 drawText("Infinite Health", drawerX + padX, y + 20.0f * uiScale, 0.40f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
                 drawText("Invincible; teleports out of black holes", drawerX + padX, y + 36.0f * uiScale, 0.28f * uiScale, rgba(0.761f, 0.776f, 0.812f, 0.85f), 0);
                 drawM3Switch(drawerX + drawerW - padX - swW, y + 10.0f * uiScale, swW, swH, mSettings.modInfiniteHealth);
             });
 
             // Info Card
-            renderRow(238.0f * uiScale, 84.0f * uiScale, [&](float y) {
+            renderRow(176.0f * uiScale, 84.0f * uiScale, [&](float y) {
                 drawRoundRect(drawerX + padX, y + 6.0f * uiScale, drawerX + drawerW - padX, y + 80.0f * uiScale, 14.0f * uiScale, rgba(0.14f, 0.17f, 0.22f, 0.95f));
                 drawRoundRect(drawerX + padX, y + 6.0f * uiScale, drawerX + drawerW - padX, y + 80.0f * uiScale, 14.0f * uiScale, rgba(0.24f, 0.32f, 0.45f, 0.60f));
                 drawText("MOD STATUS", drawerX + padX + 16.0f * uiScale, y + 26.0f * uiScale, 0.32f * uiScale, rgba(0.38f, 0.74f, 0.98f, 0.95f), 0);

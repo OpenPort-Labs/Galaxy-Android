@@ -23,7 +23,6 @@ struct Settings {
     float dpadOffsetY = 0.0f;
 
     // Advanced Mods (off by default)
-    bool modFly = false;
     bool modSkipCutscenes = false;
     bool modInfiniteHealth = false;
 

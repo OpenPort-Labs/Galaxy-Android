@@ -715,17 +715,6 @@ int port_is_fullscreen_aspect(void) {
     return mobile_ui::UIOverlay::get().settings().fullscreen ? 1 : 0;
 }
 
-int port_is_fly_mode(void) {
-    if (!mobile_ui::UIOverlay::get().isPlusEdition()) return 0;
-    int active = mobile_ui::UIOverlay::get().settings().modFly ? 1 : 0;
-    static int sLastState = -1;
-    if (active != sLastState) {
-        sLastState = active;
-        LOGI("port_is_fly_mode changed: active=%d", active);
-    }
-    return active;
-}
-
 int port_is_skip_cutscenes(void) {
     if (!mobile_ui::UIOverlay::get().isPlusEdition()) return 0;
     return mobile_ui::UIOverlay::get().settings().modSkipCutscenes ? 1 : 0;

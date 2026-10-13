@@ -565,9 +565,6 @@ void Mario::doExtraServices() {
 }
 
 bool Mario::isEnableCheckGround() {
-    if (port_is_fly_mode() && !isStatusActive(MarioStatus_Swim)) {
-        return false;
-    }
     return !isStatusActive(MarioStatus_Swim);
 }
 
@@ -1880,71 +1877,7 @@ void Mario::update() {
 void Mario::actionMain() {
     if (!mMovementStates.debugMode) {
         if (checkDamage() == false) {
-            if (port_is_fly_mode() && !isSwimming()) {
-                if (_97C) {
-                    closeStatus(_97C);
-                }
-
-                bool holdA = checkLvlA() || checkTrgA() || MR::getPlayerLevelA() || MR::getPlayerTriggerA() || (port_input_real_a() != 0);
-                bool holdZ = checkLvlZ() || checkTrgZ() || MR::getPlayerLevelZ() || MR::getPlayerTriggerZ() || (port_input_real_z() != 0);
-
-                TVec3f up = -*getGravityVec();
-                if (MR::normalizeOrZero(&up)) {
-                    mMovementStates._1 = false;
-                    mMovementStates.jumping = true;
-                    mMovementStates._B = false;
-                    _430 = 0;
-
-                    TVec3f vertMove(0.0f, 0.0f, 0.0f);
-                    if (holdA) {
-                        vertMove = up * 28.0f;
-                    } else if (holdZ) {
-                        vertMove = -up * 28.0f;
-                    }
-
-                    f32 stickX = MR::getPlayerStickX();
-                    f32 stickY = MR::getPlayerStickY();
-                    if (stickX == 0.0f && stickY == 0.0f) {
-                        stickX = port_input_real_stick_x();
-                        stickY = port_input_real_stick_y();
-                    }
-
-                    f32 stickMag = sqrtf(stickX * stickX + stickY * stickY);
-                    if (stickMag > 1.0f) {
-                        stickMag = 1.0f;
-                    }
-
-                    TVec3f horizMove(0.0f, 0.0f, 0.0f);
-                    if (stickMag > 0.05f) {
-                        TVec3f camRight = MR::getCamXdir();
-                        TVec3f camBack = MR::getCamZdir();
-                        TVec3f desiredDir = camRight * stickX - camBack * stickY;
-                        TVec3f horizDir;
-                        MR::vecKillElement(desiredDir, *getGravityVec(), &horizDir);
-                        if (!MR::normalizeOrZero(&horizDir)) {
-                            const TVec3f& padDir = getWorldPadDir();
-                            if (!MR::isNearZero(padDir)) {
-                                horizDir = padDir;
-                            } else {
-                                horizDir = mFrontVec;
-                            }
-                        }
-
-                        horizMove = horizDir * (stickMag * 32.0f);
-                        setFrontVecKeepUp(horizDir);
-                    }
-
-                    TVec3f totalMove = vertMove + horizMove;
-                    mVelocity = totalMove;
-                    mJumpVec = totalMove;
-
-                    if (holdA) {
-                        changeAnimation("\x83\x57\x83\x83\x83\x93\x83\x76", "\x97\x8e\x89\xba");
-                    } else {
-                        changeAnimation(nullptr, "\x97\x8e\x89\xba");
-                    }
-                }
-            } else if (_97C) {
+            if (_97C) {
                 sendStateMsg(MarioStateMsg_Update);
             } else if (mMovementStates.jumping) {
                 procJump(false);

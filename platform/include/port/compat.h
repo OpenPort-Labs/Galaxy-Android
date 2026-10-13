@@ -172,13 +172,9 @@ void port_input_discard_pause_request(void);
 // theirs), so pushing the right stick right turns the view to the right.
 int port_input_camera_inverted(void);
 int port_input_real_a(void);
-int port_input_real_z(void);
-float port_input_real_stick_x(void);
-float port_input_real_stick_y(void);
 // Display aspect ratio query for native Hor+ ultrawide rendering
 float port_get_display_aspect(void);
 int port_is_fullscreen_aspect(void);
-int port_is_fly_mode(void);
 int port_is_skip_cutscenes(void);
 int port_is_infinite_health(void);
 int64_t port_host_time_ns(void);

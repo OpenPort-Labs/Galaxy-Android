@@ -1900,27 +1900,44 @@ void Mario::actionMain() {
                     TVec3f vertMove(0.0f, 0.0f, 0.0f);
                     if (holdA) {
                         vertMove = up * 20.0f;
-                        if (calcDistToCeil(false) < 120.0f) {
-                            vertMove.zero();
-                        }
                     } else if (holdZ) {
                         vertMove = -up * 20.0f;
                     }
 
+                    f32 stickX = MR::getPlayerStickX();
+                    f32 stickY = MR::getPlayerStickY();
+                    if (stickX == 0.0f && stickY == 0.0f) {
+                        stickX = port_input_real_stick_x();
+                        stickY = port_input_real_stick_y();
+                    }
+
+                    f32 stickMag = sqrtf(stickX * stickX + stickY * stickY);
+                    if (stickMag > 1.0f) {
+                        stickMag = 1.0f;
+                    }
+
                     TVec3f horizMove(0.0f, 0.0f, 0.0f);
-                    if (getStickP() > 0.05f) {
-                        const TVec3f& padDir = getWorldPadDir();
-                        if (!MR::isNearZero(padDir)) {
-                            horizMove = padDir * (getStickP() * 22.0f);
-                            setFrontVecKeepUp(padDir);
+                    if (stickMag > 0.05f) {
+                        TVec3f camRight = MR::getCamXdir();
+                        TVec3f camBack = MR::getCamZdir();
+                        TVec3f desiredDir = camRight * stickX - camBack * stickY;
+                        TVec3f horizDir;
+                        MR::vecKillElement(desiredDir, *getGravityVec(), &horizDir);
+                        if (!MR::normalizeOrZero(&horizDir)) {
+                            const TVec3f& padDir = getWorldPadDir();
+                            if (!MR::isNearZero(padDir)) {
+                                horizDir = padDir;
+                            } else {
+                                horizDir = mFrontVec;
+                            }
                         }
+
+                        horizMove = horizDir * (stickMag * 24.0f);
+                        setFrontVecKeepUp(horizDir);
                     }
 
                     TVec3f totalMove = vertMove + horizMove;
-                    mPosition += totalMove;
-                    mActor->mPosition = mPosition;
-
-                    mVelocity.zero();
+                    mVelocity = totalMove;
                     mJumpVec = totalMove;
 
                     if (holdA) {

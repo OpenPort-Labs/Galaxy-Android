@@ -51,4 +51,6 @@ __attribute__((weak)) int port_is_skip_cutscenes(void) { return 0; }
 __attribute__((weak)) int port_is_infinite_health(void) { return 0; }
 __attribute__((weak)) int port_input_real_a(void) { return 0; }
 __attribute__((weak)) int port_input_real_z(void) { return 0; }
+__attribute__((weak)) float port_input_real_stick_x(void) { return 0.0f; }
+__attribute__((weak)) float port_input_real_stick_y(void) { return 0.0f; }
 }

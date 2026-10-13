@@ -171,6 +171,8 @@ void port_input_discard_pause_request(void);
 // turn the game camera round Mario (and nowhere else: pages and menus keep
 // theirs), so pushing the right stick right turns the view to the right.
 int port_input_camera_inverted(void);
+int port_input_real_a(void);
+int port_input_real_z(void);
 // Display aspect ratio query for native Hor+ ultrawide rendering
 float port_get_display_aspect(void);
 int port_is_fullscreen_aspect(void);

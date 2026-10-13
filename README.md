@@ -214,7 +214,7 @@ This processes textures, geometry, audio streams, and cinematics into format-opt
    - In **GalaxyMobile+**: The drawer features **[ General ]** and **[ Advanced ]** tabs:
      - **General Tab**: All standard HUD, D-Pad, stick, and display settings.
      - **Advanced Tab**: Toggle experimental gameplay mods (disabled by default):
-       - **Fly Mode**: Hold the **A** button to smoothly ascend and fly upwards in any planet gravity field with 360-degree analog control.
+       - **Fly Mode**: Hold the **A** button to fly up, hold the **Z** button to fly down, and steer freely in 360 degrees.
        - **Cutscene Prevention**: Instantly skips video cutscenes and THP cinematics without delay.
        - **Infinite Health**: Mario becomes invincible and never loses health; falling into black holes or abysses teleports Mario safely back to the stage's starting point.
 

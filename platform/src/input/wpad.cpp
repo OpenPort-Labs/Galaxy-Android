@@ -39,6 +39,11 @@ extern "C" int port_input_real_a(void) {
     return sPad[0].connected && (sPad[0].buttons & 0x0800) ? 1 : 0;
 }
 
+extern "C" int port_input_real_z(void) {
+    std::lock_guard<std::mutex> lk(sInputMutex);
+    return sPad[0].connected && (sPad[0].buttons & 0x2000) ? 1 : 0;
+}
+
 // A pause request: each press of + or - on controller 0 (the VR
 // controllers' Menu and X), see compat.h.
 static std::atomic<int64_t> sPauseRequestAt{0};

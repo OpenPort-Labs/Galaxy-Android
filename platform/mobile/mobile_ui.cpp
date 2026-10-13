@@ -1507,7 +1507,7 @@ void UIOverlay::render(int screenW, int screenH) {
             // Mod 1: Fly Mode Switch
             renderRow(48.0f * uiScale, 52.0f * uiScale, [&](float y) {
                 drawText("Fly Mode", drawerX + padX, y + 20.0f * uiScale, 0.40f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
-                drawText("Hold A button to levitate / fly up", drawerX + padX, y + 36.0f * uiScale, 0.28f * uiScale, rgba(0.761f, 0.776f, 0.812f, 0.85f), 0);
+                drawText("Hold A to fly up, hold Z to fly down", drawerX + padX, y + 36.0f * uiScale, 0.28f * uiScale, rgba(0.761f, 0.776f, 0.812f, 0.85f), 0);
                 drawM3Switch(drawerX + drawerW - padX - swW, y + 10.0f * uiScale, swW, swH, mSettings.modFly);
             });
 

@@ -1121,6 +1121,50 @@ void MarioActor::updateBehavior() {
                     updateTornado();
                     tryCoinPull();
                     mMario->mDrawStates._1A = true;
+
+                    if (port_is_fly_mode() && !mMario->isSwimming() && !mMario->isInputDisable() && !MR::isDemoActive()) {
+                        bool holdA = MR::getPlayerLevelA() || (MR::testCorePadButtonA(WPAD_CHAN0)) || (port_input_real_a() != 0);
+                        bool holdZ = MR::getPlayerLevelZ() || (MR::testSubPadButtonZ(WPAD_CHAN0)) || (port_input_real_z() != 0);
+
+                        TVec3f up = -getGravityVec();
+                        if (MR::normalizeOrZero(&up)) {
+                            TVec3f horiz(0.0f, 0.0f, 0.0f);
+                            if (mMario->getStickP() > 0.05f) {
+                                const TVec3f& padDir = mMario->getWorldPadDir();
+                                if (!MR::isNearZero(padDir)) {
+                                    horiz = padDir * (mMario->getStickP() * 22.0f);
+                                    mMario->setFrontVecKeepUp(padDir);
+                                }
+                            }
+
+                            if (getMovementStates()._1) {
+                                if (holdA) {
+                                    mPosition += up * 5.0f;
+                                    mMario->mPosition = mPosition;
+                                    mMario->mMovementStates._1 = false;
+                                    mMario->mMovementStates.jumping = true;
+                                    mMario->mMovementStates._B = false;
+                                    mMario->mJumpVec.zero();
+                                    mMario->changeAnimation(nullptr, "\x97\x8e\x89\xba");
+                                    mVelocity = up * 24.0f + horiz;
+                                    mMario->mVelocity = mVelocity;
+                                }
+                            } else {
+                                float vertSpeed = -1.0f;
+                                if (holdA) {
+                                    vertSpeed = 24.0f;
+                                } else if (holdZ) {
+                                    vertSpeed = -24.0f;
+                                }
+                                mMario->mMovementStates.jumping = true;
+                                mMario->mMovementStates._B = false;
+                                mMario->mJumpVec.zero();
+                                mMario->changeAnimation(nullptr, "\x97\x8e\x89\xba");
+                                mVelocity = up * vertSpeed + horiz;
+                                mMario->mVelocity = mVelocity;
+                            }
+                        }
+                    }
                 }
             }
         }

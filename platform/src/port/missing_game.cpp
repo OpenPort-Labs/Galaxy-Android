@@ -49,4 +49,6 @@ __attribute__((weak)) float port_get_display_aspect(void) { return 16.0f / 9.0f;
 __attribute__((weak)) int port_is_fly_mode(void) { return 0; }
 __attribute__((weak)) int port_is_skip_cutscenes(void) { return 0; }
 __attribute__((weak)) int port_is_infinite_health(void) { return 0; }
+__attribute__((weak)) int port_input_real_a(void) { return 0; }
+__attribute__((weak)) int port_input_real_z(void) { return 0; }
 }

@@ -1,4 +1,5 @@
 #include "Game/Player/MarioActor.hpp"
+#include "port/port.h"
 #include "Game/Util/GamePadUtil.hpp"
 #include "Game/Util/StarPointerUtil.hpp"
 
@@ -14,6 +15,10 @@ void MarioActor::resetPadSwing() {
 }
 
 bool MarioActor::isRequestHipDrop() const {
+    if (port_is_fly_mode()) {
+        return false;
+    }
+
     if (_934 || _38C != 0) {
         return false;
     }

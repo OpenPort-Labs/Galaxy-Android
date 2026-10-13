@@ -1877,24 +1877,6 @@ void Mario::update() {
 void Mario::actionMain() {
     if (!mMovementStates.debugMode) {
         if (checkDamage() == false) {
-            if (port_is_fly_mode() && !isSwimming() && (checkLvlA() || MR::testCorePadButtonA(WPAD_CHAN0))) {
-                TVec3f up = -*getGravityVec();
-                if (MR::normalizeOrZero(&up)) {
-                    if (!mMovementStates.jumping) {
-                        tryForceJump(up * 26.0f, true);
-                    } else {
-                        f32 curUp = mJumpVec.dot(up);
-                        if (curUp < 16.0f) {
-                            mJumpVec += up * (20.0f - curUp) * 0.4f;
-                        } else if (curUp > 26.0f) {
-                            mJumpVec += up * (26.0f - curUp);
-                        } else {
-                            mJumpVec += up * 2.5f;
-                        }
-                    }
-                }
-            }
-
             if (_97C) {
                 sendStateMsg(MarioStateMsg_Update);
             } else if (mMovementStates.jumping) {

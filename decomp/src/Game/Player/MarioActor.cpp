@@ -1022,7 +1022,7 @@ void MarioActor::control2() {
         _951 = 0;
         controlMain();
         if (!_EA4) {
-            if (!_F44) {
+            if (port_is_fly_mode() || !_F44) {
                 MR::offBind(this);
             } else {
                 MR::onBind(this);

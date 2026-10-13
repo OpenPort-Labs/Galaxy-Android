@@ -566,11 +566,7 @@ void Mario::doExtraServices() {
 
 bool Mario::isEnableCheckGround() {
     if (port_is_fly_mode() && !isStatusActive(MarioStatus_Swim)) {
-        bool holdA = checkLvlA() || MR::getPlayerLevelA() || (port_input_real_a() != 0);
-        bool holdZ = checkLvlZ() || MR::getPlayerLevelZ() || (port_input_real_z() != 0);
-        if (holdA || (!mMovementStates._1 && !holdZ)) {
-            return false;
-        }
+        return false;
     }
     return !isStatusActive(MarioStatus_Swim);
 }
@@ -1884,14 +1880,16 @@ void Mario::update() {
 void Mario::actionMain() {
     if (!mMovementStates.debugMode) {
         if (checkDamage() == false) {
-            if (_97C) {
-                sendStateMsg(MarioStateMsg_Update);
-            } else if (port_is_fly_mode() && !isSwimming()) {
-                bool holdA = checkLvlA() || MR::getPlayerLevelA() || (port_input_real_a() != 0);
-                bool holdZ = checkLvlZ() || MR::getPlayerLevelZ() || (port_input_real_z() != 0);
+            if (port_is_fly_mode() && !isSwimming()) {
+                if (_97C) {
+                    closeStatus(_97C);
+                }
+
+                bool holdA = checkLvlA() || checkTrgA() || MR::getPlayerLevelA() || MR::getPlayerTriggerA() || (port_input_real_a() != 0);
+                bool holdZ = checkLvlZ() || checkTrgZ() || MR::getPlayerLevelZ() || MR::getPlayerTriggerZ() || (port_input_real_z() != 0);
 
                 TVec3f up = -*getGravityVec();
-                if (MR::normalizeOrZero(&up) && (!mMovementStates._1 || holdA)) {
+                if (MR::normalizeOrZero(&up)) {
                     mMovementStates._1 = false;
                     mMovementStates.jumping = true;
                     mMovementStates._B = false;
@@ -1899,9 +1897,9 @@ void Mario::actionMain() {
 
                     TVec3f vertMove(0.0f, 0.0f, 0.0f);
                     if (holdA) {
-                        vertMove = up * 20.0f;
+                        vertMove = up * 28.0f;
                     } else if (holdZ) {
-                        vertMove = -up * 20.0f;
+                        vertMove = -up * 28.0f;
                     }
 
                     f32 stickX = MR::getPlayerStickX();
@@ -1932,7 +1930,7 @@ void Mario::actionMain() {
                             }
                         }
 
-                        horizMove = horizDir * (stickMag * 24.0f);
+                        horizMove = horizDir * (stickMag * 32.0f);
                         setFrontVecKeepUp(horizDir);
                     }
 
@@ -1945,10 +1943,9 @@ void Mario::actionMain() {
                     } else {
                         changeAnimation(nullptr, "\x97\x8e\x89\xba");
                     }
-                } else {
-                    mainMove();
-                    updateWalkSpeed();
                 }
+            } else if (_97C) {
+                sendStateMsg(MarioStateMsg_Update);
             } else if (mMovementStates.jumping) {
                 procJump(false);
                 checkTornado();

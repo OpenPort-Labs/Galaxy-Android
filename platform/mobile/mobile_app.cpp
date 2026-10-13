@@ -336,9 +336,17 @@ int32_t onInput(android_app* app, AInputEvent* event) {
             if (fabsf(stickX) > 0.15f || fabsf(stickY) > 0.15f) {
                 a->pad.stickX = stickX;
                 a->pad.stickY = -stickY;
-                port_input_set(0, &a->pad);
-                return 1;
+            } else {
+                a->pad.stickX = 0.0f;
+                a->pad.stickY = 0.0f;
             }
+            float lTrig = std::max(AMotionEvent_getAxisValue(event, AMOTION_EVENT_AXIS_LTRIGGER, 0),
+                                   AMotionEvent_getAxisValue(event, AMOTION_EVENT_AXIS_BRAKE, 0));
+            if (lTrig > 0.3f) {
+                a->pad.buttons |= 0x2000;
+            }
+            port_input_set(0, &a->pad);
+            return 1;
         }
 
         updateViewport(*a);

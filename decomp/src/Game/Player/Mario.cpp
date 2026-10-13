@@ -565,6 +565,13 @@ void Mario::doExtraServices() {
 }
 
 bool Mario::isEnableCheckGround() {
+    if (port_is_fly_mode() && !isStatusActive(MarioStatus_Swim)) {
+        bool holdA = checkLvlA() || MR::getPlayerLevelA() || (port_input_real_a() != 0);
+        bool holdZ = checkLvlZ() || MR::getPlayerLevelZ() || (port_input_real_z() != 0);
+        if (holdA || (!mMovementStates._1 && !holdZ)) {
+            return false;
+        }
+    }
     return !isStatusActive(MarioStatus_Swim);
 }
 
@@ -1879,6 +1886,52 @@ void Mario::actionMain() {
         if (checkDamage() == false) {
             if (_97C) {
                 sendStateMsg(MarioStateMsg_Update);
+            } else if (port_is_fly_mode() && !isSwimming()) {
+                bool holdA = checkLvlA() || MR::getPlayerLevelA() || (port_input_real_a() != 0);
+                bool holdZ = checkLvlZ() || MR::getPlayerLevelZ() || (port_input_real_z() != 0);
+
+                TVec3f up = -*getGravityVec();
+                if (MR::normalizeOrZero(&up) && (!mMovementStates._1 || holdA)) {
+                    mMovementStates._1 = false;
+                    mMovementStates.jumping = true;
+                    mMovementStates._B = false;
+                    _430 = 0;
+
+                    TVec3f vertMove(0.0f, 0.0f, 0.0f);
+                    if (holdA) {
+                        vertMove = up * 20.0f;
+                        if (calcDistToCeil(false) < 120.0f) {
+                            vertMove.zero();
+                        }
+                    } else if (holdZ) {
+                        vertMove = -up * 20.0f;
+                    }
+
+                    TVec3f horizMove(0.0f, 0.0f, 0.0f);
+                    if (getStickP() > 0.05f) {
+                        const TVec3f& padDir = getWorldPadDir();
+                        if (!MR::isNearZero(padDir)) {
+                            horizMove = padDir * (getStickP() * 22.0f);
+                            setFrontVecKeepUp(padDir);
+                        }
+                    }
+
+                    TVec3f totalMove = vertMove + horizMove;
+                    mPosition += totalMove;
+                    mActor->mPosition = mPosition;
+
+                    mVelocity.zero();
+                    mJumpVec = totalMove;
+
+                    if (holdA) {
+                        changeAnimation("\x83\x57\x83\x83\x83\x93\x83\x76", "\x97\x8e\x89\xba");
+                    } else {
+                        changeAnimation(nullptr, "\x97\x8e\x89\xba");
+                    }
+                } else {
+                    mainMove();
+                    updateWalkSpeed();
+                }
             } else if (mMovementStates.jumping) {
                 procJump(false);
                 checkTornado();

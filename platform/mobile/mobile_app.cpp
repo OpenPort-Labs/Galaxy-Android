@@ -500,10 +500,36 @@ extern "C" __attribute__((visibility("default"))) void port_android_main(struct 
     a.pad.connected = 1;
     port_input_set(0, &a.pad);
 
-    std::string internalPath = app->activity->internalDataPath ? app->activity->internalDataPath : "";
-    bool isPlus = (internalPath.find("plus") != std::string::npos);
+    std::string internalPath = (app && app->activity && app->activity->internalDataPath) ? app->activity->internalDataPath : "";
+    std::string externalPath = (app && app->activity && app->activity->externalDataPath) ? app->activity->externalDataPath : "";
+    bool isPlus = (internalPath.find("plus") != std::string::npos) || (externalPath.find("plus") != std::string::npos);
+
+    if (!isPlus && app && app->activity && app->activity->vm && app->activity->clazz) {
+        JNIEnv* env = nullptr;
+        if (app->activity->vm->AttachCurrentThread(&env, nullptr) == JNI_OK && env) {
+            jclass actClass = env->GetObjectClass(app->activity->clazz);
+            if (actClass) {
+                jmethodID getPkgName = env->GetMethodID(actClass, "getPackageName", "()Ljava/lang/String;");
+                if (getPkgName) {
+                    jstring pkgName = (jstring)env->CallObjectMethod(app->activity->clazz, getPkgName);
+                    if (pkgName) {
+                        const char* str = env->GetStringUTFChars(pkgName, nullptr);
+                        if (str) {
+                            if (strstr(str, "plus") != nullptr) {
+                                isPlus = true;
+                            }
+                            env->ReleaseStringUTFChars(pkgName, str);
+                        }
+                        env->DeleteLocalRef(pkgName);
+                    }
+                }
+                env->DeleteLocalRef(actClass);
+            }
+        }
+    }
+
     mobile_ui::get().setPlusEdition(isPlus);
-    LOGI("GalaxyMobile edition detected: %s (internalDataPath: %s)", isPlus ? "GalaxyMobile+" : "GalaxyMobile (Standard)", internalPath.c_str());
+    LOGI("GalaxyMobile edition detected: %s (internalDataPath: %s, externalPath: %s)", isPlus ? "GalaxyMobile+" : "GalaxyMobile (Standard)", internalPath.c_str(), externalPath.c_str());
 
     std::string ext = app->activity->externalDataPath ? app->activity->externalDataPath : (isPlus ? "/sdcard/Android/data/com.galaxy.mobile.plus/files" : "/sdcard/Android/data/com.galaxy.mobile/files");
     a.saveRoot = internalPath + "/nand";
@@ -683,7 +709,13 @@ int port_is_fullscreen_aspect(void) {
 
 int port_is_fly_mode(void) {
     if (!mobile_ui::UIOverlay::get().isPlusEdition()) return 0;
-    return mobile_ui::UIOverlay::get().settings().modFly ? 1 : 0;
+    int active = mobile_ui::UIOverlay::get().settings().modFly ? 1 : 0;
+    static int sLastState = -1;
+    if (active != sLastState) {
+        sLastState = active;
+        LOGI("port_is_fly_mode changed: active=%d", active);
+    }
+    return active;
 }
 
 int port_is_skip_cutscenes(void) {

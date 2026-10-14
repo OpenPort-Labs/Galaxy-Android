@@ -1,5 +1,5 @@
 > **Disclaimer: This project was coded entirely by Gemini 3.8 Flash on Google Antigravity.**
-> All mobile-specific adaptations, Android phone/tablet platform layer, on-screen touch overlay, Google Material 3 slide-out settings drawer, native Hor+ ultrawide aspect ratio engine modifications, audio DSP pacing, cutscene movie player pipeline, and mobile packaging toolchain were implemented by **Gemini 3.8 Flash** on **Google Antigravity**.
+> All mobile-specific adaptations, Android phone/tablet platform layer, on-screen touch overlay, Modenr UI slide-out settings drawer, native Hor+ ultrawide aspect ratio engine modifications, audio DSP pacing, cutscene movie player pipeline, and mobile packaging toolchain were implemented by **Gemini 3.8 Flash** on **Google Antigravity**.
 > This project is completely based off the [GalaxyQuest](https://github.com/bigmak94/GalaxyQuest) source code by bigmak94 and the [Petari Super Mario Galaxy decompilation project](https://github.com/SMGCommunity/Petari).
 
 # GalaxyMobile
@@ -16,7 +16,7 @@ GalaxyMobile is a **native Android ARM64 port** of Super Mario Galaxy, compiled 
   - Dynamically adapts the 3D camera projection to modern mobile aspect ratios (such as 19.5:9, 20:9, and foldable aspect ratios).
   - Horizontally expands field of view (Hor+) so you see more of the galaxy around Mario without vertical cropping.
   - Keeps 2D HUD elements (health circle, coin counters, star bit count, dialogs) centered in a 16:9 safe zone so circular UI elements remain perfect circles and are never obscured by camera hole-punch cutouts or rounded screen corners.
-- **Google Material 3 Settings Drawer**:
+- **Modern Settings Drawer**:
   - Smooth slide-out menu docked cleanly on the top-left edge of the screen (`⚙`).
   - Native ultrawide Fullscreen toggle switch.
   - Virtual control opacity (25%, 50%, 75%, 100%) and button scale adjustments.

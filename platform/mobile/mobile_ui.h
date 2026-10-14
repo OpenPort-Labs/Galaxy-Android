@@ -82,6 +82,19 @@ private:
     float mDrawerTouchStartX = 0.0f;
     float mDrawerScrollStartOffset = 0.0f;
 
+    // Warp Menu Sub-View (Plus Edition)
+    bool mWarpMenuOpen = false;
+    int mWarpCategoryIndex = 0;        // 0=All, 1=Terrace, 2=Fountain, 3=Kitchen, 4=Bedroom, 5=Engine, 6=Garden, 7=Special
+    int mWarpSelectedGalaxy = 0;
+    int mWarpSelectedScenario = 1;
+    float mWarpScrollY = 0.0f;
+    float mWarpScrollTarget = 0.0f;
+    bool mWarpIsScrolling = false;
+    int mWarpScrollPointerId = -1;
+    float mWarpTouchStartY = 0.0f;
+    float mWarpTouchStartX = 0.0f;
+    float mWarpScrollStartOffset = 0.0f;
+
     // Virtual Stick State
     int mStickPointerId = -1;
     float mStickBaseX = 0.0f;

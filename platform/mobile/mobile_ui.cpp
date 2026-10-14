@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "xr/ui_font.h"
+#include "port/port.h"
 
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, "MobileUI", __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, "MobileUI", __VA_ARGS__)
@@ -22,6 +23,77 @@
 namespace mobile_ui {
 
 namespace {
+
+// Galaxy Database for Galaxy & Scenario Warp Menu (Plus Edition)
+struct GalaxyDef {
+    const char* displayName;
+    const char* stageName;
+    int maxScenarios;
+    int category; // 1=Terrace, 2=Fountain, 3=Kitchen, 4=Bedroom, 5=Engine, 6=Garden, 7=Special
+};
+
+static const GalaxyDef kGalaxies[] = {
+    // Terrace (category 1)
+    {"Good Egg Galaxy", "EggStarGalaxy", 6, 1},
+    {"Honeyhive Galaxy", "HoneyBeeKingdomGalaxy", 6, 1},
+    {"Flipswitch Galaxy", "FlipPanelExGalaxy", 1, 1},
+    {"Loopdeeloop Galaxy", "SurfingLv1Galaxy", 1, 1},
+    {"Sweet Sweet Galaxy", "BeltConveyerExGalaxy", 1, 1},
+    {"Bowser Jr. Robot", "TriLegLv1Galaxy", 1, 1},
+
+    // Fountain (category 2)
+    {"Space Junk Galaxy", "StarDustGalaxy", 6, 2},
+    {"Battlerock Galaxy", "BattleShipGalaxy", 6, 2},
+    {"Rolling Green Galaxy", "TamakoroExLv1Galaxy", 1, 2},
+    {"Hurry-Scurry Galaxy", "BreakDownPlanetGalaxy", 1, 2},
+    {"Sling Pod Galaxy", "CocoonExGalaxy", 1, 2},
+    {"Bowser Star Reactor", "KoopaBattleVs1Galaxy", 1, 2},
+
+    // Kitchen (category 3)
+    {"Beach Bowl Galaxy", "HeavenlyBeachGalaxy", 6, 3},
+    {"Ghostly Galaxy", "PhantomGalaxy", 6, 3},
+    {"Bubble Breeze Galaxy", "CubeBubbleExLv1Galaxy", 1, 3},
+    {"Buoy Base Galaxy", "OceanFloaterLandGalaxy", 2, 3},
+    {"Drip Drop Galaxy", "TearDropGalaxy", 1, 3},
+    {"Bowser Jr. Airship", "KoopaJrShipLv1Galaxy", 1, 3},
+
+    // Bedroom (category 4)
+    {"Gusty Garden Galaxy", "CosmosGardenGalaxy", 6, 4},
+    {"Freezeflame Galaxy", "IceVolcanoGalaxy", 6, 4},
+    {"Dusty Dune Galaxy", "SandClockGalaxy", 6, 4},
+    {"Honeyclimb Galaxy", "HoneyBeeExGalaxy", 1, 4},
+    {"Bowser Dark Matter", "KoopaBattleVs2Galaxy", 1, 4},
+
+    // Engine (category 5)
+    {"Gold Leaf Galaxy", "ReverseKingdomGalaxy", 6, 5},
+    {"Sea Slide Galaxy", "OceanRingGalaxy", 6, 5},
+    {"Toy Time Galaxy", "FactoryGalaxy", 6, 5},
+    {"Bonefin Galaxy", "SkullSharkGalaxy", 1, 5},
+    {"Bowser Jr. Lava Dome", "FloaterOtaKingGalaxy", 1, 5},
+
+    // Garden (category 6)
+    {"Deep Dark Galaxy", "OceanPhantomCaveGalaxy", 6, 6},
+    {"Dreadnought Galaxy", "CannonFleetGalaxy", 6, 6},
+    {"Melty Molten Galaxy", "HellProminenceGalaxy", 6, 6},
+    {"Matter Splatter Galaxy", "DarkRoomGalaxy", 1, 6},
+    {"Bowser Galaxy Reactor", "KoopaBattleVs3Galaxy", 1, 6},
+
+    // Special / Trials / Secret (category 7)
+    {"Comet Observatory", "AstroGalaxy", 1, 7},
+    {"Gateway Galaxy", "HeavensDoorGalaxy", 2, 7},
+    {"Grand Finale Galaxy", "PeachCastleFinalGalaxy", 1, 7},
+    {"Rolling Gizmo Galaxy", "TamakoroExLv2Galaxy", 1, 7},
+    {"Loopdeeswoop Galaxy", "SurfingLv2Galaxy", 1, 7},
+    {"Bubble Blast Galaxy", "CubeBubbleExLv2Galaxy", 1, 7},
+    {"Boo's Boneyard Galaxy", "TeresaMario2DGalaxy", 1, 7},
+    {"Snow Cap Galaxy", "SnowCapsuleGalaxy", 1, 7},
+    {"Bigmouth Galaxy", "FishTunnelGalaxy", 1, 7},
+};
+static const int kNumGalaxies = (int)(sizeof(kGalaxies) / sizeof(kGalaxies[0]));
+
+static const char* kCategoryNames[8] = {
+    "All", "Terrace", "Fountain", "Kitchen", "Bedroom", "Engine", "Garden", "Special"
+};
 
 // In-shader vertex for 2D batching
 struct UIVertex {
@@ -293,6 +365,7 @@ void UIOverlay::setSavePath(const std::string& path) {
         mSettings.modSkipCutscenes = false;
         mSettings.modInfiniteHealth = false;
         mSettingsTab = 0;
+        mWarpMenuOpen = false;
     }
 }
 
@@ -308,6 +381,7 @@ bool UIOverlay::needsRedraw() {
 
 void UIOverlay::closeSettings() {
     mSettingsOpen = false;
+    mWarpMenuOpen = false;
     mDirty = true;
     if (!mSavePath.empty()) {
         mSettings.save(mSavePath);
@@ -536,22 +610,54 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
         float contentW = drawerW - padX * 2.0f;
         float contentTop = mPlusEdition ? (112.0f * uiScale) : (68.0f * uiScale);
         float contentBottom = h - 56.0f * uiScale;
-        float totalContentH = (mSettingsTab == 0 || !mPlusEdition) ? (455.0f * uiScale) : (278.0f * uiScale);
+
+        // Calculate total content height based on active view
+        float totalContentH = 0.0f;
+        if (mWarpMenuOpen) {
+            int matchingCount = 0;
+            for (int i = 0; i < kNumGalaxies; i++) {
+                if (mWarpCategoryIndex == 0 || kGalaxies[i].category == mWarpCategoryIndex) {
+                    matchingCount++;
+                }
+            }
+            totalContentH = matchingCount * (78.0f * uiScale) + 16.0f * uiScale;
+        } else if (mSettingsTab == 0 || !mPlusEdition) {
+            totalContentH = 455.0f * uiScale;
+        } else {
+            // Advanced Tab: Header + 2 Mods + Warp Menu Card + Info Card
+            totalContentH = 345.0f * uiScale;
+        }
         float maxScroll = std::max(0.0f, totalContentH - (contentBottom - contentTop));
 
         // 1. Move Gesture for Smooth Scrolling
-        if (action == AMOTION_EVENT_ACTION_MOVE && mDrawerScrollPointerId >= 0) {
-            for (size_t i = 0; i < pointerCount; i++) {
-                int32_t pid = AMotionEvent_getPointerId(event, i);
-                if (pid == mDrawerScrollPointerId) {
-                    float py = AMotionEvent_getY(event, i);
-                    float deltaY = py - mDrawerTouchStartY;
-                    if (fabsf(deltaY) > 6.0f * uiScale || mDrawerIsScrolling) {
-                        mDrawerIsScrolling = true;
-                        mDrawerScrollTarget = std::max(0.0f, std::min(mDrawerScrollStartOffset - deltaY, maxScroll));
-                        mDirty = true;
+        if (action == AMOTION_EVENT_ACTION_MOVE) {
+            if (mWarpMenuOpen && mWarpScrollPointerId >= 0) {
+                for (size_t i = 0; i < pointerCount; i++) {
+                    int32_t pid = AMotionEvent_getPointerId(event, i);
+                    if (pid == mWarpScrollPointerId) {
+                        float py = AMotionEvent_getY(event, i);
+                        float deltaY = py - mWarpTouchStartY;
+                        if (fabsf(deltaY) > 6.0f * uiScale || mWarpIsScrolling) {
+                            mWarpIsScrolling = true;
+                            mWarpScrollTarget = std::max(0.0f, std::min(mWarpScrollStartOffset - deltaY, maxScroll));
+                            mDirty = true;
+                        }
+                        return true;
                     }
-                    return true;
+                }
+            } else if (!mWarpMenuOpen && mDrawerScrollPointerId >= 0) {
+                for (size_t i = 0; i < pointerCount; i++) {
+                    int32_t pid = AMotionEvent_getPointerId(event, i);
+                    if (pid == mDrawerScrollPointerId) {
+                        float py = AMotionEvent_getY(event, i);
+                        float deltaY = py - mDrawerTouchStartY;
+                        if (fabsf(deltaY) > 6.0f * uiScale || mDrawerIsScrolling) {
+                            mDrawerIsScrolling = true;
+                            mDrawerScrollTarget = std::max(0.0f, std::min(mDrawerScrollStartOffset - deltaY, maxScroll));
+                            mDirty = true;
+                        }
+                        return true;
+                    }
                 }
             }
         }
@@ -559,7 +665,66 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
         // 2. Up / Pointer Up / Cancel: Finish Drag or Handle Row Tap
         if (action == AMOTION_EVENT_ACTION_UP || action == AMOTION_EVENT_ACTION_POINTER_UP || action == AMOTION_EVENT_ACTION_CANCEL) {
             int32_t liftedPid = AMotionEvent_getPointerId(event, pointerIndex);
-            if (liftedPid == mDrawerScrollPointerId) {
+            if (mWarpMenuOpen && liftedPid == mWarpScrollPointerId) {
+                if (!mWarpIsScrolling && action != AMOTION_EVENT_ACTION_CANCEL) {
+                    float px = AMotionEvent_getX(event, pointerIndex);
+                    float py = AMotionEvent_getY(event, pointerIndex);
+
+                    if (py >= contentTop && py < contentBottom) {
+                        int cardIdx = 0;
+                        for (int i = 0; i < kNumGalaxies; i++) {
+                            if (mWarpCategoryIndex != 0 && kGalaxies[i].category != mWarpCategoryIndex) continue;
+
+                            float cardY0 = contentTop + 8.0f * uiScale + cardIdx * (78.0f * uiScale) - mWarpScrollY;
+                            float cardY1 = cardY0 + 70.0f * uiScale;
+
+                            if (py >= cardY0 && py <= cardY1) {
+                                mWarpSelectedGalaxy = i;
+
+                                // Quick [ WARP ] pill on right side of card
+                                float qWarpX0 = drawerX + drawerW - padX - 70.0f * uiScale;
+                                float qWarpX1 = drawerX + drawerW - padX - 8.0f * uiScale;
+                                float qWarpY0 = cardY0 + 34.0f * uiScale;
+                                float qWarpY1 = cardY0 + 60.0f * uiScale;
+                                if (px >= qWarpX0 && px <= qWarpX1 && py >= qWarpY0 && py <= qWarpY1) {
+                                    port_request_warp(kGalaxies[i].stageName, mWarpSelectedScenario);
+                                    closeSettings();
+                                    return true;
+                                }
+
+                                // Scenario pills selection
+                                int maxSc = kGalaxies[i].maxScenarios;
+                                float pillW = 28.0f * uiScale;
+                                float pillGap = 5.0f * uiScale;
+                                float pStartX = drawerX + padX + 12.0f * uiScale;
+                                float pY0 = cardY0 + 34.0f * uiScale;
+                                float pY1 = cardY0 + 60.0f * uiScale;
+
+                                if (py >= pY0 && py <= pY1) {
+                                    for (int s = 1; s <= maxSc; s++) {
+                                        float px0 = pStartX + (s - 1) * (pillW + pillGap);
+                                        float px1 = px0 + pillW;
+                                        if (px >= px0 && px <= px1) {
+                                            mWarpSelectedScenario = s;
+                                            break;
+                                        }
+                                    }
+                                } else {
+                                    if (mWarpSelectedScenario > maxSc) {
+                                        mWarpSelectedScenario = 1;
+                                    }
+                                }
+                                break;
+                            }
+                            cardIdx++;
+                        }
+                    }
+                }
+                mWarpScrollPointerId = -1;
+                mWarpIsScrolling = false;
+                mDirty = true;
+                return true;
+            } else if (!mWarpMenuOpen && liftedPid == mDrawerScrollPointerId) {
                 if (!mDrawerIsScrolling && action != AMOTION_EVENT_ACTION_CANCEL) {
                     float px = AMotionEvent_getX(event, pointerIndex);
                     float py = AMotionEvent_getY(event, pointerIndex);
@@ -633,12 +798,18 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
                     } else {
                         // Advanced Tab items
                         // Mod 1: Cutscene Prevention Switch
-                        if (contentRelY >= 48.0f * uiScale && contentRelY <= 106.0f * uiScale) {
+                        if (contentRelY >= 48.0f * uiScale && contentRelY <= 104.0f * uiScale) {
                             mSettings.modSkipCutscenes = !mSettings.modSkipCutscenes;
                         }
                         // Mod 2: Infinite Health Switch
-                        else if (contentRelY >= 110.0f * uiScale && contentRelY <= 168.0f * uiScale) {
+                        else if (contentRelY >= 106.0f * uiScale && contentRelY <= 162.0f * uiScale) {
                             mSettings.modInfiniteHealth = !mSettings.modInfiniteHealth;
+                        }
+                        // Mod 3: Galaxy Warp Menu Card
+                        else if (contentRelY >= 164.0f * uiScale && contentRelY <= 232.0f * uiScale) {
+                            mWarpMenuOpen = true;
+                            mWarpScrollY = 0.0f;
+                            mWarpScrollTarget = 0.0f;
                         }
                     }
 
@@ -659,9 +830,7 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
 
             // Outside drawer tap (scrim) closes settings
             if (px > drawerX + drawerW) {
-                mSettingsOpen = false;
-                if (!mSavePath.empty()) mSettings.save(mSavePath);
-                mDirty = true;
+                closeSettings();
                 return true;
             }
 
@@ -671,41 +840,95 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
             float dx = px - closeBtnX;
             float dy = py - closeBtnY;
             if (dx * dx + dy * dy <= 26.0f * uiScale * 26.0f * uiScale) {
-                mSettingsOpen = false;
-                if (!mSavePath.empty()) mSettings.save(mSavePath);
-                mDirty = true;
+                closeSettings();
                 return true;
             }
 
-            // Tab Bar Tap (General vs Advanced) - only in Plus Edition
-            if (mPlusEdition && py >= 58.0f * uiScale && py <= 104.0f * uiScale) {
-                float midX = drawerX + padX + contentW * 0.5f;
-                int newTab = (px < midX) ? 0 : 1;
-                if (newTab != mSettingsTab) {
-                    mSettingsTab = newTab;
-                    mDrawerScrollY = 0.0f;
-                    mDrawerScrollTarget = 0.0f;
+            if (mWarpMenuOpen) {
+                // Fixed top header in Warp Menu
+                if (py < contentTop) {
+                    // [< Back] button at top left
+                    if (px >= drawerX + padX && px <= drawerX + padX + 80.0f * uiScale && py >= 18.0f * uiScale && py <= 50.0f * uiScale) {
+                        mWarpMenuOpen = false;
+                        mDirty = true;
+                        return true;
+                    }
+                    // Category Chips (2 rows: Row 0 = 54..78, Row 1 = 80..106)
+                    if (py >= 54.0f * uiScale && py <= 106.0f * uiScale) {
+                        int row = (py >= 80.0f * uiScale) ? 1 : 0;
+                        float chipW = (contentW - 9.0f * uiScale) / 4.0f;
+                        float relX = px - (drawerX + padX);
+                        int col = (int)(relX / (chipW + 3.0f * uiScale));
+                        if (col >= 0 && col < 4) {
+                            int newCat = row * 4 + col;
+                            if (newCat >= 0 && newCat < 8) {
+                                mWarpCategoryIndex = newCat;
+                                mWarpScrollY = 0.0f;
+                                mWarpScrollTarget = 0.0f;
+                                if (newCat != 0 && kGalaxies[mWarpSelectedGalaxy].category != newCat) {
+                                    for (int i = 0; i < kNumGalaxies; i++) {
+                                        if (kGalaxies[i].category == newCat) {
+                                            mWarpSelectedGalaxy = i;
+                                            mWarpSelectedScenario = 1;
+                                            break;
+                                        }
+                                    }
+                                }
+                                mDirty = true;
+                                return true;
+                            }
+                        }
+                    }
+                    return true;
                 }
-                mDirty = true;
-                return true;
-            }
 
-            // Fixed [ Done ] button at bottom
-            if (py >= contentBottom) {
-                mSettingsOpen = false;
-                if (!mSavePath.empty()) mSettings.save(mSavePath);
-                mDirty = true;
-                return true;
-            }
+                // Fixed bottom bar in Warp Menu: [ WARP TO GALAXY ]
+                if (py >= contentBottom) {
+                    if (mWarpSelectedGalaxy >= 0 && mWarpSelectedGalaxy < kNumGalaxies) {
+                        port_request_warp(kGalaxies[mWarpSelectedGalaxy].stageName, mWarpSelectedScenario);
+                    }
+                    closeSettings();
+                    return true;
+                }
 
-            // Content Viewport Touch Acquisition
-            if (py >= contentTop && py < contentBottom) {
-                mDrawerScrollPointerId = pid;
-                mDrawerTouchStartY = py;
-                mDrawerTouchStartX = px;
-                mDrawerScrollStartOffset = mDrawerScrollY;
-                mDrawerIsScrolling = false;
-                return true;
+                // Content Viewport Touch Acquisition
+                if (py >= contentTop && py < contentBottom) {
+                    mWarpScrollPointerId = pid;
+                    mWarpTouchStartY = py;
+                    mWarpTouchStartX = px;
+                    mWarpScrollStartOffset = mWarpScrollY;
+                    mWarpIsScrolling = false;
+                    return true;
+                }
+            } else {
+                // Tab Bar Tap (General vs Advanced) - only in Plus Edition
+                if (mPlusEdition && py >= 58.0f * uiScale && py <= 104.0f * uiScale) {
+                    float midX = drawerX + padX + contentW * 0.5f;
+                    int newTab = (px < midX) ? 0 : 1;
+                    if (newTab != mSettingsTab) {
+                        mSettingsTab = newTab;
+                        mDrawerScrollY = 0.0f;
+                        mDrawerScrollTarget = 0.0f;
+                    }
+                    mDirty = true;
+                    return true;
+                }
+
+                // Fixed [ Done ] button at bottom
+                if (py >= contentBottom) {
+                    closeSettings();
+                    return true;
+                }
+
+                // Content Viewport Touch Acquisition
+                if (py >= contentTop && py < contentBottom) {
+                    mDrawerScrollPointerId = pid;
+                    mDrawerTouchStartY = py;
+                    mDrawerTouchStartX = px;
+                    mDrawerScrollStartOffset = mDrawerScrollY;
+                    mDrawerIsScrolling = false;
+                    return true;
+                }
             }
 
             return true;
@@ -1407,181 +1630,348 @@ void UIOverlay::render(int screenW, int screenH) {
         float swW = 50.0f * uiScale, swH = 28.0f * uiScale;
 
         // ---------------------------------------------------------
-        // A. Scrollable Content Layer
+        // A. Content Layer (Warp Sub-View vs Settings Tabs)
         // ---------------------------------------------------------
-        if (mSettingsTab == 0 || !mPlusEdition) {
-            // General Tab Settings Items
-            auto renderRow = [&](float relY, float rowH, auto func) {
-                float drawY = contentTop + relY - mDrawerScrollY;
-                if (drawY + rowH >= contentTop - 12.0f && drawY <= contentBottom + 12.0f) {
-                    func(drawY);
+        if (mWarpMenuOpen) {
+            // Galaxy & Scenario Warp Menu Sub-View (Plus Edition)
+            int matchingCount = 0;
+            for (int i = 0; i < kNumGalaxies; i++) {
+                if (mWarpCategoryIndex == 0 || kGalaxies[i].category == mWarpCategoryIndex) {
+                    matchingCount++;
                 }
-            };
+            }
+            float totalWarpH = matchingCount * (78.0f * uiScale) + 16.0f * uiScale;
+            float maxWarpScroll = std::max(0.0f, totalWarpH - (contentBottom - contentTop));
 
-            // Row 0: Visibility Switch
-            renderRow(8.0f * uiScale, 46.0f * uiScale, [&](float y) {
-                drawText("On-Screen Controls", drawerX + padX, y + 20.0f * uiScale, 0.40f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
-                drawText("Show HUD buttons", drawerX + padX, y + 36.0f * uiScale, 0.29f * uiScale, rgba(0.761f, 0.776f, 0.812f, 0.85f), 0);
-                drawM3Switch(drawerX + drawerW - padX - swW, y + 10.0f * uiScale, swW, swH, mSettings.showControls);
-            });
-
-            // Row 1: Camera D-Pad Switch
-            renderRow(58.0f * uiScale, 46.0f * uiScale, [&](float y) {
-                drawText("Camera D-Pad", drawerX + padX, y + 20.0f * uiScale, 0.40f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
-                drawText("Limited camera rotation & reset", drawerX + padX, y + 36.0f * uiScale, 0.29f * uiScale, rgba(0.761f, 0.776f, 0.812f, 0.85f), 0);
-                drawM3Switch(drawerX + drawerW - padX - swW, y + 10.0f * uiScale, swW, swH, mSettings.showDpad);
-            });
-
-            // Row 2: D-Pad Position Segmented Button
-            renderRow(108.0f * uiScale, 54.0f * uiScale, [&](float y) {
-                drawText("D-Pad Position", drawerX + padX, y + 14.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
-                const char* dpadSideOpts[2] = {"Left Side", "Right Side"};
-                drawSegmentedGroup(drawerX + padX, y + 22.0f * uiScale, contentW, 34.0f * uiScale, dpadSideOpts, 2, mSettings.dpadOnRight ? 1 : 0);
-            });
-
-            // Row 3: Fullscreen Switch
-            renderRow(166.0f * uiScale, 46.0f * uiScale, [&](float y) {
-                drawText("Fullscreen", drawerX + padX, y + 20.0f * uiScale, 0.40f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
-                drawText("Native ultrawide (expand Hor+ FOV)", drawerX + padX, y + 36.0f * uiScale, 0.29f * uiScale, rgba(0.761f, 0.776f, 0.812f, 0.85f), 0);
-                drawM3Switch(drawerX + drawerW - padX - swW, y + 10.0f * uiScale, swW, swH, mSettings.fullscreen);
-            });
-
-            // Row 4: Joystick Mode Segmented Button
-            renderRow(216.0f * uiScale, 54.0f * uiScale, [&](float y) {
-                drawText("Joystick Mode", drawerX + padX, y + 14.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
-                const char* joyOpts[2] = {"Dynamic", "Fixed"};
-                drawSegmentedGroup(drawerX + padX, y + 22.0f * uiScale, contentW, 34.0f * uiScale, joyOpts, 2, mSettings.dynamicStick ? 0 : 1);
-            });
-
-            // Row 5: Controls Opacity Segmented Button
-            renderRow(274.0f * uiScale, 54.0f * uiScale, [&](float y) {
-                drawText("Controls Opacity", drawerX + padX, y + 14.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
-                const char* opOpts[4] = {"25%", "50%", "75%", "100%"};
-                int opIdx = (fabsf(mSettings.opacity - 0.25f) < 0.12f) ? 0 : (fabsf(mSettings.opacity - 0.50f) < 0.12f) ? 1 : (fabsf(mSettings.opacity - 0.75f) < 0.12f) ? 2 : 3;
-                drawSegmentedGroup(drawerX + padX, y + 22.0f * uiScale, contentW, 34.0f * uiScale, opOpts, 4, opIdx);
-            });
-
-            // Row 6: Button Size Segmented Button
-            renderRow(332.0f * uiScale, 54.0f * uiScale, [&](float y) {
-                drawText("Button Size", drawerX + padX, y + 14.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
-                const char* scOpts[3] = {"Small", "Medium", "Large"};
-                int scIdx = (fabsf(mSettings.scale - 0.85f) < 0.08f) ? 0 : (fabsf(mSettings.scale - 1.25f) < 0.08f) ? 2 : 1;
-                drawSegmentedGroup(drawerX + padX, y + 22.0f * uiScale, contentW, 34.0f * uiScale, scOpts, 3, scIdx);
-            });
-
-            // Row 7: Layout Reposition & Reset Buttons
-            renderRow(390.0f * uiScale, 54.0f * uiScale, [&](float y) {
-                drawText("Controls Layout", drawerX + padX, y + 14.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
-                float btnY = y + 22.0f * uiScale;
-                float b1X0 = drawerX + padX;
-                float b1X1 = drawerX + padX + contentW * 0.56f - 4.0f * uiScale;
-                float b2X0 = drawerX + padX + contentW * 0.56f + 4.0f * uiScale;
-                float b2X1 = drawerX + drawerW - padX;
-                drawRoundRect(b1X0, btnY, b1X1, btnY + 34.0f * uiScale, 14.0f * uiScale, rgba(0.18f, 0.23f, 0.31f, 0.95f));
-                drawText("Reposition", (b1X0 + b1X1) * 0.5f, btnY + 22.0f * uiScale, 0.36f * uiScale, rgba(0.659f, 0.780f, 0.980f, 1.0f), 1);
-                drawRoundRect(b2X0, btnY, b2X1, btnY + 34.0f * uiScale, 14.0f * uiScale, rgba(0.35f, 0.15f, 0.17f, 0.95f));
-                drawText("Reset", (b2X0 + b2X1) * 0.5f, btnY + 22.0f * uiScale, 0.36f * uiScale, rgba(1.0f, 0.72f, 0.72f, 1.0f), 1);
-            });
-        } else {
-            // Advanced Tab Settings Items (Gameplay Mods)
-            auto renderRow = [&](float relY, float rowH, auto func) {
-                float drawY = contentTop + relY - mDrawerScrollY;
-                if (drawY + rowH >= contentTop - 12.0f && drawY <= contentBottom + 12.0f) {
-                    func(drawY);
-                }
-            };
-
-            // Section Header
-            renderRow(6.0f * uiScale, 36.0f * uiScale, [&](float y) {
-                drawText("Special Game Mods", drawerX + padX, y + 16.0f * uiScale, 0.40f * uiScale, rgba(0.92f, 0.94f, 0.98f, 1.0f), 0);
-                drawText("Cheats & speedrun tools", drawerX + padX, y + 32.0f * uiScale, 0.28f * uiScale, rgba(0.65f, 0.75f, 0.90f, 0.85f), 0);
-            });
-
-            // Mod 1: Cutscene Prevention Switch
-            renderRow(48.0f * uiScale, 52.0f * uiScale, [&](float y) {
-                drawText("Cutscene Prevention", drawerX + padX, y + 20.0f * uiScale, 0.40f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
-                drawText("Instantly skip video cutscenes", drawerX + padX, y + 36.0f * uiScale, 0.28f * uiScale, rgba(0.761f, 0.776f, 0.812f, 0.85f), 0);
-                drawM3Switch(drawerX + drawerW - padX - swW, y + 10.0f * uiScale, swW, swH, mSettings.modSkipCutscenes);
-            });
-
-            // Mod 2: Infinite Health Switch
-            renderRow(110.0f * uiScale, 52.0f * uiScale, [&](float y) {
-                drawText("Infinite Health", drawerX + padX, y + 20.0f * uiScale, 0.40f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
-                drawText("Invincible; teleports out of black holes", drawerX + padX, y + 36.0f * uiScale, 0.28f * uiScale, rgba(0.761f, 0.776f, 0.812f, 0.85f), 0);
-                drawM3Switch(drawerX + drawerW - padX - swW, y + 10.0f * uiScale, swW, swH, mSettings.modInfiniteHealth);
-            });
-
-            // Info Card
-            renderRow(176.0f * uiScale, 84.0f * uiScale, [&](float y) {
-                drawRoundRect(drawerX + padX, y + 6.0f * uiScale, drawerX + drawerW - padX, y + 80.0f * uiScale, 14.0f * uiScale, rgba(0.14f, 0.17f, 0.22f, 0.95f));
-                drawRoundRect(drawerX + padX, y + 6.0f * uiScale, drawerX + drawerW - padX, y + 80.0f * uiScale, 14.0f * uiScale, rgba(0.24f, 0.32f, 0.45f, 0.60f));
-                drawText("MOD STATUS", drawerX + padX + 16.0f * uiScale, y + 26.0f * uiScale, 0.32f * uiScale, rgba(0.38f, 0.74f, 0.98f, 0.95f), 0);
-                drawText("Mods take effect in real-time during gameplay.", drawerX + padX + 16.0f * uiScale, y + 44.0f * uiScale, 0.27f * uiScale, rgba(0.80f, 0.84f, 0.90f, 0.85f), 0);
-                drawText("Turn toggles ON to activate each special ability.", drawerX + padX + 16.0f * uiScale, y + 62.0f * uiScale, 0.27f * uiScale, rgba(0.80f, 0.84f, 0.90f, 0.85f), 0);
-            });
-        }
-
-        // Scrollbar Thumb (rendered inside content area)
-        if (maxScroll > 1.0f) {
-            float trackH = contentBottom - contentTop;
-            float thumbH = std::max(28.0f * uiScale, trackH * (trackH / totalContentH));
-            float thumbY = contentTop + (mDrawerScrollY / maxScroll) * (trackH - thumbH);
-            drawRoundRect(drawerX + drawerW - 5.0f * uiScale, thumbY, drawerX + drawerW - 2.0f * uiScale, thumbY + thumbH, 1.5f * uiScale, rgba(0.85f, 0.92f, 1.0f, 0.40f));
-        }
-
-        // ---------------------------------------------------------
-        // B. Fixed Top Header & Tab Bar Mask Overlay
-        // ---------------------------------------------------------
-        drawRoundRect(drawerX - 60.0f, 0.0f, drawerX + drawerW, contentTop, 0.0f, rgba(0.106f, 0.114f, 0.137f, 1.0f));
-
-        // Header Title & Cogwheel
-        drawCogwheel(drawerX + padX + 16.0f * uiScale, 36.0f * uiScale, 15.0f * uiScale, rgba(0.659f, 0.780f, 0.980f, 1.0f), cogRot);
-        drawText(mPlusEdition ? "GalaxyMobile+" : "Settings", drawerX + padX + 40.0f * uiScale, 44.0f * uiScale, 0.54f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
-
-        // Close [X] circular tonal button
-        float closeBtnX = drawerX + drawerW - 36.0f * uiScale;
-        float closeBtnY = 36.0f * uiScale;
-        drawCircle(closeBtnX, closeBtnY, 17.0f * uiScale, rgba(0.188f, 0.196f, 0.224f, 0.95f));
-        drawCloseIcon(closeBtnX, closeBtnY, 9.0f * uiScale, rgba(0.761f, 0.776f, 0.812f, 0.95f));
-
-        if (mPlusEdition) {
-            // Material 3 Tab Dock ([ General ]  [ Advanced ])
-            float tabBoxY0 = 62.0f * uiScale;
-            float tabBoxY1 = 98.0f * uiScale;
-            drawRoundRect(drawerX + padX, tabBoxY0, drawerX + drawerW - padX, tabBoxY1, 18.0f * uiScale, rgba(0.149f, 0.160f, 0.190f, 0.95f));
-            drawRoundRect(drawerX + padX, tabBoxY0, drawerX + drawerW - padX, tabBoxY1, 18.0f * uiScale, rgba(0.24f, 0.26f, 0.30f, 0.50f));
-
-            float tabMidX = drawerX + padX + contentW * 0.5f;
-            if (mSettingsTab == 0) {
-                // General Tab Active
-                drawRoundRect(drawerX + padX + 2.0f * uiScale, tabBoxY0 + 2.0f * uiScale, tabMidX - 2.0f * uiScale, tabBoxY1 - 2.0f * uiScale, 16.0f * uiScale, rgba(0.14f, 0.28f, 0.48f, 0.95f));
-                drawText("General", (drawerX + padX + tabMidX) * 0.5f, tabBoxY0 + 23.0f * uiScale, 0.36f * uiScale, rgba(1.0f, 1.0f, 1.0f, 1.0f), 1);
-                drawText("Advanced", (tabMidX + drawerX + drawerW - padX) * 0.5f, tabBoxY0 + 23.0f * uiScale, 0.36f * uiScale, rgba(0.68f, 0.71f, 0.77f, 0.75f), 1);
+            // Smooth scroll damping
+            if (fabsf(mWarpScrollY - mWarpScrollTarget) > 0.5f) {
+                mWarpScrollY += (mWarpScrollTarget - mWarpScrollY) * (1.0f - expf(-18.0f * dt));
+                mDirty = true;
             } else {
-                // Advanced Tab Active
-                drawRoundRect(tabMidX + 2.0f * uiScale, tabBoxY0 + 2.0f * uiScale, drawerX + drawerW - padX - 2.0f * uiScale, tabBoxY1 - 2.0f * uiScale, 16.0f * uiScale, rgba(0.14f, 0.28f, 0.48f, 0.95f));
-                drawText("General", (drawerX + padX + tabMidX) * 0.5f, tabBoxY0 + 23.0f * uiScale, 0.36f * uiScale, rgba(0.68f, 0.71f, 0.77f, 0.75f), 1);
-                drawText("Advanced", (tabMidX + drawerX + drawerW - padX) * 0.5f, tabBoxY0 + 23.0f * uiScale, 0.36f * uiScale, rgba(1.0f, 1.0f, 1.0f, 1.0f), 1);
+                mWarpScrollY = mWarpScrollTarget;
+            }
+            mWarpScrollY = std::max(0.0f, std::min(mWarpScrollY, maxWarpScroll));
+            mWarpScrollTarget = std::max(0.0f, std::min(mWarpScrollTarget, maxWarpScroll));
+
+            int cardIdx = 0;
+            for (int i = 0; i < kNumGalaxies; i++) {
+                if (mWarpCategoryIndex != 0 && kGalaxies[i].category != mWarpCategoryIndex) continue;
+
+                float cardY = contentTop + 8.0f * uiScale + cardIdx * (78.0f * uiScale) - mWarpScrollY;
+                float cardH = 70.0f * uiScale;
+
+                if (cardY + cardH >= contentTop - 12.0f && cardY <= contentBottom + 12.0f) {
+                    bool isSel = (mWarpSelectedGalaxy == i);
+                    float cardX0 = drawerX + padX;
+                    float cardX1 = drawerX + drawerW - padX;
+
+                    // Card background & border
+                    Color cardBg = isSel ? rgba(0.12f, 0.22f, 0.36f, 0.96f) : rgba(0.13f, 0.15f, 0.18f, 0.92f);
+                    Color cardBorder = isSel ? rgba(0.38f, 0.74f, 0.98f, 0.90f) : rgba(0.24f, 0.26f, 0.30f, 0.45f);
+                    drawRoundRect(cardX0, cardY, cardX1, cardY + cardH, 12.0f * uiScale, cardBg);
+                    drawRoundRect(cardX0, cardY, cardX1, cardY + cardH, 12.0f * uiScale, cardBorder);
+
+                    // Galaxy Title
+                    drawText(kGalaxies[i].displayName, cardX0 + 12.0f * uiScale, cardY + 20.0f * uiScale, 0.38f * uiScale, rgba(0.95f, 0.96f, 0.98f, 1.0f), 0);
+
+                    // Category Badge tag on right
+                    const char* catName = kCategoryNames[kGalaxies[i].category];
+                    drawText(catName, cardX1 - 12.0f * uiScale, cardY + 18.0f * uiScale, 0.27f * uiScale, rgba(0.58f, 0.72f, 0.90f, 0.85f), 2);
+
+                    // Scenario selector pills
+                    int maxSc = kGalaxies[i].maxScenarios;
+                    float pillW = 28.0f * uiScale;
+                    float pillGap = 5.0f * uiScale;
+                    float pStartX = cardX0 + 12.0f * uiScale;
+                    float pY = cardY + 34.0f * uiScale;
+                    float pH = 26.0f * uiScale;
+
+                    for (int s = 1; s <= maxSc; s++) {
+                        float px0 = pStartX + (s - 1) * (pillW + pillGap);
+                        float px1 = px0 + pillW;
+                        bool sActive = isSel && (mWarpSelectedScenario == s);
+
+                        Color pBg = sActive ? rgba(0.043f, 0.341f, 0.816f, 1.0f) : rgba(0.18f, 0.21f, 0.27f, 0.85f);
+                        Color pTxt = sActive ? rgba(1.0f, 1.0f, 1.0f, 1.0f) : rgba(0.72f, 0.76f, 0.82f, 0.85f);
+                        drawRoundRect(px0, pY, px1, pY + pH, 8.0f * uiScale, pBg);
+
+                        char sBuf[8];
+                        snprintf(sBuf, sizeof(sBuf), "%d", s);
+                        drawText(sBuf, (px0 + px1) * 0.5f, pY + 18.0f * uiScale, 0.34f * uiScale, pTxt, 1);
+                    }
+
+                    // Quick [ WARP ] pill on right
+                    float qWarpX0 = cardX1 - 70.0f * uiScale;
+                    float qWarpX1 = cardX1 - 8.0f * uiScale;
+                    float qWarpY = cardY + 34.0f * uiScale;
+                    Color qBg = isSel ? rgba(0.14f, 0.48f, 0.26f, 0.95f) : rgba(0.18f, 0.22f, 0.28f, 0.75f);
+                    Color qTxt = isSel ? rgba(0.85f, 1.0f, 0.88f, 1.0f) : rgba(0.65f, 0.70f, 0.78f, 0.75f);
+                    drawRoundRect(qWarpX0, qWarpY, qWarpX1, qWarpY + pH, 8.0f * uiScale, qBg);
+                    drawText("WARP", (qWarpX0 + qWarpX1) * 0.5f, qWarpY + 18.0f * uiScale, 0.32f * uiScale, qTxt, 1);
+                }
+                cardIdx++;
             }
 
-            // Divider below tab bar
+            // Scrollbar for Warp Sub-View
+            if (maxWarpScroll > 1.0f) {
+                float trackH = contentBottom - contentTop;
+                float thumbH = std::max(28.0f * uiScale, trackH * (trackH / totalWarpH));
+                float thumbY = contentTop + (mWarpScrollY / maxWarpScroll) * (trackH - thumbH);
+                drawRoundRect(drawerX + drawerW - 5.0f * uiScale, thumbY, drawerX + drawerW - 2.0f * uiScale, thumbY + thumbH, 1.5f * uiScale, rgba(0.85f, 0.92f, 1.0f, 0.40f));
+            }
+
+            // Fixed Top Header for Warp Sub-View
+            drawRoundRect(drawerX - 60.0f, 0.0f, drawerX + drawerW, contentTop, 0.0f, rgba(0.106f, 0.114f, 0.137f, 1.0f));
+
+            // [< Back] button pill at top-left
+            float backBtnX0 = drawerX + padX;
+            float backBtnX1 = drawerX + padX + 74.0f * uiScale;
+            drawRoundRect(backBtnX0, 20.0f * uiScale, backBtnX1, 48.0f * uiScale, 14.0f * uiScale, rgba(0.18f, 0.22f, 0.28f, 0.95f));
+            drawText("< Back", (backBtnX0 + backBtnX1) * 0.5f, 38.0f * uiScale, 0.34f * uiScale, rgba(0.85f, 0.92f, 1.0f, 1.0f), 1);
+
+            // Title
+            drawText("Galaxy Warp", backBtnX1 + 14.0f * uiScale, 38.0f * uiScale, 0.48f * uiScale, rgba(0.92f, 0.94f, 0.98f, 1.0f), 0);
+
+            // Close [X] circular button at top-right
+            float closeBtnX = drawerX + drawerW - 36.0f * uiScale;
+            float closeBtnY = 36.0f * uiScale;
+            drawCircle(closeBtnX, closeBtnY, 17.0f * uiScale, rgba(0.188f, 0.196f, 0.224f, 0.95f));
+            drawCloseIcon(closeBtnX, closeBtnY, 9.0f * uiScale, rgba(0.761f, 0.776f, 0.812f, 0.95f));
+
+            // Category Chips (2 rows: Row 0 = 54..78, Row 1 = 80..104)
+            for (int c = 0; c < 8; c++) {
+                int row = c / 4;
+                int col = c % 4;
+                float chipW = (contentW - 9.0f * uiScale) / 4.0f;
+                float chipX0 = drawerX + padX + col * (chipW + 3.0f * uiScale);
+                float chipX1 = chipX0 + chipW;
+                float chipY0 = (row == 0) ? (54.0f * uiScale) : (80.0f * uiScale);
+                float chipY1 = chipY0 + 24.0f * uiScale;
+                bool cSel = (mWarpCategoryIndex == c);
+
+                Color cBg = cSel ? rgba(0.043f, 0.341f, 0.816f, 1.0f) : rgba(0.16f, 0.18f, 0.22f, 0.90f);
+                Color cTxt = cSel ? rgba(1.0f, 1.0f, 1.0f, 1.0f) : rgba(0.72f, 0.76f, 0.82f, 0.85f);
+                drawRoundRect(chipX0, chipY0, chipX1, chipY1, 10.0f * uiScale, cBg);
+                drawText(kCategoryNames[c], (chipX0 + chipX1) * 0.5f, chipY0 + 16.0f * uiScale, 0.28f * uiScale, cTxt, 1);
+            }
+
+            // Divider below header
             drawRoundRect(drawerX + padX, contentTop - 1.0f, drawerX + drawerW - padX, contentTop, 0.5f, rgba(0.267f, 0.278f, 0.310f, 0.45f));
+
+            // Fixed Bottom Bar for Warp Sub-View: Prominent Action Button
+            drawRoundRect(drawerX - 60.0f, contentBottom, drawerX + drawerW, h, 0.0f, rgba(0.106f, 0.114f, 0.137f, 1.0f));
+            drawRoundRect(drawerX + padX, contentBottom, drawerX + drawerW - padX, contentBottom + 1.0f, 0.5f, rgba(0.267f, 0.278f, 0.310f, 0.45f));
+
+            float doneY = h - 48.0f * uiScale;
+            float doneX0 = drawerX + padX;
+            float doneX1 = drawerX + drawerW - padX;
+            drawRoundRect(doneX0, doneY, doneX1, doneY + 38.0f * uiScale, 19.0f * uiScale, rgba(0.043f, 0.341f, 0.816f, 1.0f));
+
+            char warpBtnTxt[64];
+            snprintf(warpBtnTxt, sizeof(warpBtnTxt), "WARP: %s (STAR %d)", kGalaxies[mWarpSelectedGalaxy].displayName, mWarpSelectedScenario);
+            drawText(warpBtnTxt, (doneX0 + doneX1) * 0.5f, doneY + 24.0f * uiScale, 0.34f * uiScale, rgba(1.0f, 1.0f, 1.0f, 1.0f), 1);
         } else {
-            // Divider below header in standard edition
-            drawRoundRect(drawerX + padX, contentTop - 1.0f, drawerX + drawerW - padX, contentTop, 0.5f, rgba(0.267f, 0.278f, 0.310f, 0.45f));
+            // Standard Settings Drawer (General or Advanced Tab)
+            float totalContentH = (mSettingsTab == 0 || !mPlusEdition) ? (455.0f * uiScale) : (345.0f * uiScale);
+            float maxScroll = std::max(0.0f, totalContentH - (contentBottom - contentTop));
+
+            // Smooth scroll damping
+            if (fabsf(mDrawerScrollY - mDrawerScrollTarget) > 0.5f) {
+                mDrawerScrollY += (mDrawerScrollTarget - mDrawerScrollY) * (1.0f - expf(-18.0f * dt));
+                mDirty = true;
+            } else {
+                mDrawerScrollY = mDrawerScrollTarget;
+            }
+            mDrawerScrollY = std::max(0.0f, std::min(mDrawerScrollY, maxScroll));
+            mDrawerScrollTarget = std::max(0.0f, std::min(mDrawerScrollTarget, maxScroll));
+
+            float swW = 50.0f * uiScale, swH = 28.0f * uiScale;
+
+            if (mSettingsTab == 0 || !mPlusEdition) {
+                // General Tab Settings Items
+                auto renderRow = [&](float relY, float rowH, auto func) {
+                    float drawY = contentTop + relY - mDrawerScrollY;
+                    if (drawY + rowH >= contentTop - 12.0f && drawY <= contentBottom + 12.0f) {
+                        func(drawY);
+                    }
+                };
+
+                // Row 0: Visibility Switch
+                renderRow(8.0f * uiScale, 46.0f * uiScale, [&](float y) {
+                    drawText("On-Screen Controls", drawerX + padX, y + 20.0f * uiScale, 0.40f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
+                    drawText("Show HUD buttons", drawerX + padX, y + 36.0f * uiScale, 0.29f * uiScale, rgba(0.761f, 0.776f, 0.812f, 0.85f), 0);
+                    drawM3Switch(drawerX + drawerW - padX - swW, y + 10.0f * uiScale, swW, swH, mSettings.showControls);
+                });
+
+                // Row 1: Camera D-Pad Switch
+                renderRow(58.0f * uiScale, 46.0f * uiScale, [&](float y) {
+                    drawText("Camera D-Pad", drawerX + padX, y + 20.0f * uiScale, 0.40f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
+                    drawText("Limited camera rotation & reset", drawerX + padX, y + 36.0f * uiScale, 0.29f * uiScale, rgba(0.761f, 0.776f, 0.812f, 0.85f), 0);
+                    drawM3Switch(drawerX + drawerW - padX - swW, y + 10.0f * uiScale, swW, swH, mSettings.showDpad);
+                });
+
+                // Row 2: D-Pad Position Segmented Button
+                renderRow(108.0f * uiScale, 54.0f * uiScale, [&](float y) {
+                    drawText("D-Pad Position", drawerX + padX, y + 14.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
+                    const char* dpadSideOpts[2] = {"Left Side", "Right Side"};
+                    drawSegmentedGroup(drawerX + padX, y + 22.0f * uiScale, contentW, 34.0f * uiScale, dpadSideOpts, 2, mSettings.dpadOnRight ? 1 : 0);
+                });
+
+                // Row 3: Fullscreen Switch
+                renderRow(166.0f * uiScale, 46.0f * uiScale, [&](float y) {
+                    drawText("Fullscreen", drawerX + padX, y + 20.0f * uiScale, 0.40f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
+                    drawText("Native ultrawide (expand Hor+ FOV)", drawerX + padX, y + 36.0f * uiScale, 0.29f * uiScale, rgba(0.761f, 0.776f, 0.812f, 0.85f), 0);
+                    drawM3Switch(drawerX + drawerW - padX - swW, y + 10.0f * uiScale, swW, swH, mSettings.fullscreen);
+                });
+
+                // Row 4: Joystick Mode Segmented Button
+                renderRow(216.0f * uiScale, 54.0f * uiScale, [&](float y) {
+                    drawText("Joystick Mode", drawerX + padX, y + 14.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
+                    const char* joyOpts[2] = {"Dynamic", "Fixed"};
+                    drawSegmentedGroup(drawerX + padX, y + 22.0f * uiScale, contentW, 34.0f * uiScale, joyOpts, 2, mSettings.dynamicStick ? 0 : 1);
+                });
+
+                // Row 5: Controls Opacity Segmented Button
+                renderRow(274.0f * uiScale, 54.0f * uiScale, [&](float y) {
+                    drawText("Controls Opacity", drawerX + padX, y + 14.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
+                    const char* opOpts[4] = {"25%", "50%", "75%", "100%"};
+                    int opIdx = (fabsf(mSettings.opacity - 0.25f) < 0.12f) ? 0 : (fabsf(mSettings.opacity - 0.50f) < 0.12f) ? 1 : (fabsf(mSettings.opacity - 0.75f) < 0.12f) ? 2 : 3;
+                    drawSegmentedGroup(drawerX + padX, y + 22.0f * uiScale, contentW, 34.0f * uiScale, opOpts, 4, opIdx);
+                });
+
+                // Row 6: Button Size Segmented Button
+                renderRow(332.0f * uiScale, 54.0f * uiScale, [&](float y) {
+                    drawText("Button Size", drawerX + padX, y + 14.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
+                    const char* scOpts[3] = {"Small", "Medium", "Large"};
+                    int scIdx = (fabsf(mSettings.scale - 0.85f) < 0.08f) ? 0 : (fabsf(mSettings.scale - 1.25f) < 0.08f) ? 2 : 1;
+                    drawSegmentedGroup(drawerX + padX, y + 22.0f * uiScale, contentW, 34.0f * uiScale, scOpts, 3, scIdx);
+                });
+
+                // Row 7: Layout Reposition & Reset Buttons
+                renderRow(390.0f * uiScale, 54.0f * uiScale, [&](float y) {
+                    drawText("Controls Layout", drawerX + padX, y + 14.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
+                    float btnY = y + 22.0f * uiScale;
+                    float b1X0 = drawerX + padX;
+                    float b1X1 = drawerX + padX + contentW * 0.56f - 4.0f * uiScale;
+                    float b2X0 = drawerX + padX + contentW * 0.56f + 4.0f * uiScale;
+                    float b2X1 = drawerX + drawerW - padX;
+                    drawRoundRect(b1X0, btnY, b1X1, btnY + 34.0f * uiScale, 14.0f * uiScale, rgba(0.18f, 0.23f, 0.31f, 0.95f));
+                    drawText("Reposition", (b1X0 + b1X1) * 0.5f, btnY + 22.0f * uiScale, 0.36f * uiScale, rgba(0.659f, 0.780f, 0.980f, 1.0f), 1);
+                    drawRoundRect(b2X0, btnY, b2X1, btnY + 34.0f * uiScale, 14.0f * uiScale, rgba(0.35f, 0.15f, 0.17f, 0.95f));
+                    drawText("Reset", (b2X0 + b2X1) * 0.5f, btnY + 22.0f * uiScale, 0.36f * uiScale, rgba(1.0f, 0.72f, 0.72f, 1.0f), 1);
+                });
+            } else {
+                // Advanced Tab Settings Items (Gameplay Mods + Warp Menu Card)
+                auto renderRow = [&](float relY, float rowH, auto func) {
+                    float drawY = contentTop + relY - mDrawerScrollY;
+                    if (drawY + rowH >= contentTop - 12.0f && drawY <= contentBottom + 12.0f) {
+                        func(drawY);
+                    }
+                };
+
+                // Section Header
+                renderRow(6.0f * uiScale, 36.0f * uiScale, [&](float y) {
+                    drawText("Special Game Mods", drawerX + padX, y + 16.0f * uiScale, 0.40f * uiScale, rgba(0.92f, 0.94f, 0.98f, 1.0f), 0);
+                    drawText("Cheats & speedrun tools", drawerX + padX, y + 32.0f * uiScale, 0.28f * uiScale, rgba(0.65f, 0.75f, 0.90f, 0.85f), 0);
+                });
+
+                // Mod 1: Cutscene Prevention Switch
+                renderRow(48.0f * uiScale, 52.0f * uiScale, [&](float y) {
+                    drawText("Cutscene Prevention", drawerX + padX, y + 20.0f * uiScale, 0.40f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
+                    drawText("Instantly skip video cutscenes", drawerX + padX, y + 36.0f * uiScale, 0.28f * uiScale, rgba(0.761f, 0.776f, 0.812f, 0.85f), 0);
+                    drawM3Switch(drawerX + drawerW - padX - swW, y + 10.0f * uiScale, swW, swH, mSettings.modSkipCutscenes);
+                });
+
+                // Mod 2: Infinite Health Switch
+                renderRow(106.0f * uiScale, 52.0f * uiScale, [&](float y) {
+                    drawText("Infinite Health", drawerX + padX, y + 20.0f * uiScale, 0.40f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
+                    drawText("Invincible; teleports out of black holes", drawerX + padX, y + 36.0f * uiScale, 0.28f * uiScale, rgba(0.761f, 0.776f, 0.812f, 0.85f), 0);
+                    drawM3Switch(drawerX + drawerW - padX - swW, y + 10.0f * uiScale, swW, swH, mSettings.modInfiniteHealth);
+                });
+
+                // Mod 3: Galaxy Warp Menu Entry Card
+                renderRow(164.0f * uiScale, 64.0f * uiScale, [&](float y) {
+                    float cX0 = drawerX + padX;
+                    float cX1 = drawerX + drawerW - padX;
+                    drawRoundRect(cX0, y, cX1, y + 58.0f * uiScale, 14.0f * uiScale, rgba(0.13f, 0.18f, 0.28f, 0.95f));
+                    drawRoundRect(cX0, y, cX1, y + 58.0f * uiScale, 14.0f * uiScale, rgba(0.28f, 0.45f, 0.72f, 0.65f));
+                    drawText("Galaxy Warp Menu", cX0 + 14.0f * uiScale, y + 22.0f * uiScale, 0.38f * uiScale, rgba(0.92f, 0.95f, 1.0f, 1.0f), 0);
+                    drawText("Instant stage & scenario select", cX0 + 14.0f * uiScale, y + 42.0f * uiScale, 0.28f * uiScale, rgba(0.68f, 0.78f, 0.92f, 0.85f), 0);
+
+                    float btnW = 74.0f * uiScale;
+                    float btnH = 32.0f * uiScale;
+                    float btnX0 = cX1 - btnW - 12.0f * uiScale;
+                    float btnY0 = y + 13.0f * uiScale;
+                    drawRoundRect(btnX0, btnY0, btnX0 + btnW, btnY0 + btnH, 14.0f * uiScale, rgba(0.043f, 0.341f, 0.816f, 1.0f));
+                    drawText("Open", btnX0 + btnW * 0.5f, btnY0 + 21.0f * uiScale, 0.35f * uiScale, rgba(1.0f, 1.0f, 1.0f, 1.0f), 1);
+                });
+
+                // Info Card
+                renderRow(234.0f * uiScale, 84.0f * uiScale, [&](float y) {
+                    drawRoundRect(drawerX + padX, y + 6.0f * uiScale, drawerX + drawerW - padX, y + 80.0f * uiScale, 14.0f * uiScale, rgba(0.14f, 0.17f, 0.22f, 0.95f));
+                    drawRoundRect(drawerX + padX, y + 6.0f * uiScale, drawerX + drawerW - padX, y + 80.0f * uiScale, 14.0f * uiScale, rgba(0.24f, 0.32f, 0.45f, 0.60f));
+                    drawText("MOD STATUS", drawerX + padX + 16.0f * uiScale, y + 26.0f * uiScale, 0.32f * uiScale, rgba(0.38f, 0.74f, 0.98f, 0.95f), 0);
+                    drawText("Mods take effect in real-time during gameplay.", drawerX + padX + 16.0f * uiScale, y + 44.0f * uiScale, 0.27f * uiScale, rgba(0.80f, 0.84f, 0.90f, 0.85f), 0);
+                    drawText("Turn toggles ON to activate each special ability.", drawerX + padX + 16.0f * uiScale, y + 62.0f * uiScale, 0.27f * uiScale, rgba(0.80f, 0.84f, 0.90f, 0.85f), 0);
+                });
+            }
+
+            // Scrollbar Thumb (rendered inside content area)
+            if (maxScroll > 1.0f) {
+                float trackH = contentBottom - contentTop;
+                float thumbH = std::max(28.0f * uiScale, trackH * (trackH / totalContentH));
+                float thumbY = contentTop + (mDrawerScrollY / maxScroll) * (trackH - thumbH);
+                drawRoundRect(drawerX + drawerW - 5.0f * uiScale, thumbY, drawerX + drawerW - 2.0f * uiScale, thumbY + thumbH, 1.5f * uiScale, rgba(0.85f, 0.92f, 1.0f, 0.40f));
+            }
+
+            // Fixed Top Header & Tab Bar Mask Overlay
+            drawRoundRect(drawerX - 60.0f, 0.0f, drawerX + drawerW, contentTop, 0.0f, rgba(0.106f, 0.114f, 0.137f, 1.0f));
+
+            // Header Title & Cogwheel
+            drawCogwheel(drawerX + padX + 16.0f * uiScale, 36.0f * uiScale, 15.0f * uiScale, rgba(0.659f, 0.780f, 0.980f, 1.0f), cogRot);
+            drawText(mPlusEdition ? "GalaxyMobile+" : "Settings", drawerX + padX + 40.0f * uiScale, 44.0f * uiScale, 0.54f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
+
+            // Close [X] circular tonal button
+            float closeBtnX = drawerX + drawerW - 36.0f * uiScale;
+            float closeBtnY = 36.0f * uiScale;
+            drawCircle(closeBtnX, closeBtnY, 17.0f * uiScale, rgba(0.188f, 0.196f, 0.224f, 0.95f));
+            drawCloseIcon(closeBtnX, closeBtnY, 9.0f * uiScale, rgba(0.761f, 0.776f, 0.812f, 0.95f));
+
+            if (mPlusEdition) {
+                // Material 3 Tab Dock ([ General ]  [ Advanced ])
+                float tabBoxY0 = 62.0f * uiScale;
+                float tabBoxY1 = 98.0f * uiScale;
+                drawRoundRect(drawerX + padX, tabBoxY0, drawerX + drawerW - padX, tabBoxY1, 18.0f * uiScale, rgba(0.149f, 0.160f, 0.190f, 0.95f));
+                drawRoundRect(drawerX + padX, tabBoxY0, drawerX + drawerW - padX, tabBoxY1, 18.0f * uiScale, rgba(0.24f, 0.26f, 0.30f, 0.50f));
+
+                float tabMidX = drawerX + padX + contentW * 0.5f;
+                if (mSettingsTab == 0) {
+                    drawRoundRect(drawerX + padX + 2.0f * uiScale, tabBoxY0 + 2.0f * uiScale, tabMidX - 2.0f * uiScale, tabBoxY1 - 2.0f * uiScale, 16.0f * uiScale, rgba(0.14f, 0.28f, 0.48f, 0.95f));
+                    drawText("General", (drawerX + padX + tabMidX) * 0.5f, tabBoxY0 + 23.0f * uiScale, 0.36f * uiScale, rgba(1.0f, 1.0f, 1.0f, 1.0f), 1);
+                    drawText("Advanced", (tabMidX + drawerX + drawerW - padX) * 0.5f, tabBoxY0 + 23.0f * uiScale, 0.36f * uiScale, rgba(0.68f, 0.71f, 0.77f, 0.75f), 1);
+                } else {
+                    drawRoundRect(tabMidX + 2.0f * uiScale, tabBoxY0 + 2.0f * uiScale, drawerX + drawerW - padX - 2.0f * uiScale, tabBoxY1 - 2.0f * uiScale, 16.0f * uiScale, rgba(0.14f, 0.28f, 0.48f, 0.95f));
+                    drawText("General", (drawerX + padX + tabMidX) * 0.5f, tabBoxY0 + 23.0f * uiScale, 0.36f * uiScale, rgba(0.68f, 0.71f, 0.77f, 0.75f), 1);
+                    drawText("Advanced", (tabMidX + drawerX + drawerW - padX) * 0.5f, tabBoxY0 + 23.0f * uiScale, 0.36f * uiScale, rgba(1.0f, 1.0f, 1.0f, 1.0f), 1);
+                }
+
+                // Divider below tab bar
+                drawRoundRect(drawerX + padX, contentTop - 1.0f, drawerX + drawerW - padX, contentTop, 0.5f, rgba(0.267f, 0.278f, 0.310f, 0.45f));
+            } else {
+                // Divider below header in standard edition
+                drawRoundRect(drawerX + padX, contentTop - 1.0f, drawerX + drawerW - padX, contentTop, 0.5f, rgba(0.267f, 0.278f, 0.310f, 0.45f));
+            }
+
+            // Fixed Bottom Bar Mask Overlay & [ Done ] Button
+            drawRoundRect(drawerX - 60.0f, contentBottom, drawerX + drawerW, h, 0.0f, rgba(0.106f, 0.114f, 0.137f, 1.0f));
+            drawRoundRect(drawerX + padX, contentBottom, drawerX + drawerW - padX, contentBottom + 1.0f, 0.5f, rgba(0.267f, 0.278f, 0.310f, 0.45f));
+
+            float doneY = h - 48.0f * uiScale;
+            float doneX0 = drawerX + padX;
+            float doneX1 = drawerX + drawerW - padX;
+            drawRoundRect(doneX0, doneY, doneX1, doneY + 38.0f * uiScale, 19.0f * uiScale, rgba(0.043f, 0.341f, 0.816f, 1.0f));
+            drawText("Done", (doneX0 + doneX1) * 0.5f, doneY + 24.0f * uiScale, 0.40f * uiScale, rgba(1.0f, 1.0f, 1.0f, 1.0f), 1);
         }
-
-        // ---------------------------------------------------------
-        // C. Fixed Bottom Bar Mask Overlay & [ Done ] Button
-        // ---------------------------------------------------------
-        drawRoundRect(drawerX - 60.0f, contentBottom, drawerX + drawerW, h, 0.0f, rgba(0.106f, 0.114f, 0.137f, 1.0f));
-        drawRoundRect(drawerX + padX, contentBottom, drawerX + drawerW - padX, contentBottom + 1.0f, 0.5f, rgba(0.267f, 0.278f, 0.310f, 0.45f));
-
-        float doneY = h - 48.0f * uiScale;
-        float doneX0 = drawerX + padX;
-        float doneX1 = drawerX + drawerW - padX;
-        drawRoundRect(doneX0, doneY, doneX1, doneY + 38.0f * uiScale, 19.0f * uiScale, rgba(0.043f, 0.341f, 0.816f, 1.0f));
-        drawText("Done", (doneX0 + doneX1) * 0.5f, doneY + 24.0f * uiScale, 0.40f * uiScale, rgba(1.0f, 1.0f, 1.0f, 1.0f), 1);
     }
 
     if (verts.empty()) return;

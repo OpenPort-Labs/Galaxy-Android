@@ -205,6 +205,15 @@ void GameScene::update() {
     mPauseCtrl->updateNerve();
     updateNerve();
 #ifdef TARGET_PC
+    if (port_is_plus_edition() && !MR::isStageFileSelect() && !MR::isDemoActive()) {
+        char warpStage[64];
+        int warpScenario = 1;
+        if (port_take_warp_request(warpStage, sizeof(warpStage), &warpScenario)) {
+            OSReport("port: warping to %s scenario %d\n", warpStage, (int)warpScenario);
+            MR::closeSystemWipeFadeWithCaptureScreen(30);
+            MR::requestChangeStageInGameMoving(warpStage, warpScenario);
+        }
+    }
     {
         // Debug: PETARI_STAGE="Galaxy[:scenario]" enters that galaxy once
         // ordinary gameplay has run for two seconds (for testing levels).

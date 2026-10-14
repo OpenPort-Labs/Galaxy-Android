@@ -180,6 +180,8 @@ int port_is_early_luigi_unlocked(void);
 int port_is_modern_boo_flight(void);
 int port_is_skip_cutscenes(void);
 int port_is_infinite_health(void);
+void port_request_warp(const char* stage, int scenario);
+int port_take_warp_request(char* outStage, size_t maxLen, int* outScenario);
 int64_t port_host_time_ns(void);
 void port_host_sleep_ns(int64_t ns);
 // Delivers pending interrupts (a safe point; only from the thread holding the

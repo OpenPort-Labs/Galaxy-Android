@@ -19,6 +19,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -736,6 +737,34 @@ int port_is_skip_cutscenes(void) {
 int port_is_infinite_health(void) {
     if (!mobile_ui::UIOverlay::get().isPlusEdition()) return 0;
     return mobile_ui::UIOverlay::get().settings().modInfiniteHealth ? 1 : 0;
+}
+
+static std::mutex sWarpMutex;
+static std::string sPendingWarpStage;
+static int sPendingWarpScenario = 1;
+static bool sHasPendingWarp = false;
+
+void port_request_warp(const char* stage, int scenario) {
+    if (!mobile_ui::UIOverlay::get().isPlusEdition()) return;
+    std::lock_guard<std::mutex> lk(sWarpMutex);
+    sPendingWarpStage = stage ? stage : "";
+    sPendingWarpScenario = scenario;
+    sHasPendingWarp = true;
+    LOGI("Queued warp request to stage=%s scenario=%d", sPendingWarpStage.c_str(), scenario);
+}
+
+int port_take_warp_request(char* outStage, size_t maxLen, int* outScenario) {
+    if (!mobile_ui::UIOverlay::get().isPlusEdition()) return 0;
+    std::lock_guard<std::mutex> lk(sWarpMutex);
+    if (!sHasPendingWarp) return 0;
+    sHasPendingWarp = false;
+    if (outStage && maxLen > 0) {
+        snprintf(outStage, maxLen, "%s", sPendingWarpStage.c_str());
+    }
+    if (outScenario) {
+        *outScenario = sPendingWarpScenario;
+    }
+    return 1;
 }
 }
 

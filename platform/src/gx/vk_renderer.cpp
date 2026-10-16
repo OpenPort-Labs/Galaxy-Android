@@ -532,13 +532,29 @@ void VkRenderer::shutdown() {
     LOGI("Vulkan 1.0 renderer shut down cleanly.");
 }
 
-static const char* getPipelineCachePath() {
-    static char sPath[512] = "";
-    if (!sPath[0]) {
-        snprintf(sPath, sizeof(sPath), "/sdcard/GalaxyData/vk_pipeline_cache.bin");
+static char sPipelineCachePath[512] = "";
+
+void setVkPipelineCachePath(const char* path) {
+    if (path && path[0]) {
+        snprintf(sPipelineCachePath, sizeof(sPipelineCachePath), "%s", path);
+        LOGI("Vulkan pipeline cache path configured: %s", sPipelineCachePath);
     }
-    return sPath;
 }
+
+static const char* getPipelineCachePath() {
+    if (!sPipelineCachePath[0]) {
+        snprintf(sPipelineCachePath, sizeof(sPipelineCachePath), "/data/data/com.openport.galaxyandroid/files/vk_pipeline_cache.bin");
+    }
+    return sPipelineCachePath;
+}
+
+struct VkPipelineCacheHeaderVersionOne {
+    uint32_t headerSize;
+    uint32_t headerVersion;
+    uint32_t vendorID;
+    uint32_t deviceID;
+    uint8_t  pipelineCacheUUID[VK_UUID_SIZE];
+};
 
 void VkRenderer::initPipelineCache() {
     if (mPipelineCache != VK_NULL_HANDLE || mDevice == VK_NULL_HANDLE) return;
@@ -549,7 +565,7 @@ void VkRenderer::initPipelineCache() {
         fseek(f, 0, SEEK_END);
         long sz = ftell(f);
         fseek(f, 0, SEEK_SET);
-        if (sz > 32) {
+        if (sz >= (long)sizeof(VkPipelineCacheHeaderVersionOne)) {
             cacheData.resize(sz);
             if (fread(cacheData.data(), 1, sz, f) != (size_t)sz) {
                 cacheData.clear();
@@ -558,17 +574,38 @@ void VkRenderer::initPipelineCache() {
         fclose(f);
     }
 
+    // Validate the pipeline cache header to ensure it belongs to the current physical device & driver
+    if (cacheData.size() >= sizeof(VkPipelineCacheHeaderVersionOne)) {
+        VkPipelineCacheHeaderVersionOne hdr;
+        memcpy(&hdr, cacheData.data(), sizeof(hdr));
+        if (hdr.headerSize < sizeof(VkPipelineCacheHeaderVersionOne) ||
+            hdr.headerVersion != VK_PIPELINE_CACHE_HEADER_VERSION_ONE ||
+            hdr.vendorID != mDeviceProperties.vendorID ||
+            hdr.deviceID != mDeviceProperties.deviceID ||
+            memcmp(hdr.pipelineCacheUUID, mDeviceProperties.pipelineCacheUUID, VK_UUID_SIZE) != 0) {
+            LOGW("Vulkan pipeline cache header mismatch (vendor: 0x%x vs 0x%x, device: 0x%x vs 0x%x); discarding stale cache",
+                 hdr.vendorID, mDeviceProperties.vendorID, hdr.deviceID, mDeviceProperties.deviceID);
+            cacheData.clear();
+        }
+    } else {
+        cacheData.clear();
+    }
+
     VkPipelineCacheCreateInfo pcci{};
     pcci.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
     if (!cacheData.empty()) {
         pcci.initialDataSize = cacheData.size();
         pcci.pInitialData = cacheData.data();
-        LOGI("Loading Vulkan pipeline cache (%zu bytes)", cacheData.size());
+        LOGI("Loading validated Vulkan pipeline cache (%zu bytes)", cacheData.size());
     }
 
     if (vkCreatePipelineCache(mDevice, &pcci, nullptr, &mPipelineCache) != VK_SUCCESS) {
-        LOGW("Failed to create Vulkan pipeline cache");
-        mPipelineCache = VK_NULL_HANDLE;
+        LOGW("Failed to create Vulkan pipeline cache; attempting empty cache creation");
+        pcci.initialDataSize = 0;
+        pcci.pInitialData = nullptr;
+        if (vkCreatePipelineCache(mDevice, &pcci, nullptr, &mPipelineCache) != VK_SUCCESS) {
+            mPipelineCache = VK_NULL_HANDLE;
+        }
     }
 }
 
@@ -703,7 +740,7 @@ bool VkRenderer::createLogicalDevice() {
 
     VkPhysicalDeviceFeatures deviceFeatures{};
     deviceFeatures.samplerAnisotropy = mDeviceFeatures.samplerAnisotropy;
-    deviceFeatures.depthClamp = mDeviceFeatures.depthClamp;
+    deviceFeatures.depthClamp = VK_FALSE;
     createInfo.pEnabledFeatures = &deviceFeatures;
 
     if (vkCreateDevice(mPhysicalDevice, &createInfo, nullptr, &mDevice) != VK_SUCCESS) {
@@ -800,13 +837,29 @@ bool VkRenderer::createSwapchain() {
     sci.imageArrayLayers = 1;
     sci.imageUsage = usage;
     sci.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    uint32_t modeCount = 0;
+    vkGetPhysicalDeviceSurfacePresentModesKHR(mPhysicalDevice, mSurface, &modeCount, nullptr);
+    std::vector<VkPresentModeKHR> presentModes(modeCount);
+    if (modeCount > 0) {
+        vkGetPhysicalDeviceSurfacePresentModesKHR(mPhysicalDevice, mSurface, &modeCount, presentModes.data());
+    }
+
+    VkPresentModeKHR chosenPresentMode = VK_PRESENT_MODE_FIFO_KHR;
+    for (auto pm : presentModes) {
+        if (pm == VK_PRESENT_MODE_MAILBOX_KHR) {
+            chosenPresentMode = VK_PRESENT_MODE_MAILBOX_KHR;
+            break;
+        }
+    }
+
     sci.preTransform = preTransform;
     sci.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-    sci.presentMode = VK_PRESENT_MODE_FIFO_KHR;
+    sci.presentMode = chosenPresentMode;
     sci.clipped = VK_TRUE;
 
-    LOGI("Creating Vulkan swapchain: extent %ux%u (window %dx%d), transform=0x%x (current=0x%x)",
-         swapExtent.width, swapExtent.height, mWidth, mHeight, preTransform, caps.currentTransform);
+    LOGI("Creating Vulkan swapchain: extent %ux%u (window %dx%d), transform=0x%x (current=0x%x), presentMode=%d (%s)",
+         swapExtent.width, swapExtent.height, mWidth, mHeight, preTransform, caps.currentTransform,
+         (int)chosenPresentMode, chosenPresentMode == VK_PRESENT_MODE_MAILBOX_KHR ? "MAILBOX" : "FIFO");
 
     if (vkCreateSwapchainKHR(mDevice, &sci, nullptr, &mSwapchain) != VK_SUCCESS) {
         return false;
@@ -1239,6 +1292,11 @@ void main() {
     pci.renderPass = mPresentRenderPass;
 
     VkResult res = vkCreateGraphicsPipelines(mDevice, mPipelineCache, 1, &pci, nullptr, &mPresentPipeline);
+    if (res != VK_SUCCESS || mPresentPipeline == VK_NULL_HANDLE) {
+        if (mPipelineCache != VK_NULL_HANDLE) {
+            res = vkCreateGraphicsPipelines(mDevice, VK_NULL_HANDLE, 1, &pci, nullptr, &mPresentPipeline);
+        }
+    }
 
     vkDestroyShaderModule(mDevice, vsMod, nullptr);
     vkDestroyShaderModule(mDevice, fsMod, nullptr);
@@ -1674,6 +1732,11 @@ void main() {
     pci.renderPass = mPresentRenderPass;
 
     VkResult res = vkCreateGraphicsPipelines(mDevice, mPipelineCache, 1, &pci, nullptr, &mUiPipeline);
+    if (res != VK_SUCCESS || mUiPipeline == VK_NULL_HANDLE) {
+        if (mPipelineCache != VK_NULL_HANDLE) {
+            res = vkCreateGraphicsPipelines(mDevice, VK_NULL_HANDLE, 1, &pci, nullptr, &mUiPipeline);
+        }
+    }
 
     vkDestroyShaderModule(mDevice, vsMod, nullptr);
     vkDestroyShaderModule(mDevice, fsMod, nullptr);
@@ -2515,7 +2578,7 @@ VkPipeline VkRenderer::getPipeline(const Item& it, const ShaderUid& uid) {
 
     VkPipelineRasterizationStateCreateInfo rsci{};
     rsci.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
-    rsci.depthClampEnable = mDeviceFeatures.depthClamp ? VK_TRUE : VK_FALSE;
+    rsci.depthClampEnable = VK_FALSE;
     rsci.polygonMode = VK_POLYGON_MODE_FILL;
     rsci.cullMode = it.cull ? ((it.cullFace == 0x0404) ? VK_CULL_MODE_FRONT_BIT : VK_CULL_MODE_BACK_BIT) : VK_CULL_MODE_NONE;
     rsci.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
@@ -2585,6 +2648,12 @@ VkPipeline VkRenderer::getPipeline(const Item& it, const ShaderUid& uid) {
 
     VkPipeline pipeline = VK_NULL_HANDLE;
     VkResult res = vkCreateGraphicsPipelines(mDevice, mPipelineCache, 1, &pci, nullptr, &pipeline);
+    if (res != VK_SUCCESS || pipeline == VK_NULL_HANDLE) {
+        if (mPipelineCache != VK_NULL_HANDLE) {
+            LOGW("VkRenderer: vkCreateGraphicsPipelines failed with cache (res=%d), falling back without cache", (int)res);
+            res = vkCreateGraphicsPipelines(mDevice, VK_NULL_HANDLE, 1, &pci, nullptr, &pipeline);
+        }
+    }
 
     vkDestroyShaderModule(mDevice, vsMod, nullptr);
     vkDestroyShaderModule(mDevice, fsMod, nullptr);

@@ -263,19 +263,23 @@ std::string genVertexShader(const ShaderUid& u) {
                     o.w("      float d2 = dot(lv, lv); float d = sqrt(max(d2, 1e-4));\n");
                     o.w("      ldir = (d2 > 1e-6) ? (lv / d) : vec3(0.0, 0.0, 1.0);\n");
                     o.w("      vec3 dv = (dot(ldirv, ldirv) > 1e-6) ? normalize(ldirv) : vec3(0.0, 0.0, -1.0);\n");
-                    o.w("      float a = clamp(dot(ldir, dv), 0.0, 1.0);\n");
-                    o.w("      float distDenom = max(dot(ldist, vec3(1.0, d, d2)), 1e-4);\n");
-                    o.w("      float cosNum = max(0.0, dot(lcos, vec3(1.0, a, a * a)));\n");
-                    o.w("      att = clamp(cosNum / distDenom, 0.0, 1.0);\n");
+                    o.w("      float a = dot(ldir, dv);\n");
+                    o.w("      if (a > 0.0) {\n");
+                    o.w("        float distDenom = dot(ldist, vec3(1.0, d, d2));\n");
+                    o.w("        float cosNum = dot(lcos, vec3(1.0, a, a * a));\n");
+                    o.w("        att = (distDenom > 1e-4) ? clamp(cosNum / distDenom, 0.0, 1.0) : 0.0;\n");
+                    o.w("      } else {\n");
+                    o.w("        att = 0.0;\n");
+                    o.w("      }\n");
                 } else {
                     o.w("      vec3 lv = (dot(lpos, lpos) > 1e-6) ? (lpos - pos) : -pos;\n");
                     o.w("      ldir = (dot(lv, lv) > 1e-6) ? normalize(lv) : vec3(0.0, 0.0, 1.0);\n");
                     o.w("      vec3 dv = (dot(ldirv, ldirv) > 1e-6) ? normalize(ldirv) : vec3(0.0, 0.0, -1.0);\n");
-                    o.w("      if (dot(nrm, ldir) >= 0.0) {\n");
-                    o.w("        float a = clamp(dot(nrm, dv), 0.0, 1.0);\n");
-                    o.w("        float distDenom = max(dot(ldist, vec3(1.0, a, a * a)), 1e-4);\n");
-                    o.w("        float cosNum = max(0.0, dot(lcos, vec3(1.0, a, a * a)));\n");
-                    o.w("        att = clamp(cosNum / distDenom, 0.0, 1.0);\n");
+                    o.w("      float a = dot(nrm, dv);\n");
+                    o.w("      if (dot(nrm, ldir) >= 0.0 && a > 0.0) {\n");
+                    o.w("        float distDenom = dot(ldist, vec3(1.0, a, a * a));\n");
+                    o.w("        float cosNum = dot(lcos, vec3(1.0, a, a * a));\n");
+                    o.w("        att = (distDenom > 1e-4) ? clamp(cosNum / distDenom, 0.0, 1.0) : 0.0;\n");
                     o.w("      } else {\n");
                     o.w("        att = 0.0;\n");
                     o.w("      }\n");
@@ -658,8 +662,8 @@ std::string genFragmentShader(const ShaderUid& u) {
             }
         }
     }
-    // The TEV's output is 8 bits wide: clamp RGB and Alpha.
-    o.w("  ivec4 outi = ivec4(clamp(%s.rgb, ivec3(0), ivec3(255)), clamp(%s.a, 0, 255));\n", kDest[lastColorDest], kDest[lastAlphaDest]);
+    // The TEV's output is 8 bits wide: clamp RGB and mask alpha (Mario's eyelids rely on 8-bit alpha wrap for test).
+    o.w("  ivec4 outi = ivec4(clamp(%s.rgb, ivec3(0), ivec3(255)), int(uint(%s.a) & 255u));\n", kDest[lastColorDest], kDest[lastAlphaDest]);
     o.w("  vec4 outc = vec4(outi) / 255.0;\n");
     // Alpha test (on the 8-bit value).
     {

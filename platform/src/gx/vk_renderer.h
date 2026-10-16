@@ -312,5 +312,6 @@ private:
 };
 
 VkRenderer& vkRenderer();
+void setVkPipelineCachePath(const char* path);
 
 }  // namespace gpu

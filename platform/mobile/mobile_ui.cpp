@@ -1036,12 +1036,31 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
                         // Row 12: Target Frame Rate
                         else if (contentRelY >= 660.0f * uiScale && contentRelY < 718.0f * uiScale) {
                             float segW = contentW / 5.0f;
-                            int idx = (int)((px - (drawerX + padX)) / segW);
-                            if (idx <= 0) mSettings.targetFps = 30;
-                            else if (idx == 1) mSettings.targetFps = 60;
-                            else if (idx == 2) mSettings.targetFps = 90;
-                            else if (idx == 3) mSettings.targetFps = 120;
-                            else mSettings.targetFps = 144;
+                            float relX = px - (drawerX + padX);
+                            int idx = std::max(0, std::min(4, (int)(relX / segW)));
+                            if (idx == 0) {
+                                mSettings.targetFps = 30;
+                                mSettings.batterySaver = true;
+                                showToast("Target FPS: 30 FPS (Battery Saver)");
+                            } else if (idx == 1) {
+                                mSettings.targetFps = 60;
+                                mSettings.batterySaver = false;
+                                showToast("Target FPS: 60 FPS (Native Standard)");
+                            } else if (idx == 2) {
+                                mSettings.targetFps = 90;
+                                mSettings.batterySaver = false;
+                                showToast("Target FPS: 90 FPS (Smooth Refresh)");
+                            } else if (idx == 3) {
+                                mSettings.targetFps = 120;
+                                mSettings.batterySaver = false;
+                                showToast("Target FPS: 120 FPS (Ultra Smooth)");
+                            } else {
+                                mSettings.targetFps = 144;
+                                mSettings.batterySaver = false;
+                                showToast("Target FPS: 144 FPS (Max Refresh)");
+                            }
+                            if (!mSavePath.empty()) mSettings.save(mSavePath);
+                            mDirty = true;
                         }
                         // Row 13: Graphics Backend
                         else if (contentRelY >= 718.0f * uiScale && contentRelY < 776.0f * uiScale) {
@@ -1094,7 +1113,14 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
                         // Row 18: Battery Saver Switch
                         else if (contentRelY >= 1004.0f * uiScale && contentRelY < 1058.0f * uiScale) {
                             mSettings.batterySaver = !mSettings.batterySaver;
-                            showToast(mSettings.batterySaver ? "Battery Saver: ON (Cool 30 FPS)" : "Battery Saver: OFF (60+ FPS Performance)");
+                            if (mSettings.batterySaver) {
+                                mSettings.targetFps = 30;
+                            } else if (mSettings.targetFps <= 30) {
+                                mSettings.targetFps = 60;
+                            }
+                            if (!mSavePath.empty()) mSettings.save(mSavePath);
+                            mDirty = true;
+                            showToast(mSettings.batterySaver ? "Battery Saver: ON (30 FPS Limit)" : "Battery Saver: OFF (Performance Mode)");
                         }
                         // Row 19: Gyroscope Star Pointer Switch
                         else if (contentRelY >= 1058.0f * uiScale && contentRelY < 1112.0f * uiScale) {

@@ -948,35 +948,60 @@ extern "C" void port_android_exit_to_launcher() {
     if (attached) vm->DetachCurrentThread();
 }
 
-// 100% rock-solid frame rate limiter.
-// Enforces a strict minimum spacing between consecutive presents so the instantaneous
-// and average frame rate can NEVER exceed targetFps under any circumstances.
+static void updateWindowRefreshRate(float targetFps) {
+    static float sLastAppliedFps = -1.0f;
+    if (fabsf(sLastAppliedFps - targetFps) < 0.5f) return;
+    sLastAppliedFps = targetFps;
+
+    if (!gMobile.android || !gMobile.android->activity || !gMobile.android->activity->vm || !gMobile.android->activity->clazz) return;
+    JavaVM* vm = gMobile.android->activity->vm;
+    JNIEnv* env = nullptr;
+    bool attached = false;
+    jint getEnvRes = vm->GetEnv((void**)&env, JNI_VERSION_1_6);
+    if (getEnvRes == JNI_EDETACHED) {
+        if (vm->AttachCurrentThread(&env, nullptr) != JNI_OK || !env) return;
+        attached = true;
+    } else if (getEnvRes != JNI_OK || !env) {
+        return;
+    }
+
+    if (env->ExceptionCheck()) env->ExceptionClear();
+    jclass clazz = env->GetObjectClass(gMobile.android->activity->clazz);
+    if (clazz) {
+        jmethodID mid = env->GetStaticMethodID(clazz, "setPreferredRefreshRate", "(F)V");
+        if (mid) {
+            env->CallStaticVoidMethod(clazz, mid, (jfloat)targetFps);
+        }
+        if (env->ExceptionCheck()) env->ExceptionClear();
+        env->DeleteLocalRef(clazz);
+    }
+    if (attached) vm->DetachCurrentThread();
+}
+
+static int64_t sLastPresentNs = 0;
+
+// Frame rate limiter and pacer.
+// Enforces minimum frame spacing without burning CPU cycles in busy-wait loops.
 static void syncMobileFrameRate(int targetFps, float speed) {
     if (targetFps < 30) targetFps = 30;
     if (targetFps > 144) targetFps = 144;
+    updateWindowRefreshRate((float)targetFps);
+
     if (speed > 1.05f) {
         targetFps = (int)((float)targetFps * speed);
     }
     int64_t framePeriodNs = 1000000000ll / targetFps;
-    static int64_t sLastPresentNs = 0;
 
     int64_t nowNs = port_host_time_ns();
     if (sLastPresentNs != 0) {
         int64_t elapsedNs = nowNs - sLastPresentNs;
         if (elapsedNs < framePeriodNs) {
             int64_t waitNs = framePeriodNs - elapsedNs;
-            if (waitNs > 1500000ll) {
+            if (waitNs > 500000ll) {
                 struct timespec req;
-                int64_t sleepNs = waitNs - 1000000ll;
-                req.tv_sec = sleepNs / 1000000000ll;
-                req.tv_nsec = sleepNs % 1000000000ll;
+                req.tv_sec = waitNs / 1000000000ll;
+                req.tv_nsec = waitNs % 1000000000ll;
                 nanosleep(&req, nullptr);
-            }
-            int64_t deadlineNs = sLastPresentNs + framePeriodNs;
-            while (port_host_time_ns() < deadlineNs) {
-                #if defined(__aarch64__) || defined(__arm__)
-                asm volatile("yield");
-                #endif
             }
         }
     }
@@ -1011,6 +1036,9 @@ extern "C" __attribute__((visibility("default"))) void port_android_main(struct 
     a.saveRoot = internalPath + "/nand";
     mkdir(a.saveRoot.c_str(), 0770);
     mobile_ui::get().setSavePath(a.saveRoot + (isPlus ? "/touch_settings_plus.ini" : "/touch_settings.ini"));
+    int initialFps = mobile_ui::get().settings().targetFps;
+    if (mobile_ui::get().settings().batterySaver) initialFps = 30;
+    updateWindowRefreshRate((float)initialFps);
 
     std::string primaryLog = "/sdcard/GalaxyData/galaxy_log.txt";
     FILE* tst = fopen(primaryLog.c_str(), "a");
@@ -1021,6 +1049,7 @@ extern "C" __attribute__((visibility("default"))) void port_android_main(struct 
         port_log_file((ext + "/galaxy_log.txt").c_str());
     }
     gpu::setShaderCachePath((std::string(app->activity->internalDataPath) + "/shaders.bin").c_str());
+    gpu::setVkPipelineCachePath((std::string(app->activity->internalDataPath) + "/vk_pipeline_cache.bin").c_str());
 
     // Search for game data files
     a.dataRoot = findGameData(ext);
@@ -1180,24 +1209,32 @@ extern "C" __attribute__((visibility("default"))) void port_android_main(struct 
                 int64_t renderStartNs = port_host_time_ns();
                 // Render into offscreen target
                 vkr.render(a.vkTarget, nullptr, nullptr, gpu::HudMode::Inline);
+                int64_t renderEndNs = port_host_time_ns();
+                port_perf_render(renderEndNs - renderStartNs, 0);
+                mobile_ui::get().reportGpuRenderTime(renderEndNs - renderStartNs);
+
+                // Present to swapchain with pillarboxing
+                updateViewport(a);
+                vkr.present(a.vkTarget, a.vpX, a.vpY, a.vpW, a.vpH);
+                mobile_ui::get().reportFramePresented();
 
                 // Frame pacing: enforce minimum time spacing between presents so FPS NEVER exceeds targetFps
                 int targetFps = mobile_ui::get().settings().targetFps;
                 if (mobile_ui::get().settings().batterySaver) targetFps = 30;
                 syncMobileFrameRate(targetFps, port_get_game_speed());
-
-                // Present to swapchain with pillarboxing
-                updateViewport(a);
-                vkr.present(a.vkTarget, a.vpX, a.vpY, a.vpW, a.vpH);
-                int64_t renderEndNs = port_host_time_ns();
-                port_perf_render(renderEndNs - renderStartNs, 0);
-                mobile_ui::get().reportGpuRenderTime(renderEndNs - renderStartNs);
-                mobile_ui::get().reportFramePresented();
             } else {
-                if (mobile_ui::get().needsRedraw() && a.targetReady && vkr.hasFrame() &&
-                    (!a.gameBooted || port_is_paused() || mobile_ui::get().isSettingsOpen())) {
-                    int targetFps = mobile_ui::get().settings().targetFps;
-                    if (mobile_ui::get().settings().batterySaver) targetFps = 30;
+                int targetFps = mobile_ui::get().settings().targetFps;
+                if (mobile_ui::get().settings().batterySaver) targetFps = 30;
+                float speed = port_get_game_speed();
+                int effectiveFps = (speed > 1.05f) ? (int)((float)targetFps * speed) : targetFps;
+                int64_t framePeriodNs = 1000000000ll / (effectiveFps > 0 ? effectiveFps : 60);
+                int64_t nowNs = port_host_time_ns();
+
+                bool highRefreshSlot = (targetFps > 60 && a.targetReady && vkr.hasFrame() && (nowNs - sLastPresentNs >= framePeriodNs));
+                bool uiRedrawNeeded = (mobile_ui::get().needsRedraw() && a.targetReady && vkr.hasFrame() &&
+                                       (!a.gameBooted || port_is_paused() || mobile_ui::get().isSettingsOpen()));
+
+                if (highRefreshSlot || uiRedrawNeeded) {
                     syncMobileFrameRate(targetFps, 1.0f);
                     updateViewport(a);
                     vkr.present(a.vkTarget, a.vpX, a.vpY, a.vpW, a.vpH);
@@ -1275,19 +1312,29 @@ extern "C" __attribute__((visibility("default"))) void port_android_main(struct 
                 // Render on-screen controls HUD & Settings overlay
                 mobile_ui::get().render(a.screenWidth, a.screenHeight);
 
-                // Frame pacing: enforce minimum time spacing between presents so FPS NEVER exceeds targetFps
-                int targetFps = mobile_ui::get().settings().targetFps;
-                if (mobile_ui::get().settings().batterySaver) targetFps = 30;
-                syncMobileFrameRate(targetFps, port_get_game_speed());
-
                 eglSwapBuffers(a.display, a.surface);
                 int64_t renderEndNs = port_host_time_ns();
                 port_perf_render(renderEndNs - renderStartNs, 0);
                 mobile_ui::get().reportGpuRenderTime(renderEndNs - renderStartNs);
                 mobile_ui::get().reportFramePresented();
+
+                // Frame pacing: enforce minimum time spacing between presents so FPS NEVER exceeds targetFps
+                int targetFps = mobile_ui::get().settings().targetFps;
+                if (mobile_ui::get().settings().batterySaver) targetFps = 30;
+                syncMobileFrameRate(targetFps, port_get_game_speed());
             } else {
-                if (mobile_ui::get().needsRedraw() &&
-                    (!a.gameBooted || port_is_paused() || mobile_ui::get().isSettingsOpen())) {
+                int targetFps = mobile_ui::get().settings().targetFps;
+                if (mobile_ui::get().settings().batterySaver) targetFps = 30;
+                float speed = port_get_game_speed();
+                int effectiveFps = (speed > 1.05f) ? (int)((float)targetFps * speed) : targetFps;
+                int64_t framePeriodNs = 1000000000ll / (effectiveFps > 0 ? effectiveFps : 60);
+                int64_t nowNs = port_host_time_ns();
+
+                bool highRefreshSlot = (targetFps > 60 && a.targetReady && r.hasFrame() && (nowNs - sLastPresentNs >= framePeriodNs));
+                bool uiRedrawNeeded = (mobile_ui::get().needsRedraw() &&
+                                       (!a.gameBooted || port_is_paused() || mobile_ui::get().isSettingsOpen()));
+
+                if (highRefreshSlot || uiRedrawNeeded) {
                     glBindFramebuffer(GL_FRAMEBUFFER, 0);
                     glViewport(0, 0, a.screenWidth, a.screenHeight);
                     glDisable(GL_SCISSOR_TEST);
@@ -1308,8 +1355,6 @@ extern "C" __attribute__((visibility("default"))) void port_android_main(struct 
                                           GL_COLOR_BUFFER_BIT, GL_LINEAR);
                     }
 
-                    int targetFps = mobile_ui::get().settings().targetFps;
-                    if (mobile_ui::get().settings().batterySaver) targetFps = 30;
                     syncMobileFrameRate(targetFps, 1.0f);
 
                     mobile_ui::get().render(a.screenWidth, a.screenHeight);

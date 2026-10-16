@@ -474,7 +474,7 @@ public class MainActivity extends Activity {
             txtProgressStatus.setText(R.string.status_done);
             appendLog("[SUCCESS] " + (message != null ? message : "Conversion complete!"));
             btnLaunchGame.setVisibility(View.VISIBLE);
-            btnLaunchGame.setText("Launch Game \uD83D\uDE80");
+            btnLaunchGame.setText("Launch Game");
             Toast.makeText(this, "Game ready! Launching game now...", Toast.LENGTH_SHORT).show();
             // Automatically launch into game!
             mHandler.postDelayed(this::launchGameDirectly, 1000);

@@ -44,6 +44,9 @@ void queueGlTextureDelete(uint32_t tex) {
 
 TexImage::~TexImage() {
     queueGlTextureDelete(glTex);
+    // The Vulkan renderer keeps its own images on the TexImage too (see
+    // vk_renderer.cpp): release them on the render thread as well.
+    queueVkTextureDelete(vkImage, vkMemory, vkView);
 }
 
 static void flushDeletes() {

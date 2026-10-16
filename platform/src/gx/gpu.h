@@ -142,6 +142,10 @@ struct Backend {
 void setBackend(Backend* b);
 Backend* backend();
 
+// Primitive batches the command processor has dispatched to the active backend
+// (whichever one that is), for progress logging.
+extern u64 gDrawCount;
+
 // Processes a complete command stream (FIFO contents or a display list).
 // Each FIFO stream processed bumps gStreamSerial.
 // Returns the number of bytes consumed (a trailing incomplete command is left).

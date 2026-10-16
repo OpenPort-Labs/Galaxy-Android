@@ -466,6 +466,9 @@ bool createSurface(MobileApp& a) {
     eglSwapInterval(a.display, 1);
 
     LOGI("Window surface ready: %dx%d (GL: %s)", a.screenWidth, a.screenHeight, (const char*)glGetString(GL_RENDERER));
+    // OpenGL ES is what is running here: either the user asked for it or the
+    // Vulkan device/driver turned out to be unusable.
+    mobile_ui::get().setActiveBackend(0);
 
     updateViewport(a);
     LOGI("Viewport: x=%d, y=%d, w=%d, h=%d (fullscreen=%d)", a.vpX, a.vpY, a.vpW, a.vpH, mobile_ui::get().settings().fullscreen ? 1 : 0);
@@ -783,6 +786,8 @@ void onAppCmd(android_app* app, int32_t cmd) {
             LOGI("Selected Vulkan 1.0 backend, initializing VkRenderer with native touch controls...");
             if (gpu::VkRenderer::get().init(app->window)) {
                 a->vkReady = true;
+                mobile_ui::get().setActiveBackend(1);
+                mobile_ui::get().setGpuRendererName(gpu::VkRenderer::get().deviceName());
                 a->screenWidth = ANativeWindow_getWidth(app->window);
                 a->screenHeight = ANativeWindow_getHeight(app->window);
                 enforceLandscapeOrientation(*a);
@@ -943,6 +948,39 @@ extern "C" void port_android_exit_to_launcher() {
     if (attached) vm->DetachCurrentThread();
 }
 
+// Rock-solid frame pacer preventing high FPS on fast phones (30, 60, 90, 120, 144 FPS blocker)
+static void syncMobileFrameRate(int targetFps, float speed) {
+    if (targetFps < 30) targetFps = 30;
+    if (targetFps > 144) targetFps = 144;
+    if (speed > 1.05f) {
+        targetFps = (int)((float)targetFps * speed);
+    }
+    int64_t framePeriodNs = 1000000000ll / targetFps;
+    static int64_t sNextFrameTimeNs = 0;
+    int64_t nowNs = port_host_time_ns();
+
+    if (sNextFrameTimeNs == 0 || nowNs > sNextFrameTimeNs + framePeriodNs * 4) {
+        sNextFrameTimeNs = nowNs + framePeriodNs;
+        return;
+    }
+
+    if (nowNs < sNextFrameTimeNs) {
+        int64_t diffNs = sNextFrameTimeNs - nowNs;
+        if (diffNs > 1000000) {
+            struct timespec req;
+            req.tv_sec = (diffNs - 500000) / 1000000000ll;
+            req.tv_nsec = (diffNs - 500000) % 1000000000ll;
+            nanosleep(&req, nullptr);
+        }
+        while (port_host_time_ns() < sNextFrameTimeNs) {
+            #if defined(__aarch64__) || defined(__arm__)
+            asm volatile("yield");
+            #endif
+        }
+    }
+    sNextFrameTimeNs += framePeriodNs;
+}
+
 extern "C" __attribute__((visibility("default"))) void port_android_main(struct android_app* app, uintptr_t windowBase, size_t windowSize) {
     LOGI("==================================================");
     LOGI("GalaxyMobile: Native flat-screen mobile initialized");
@@ -1082,6 +1120,28 @@ extern "C" __attribute__((visibility("default"))) void port_android_main(struct 
         port_input_set(0, &a.pad);
 
 
+        // A Vulkan device can be lost mid-session (driver reset, GPU fault).
+        // Rendering cannot continue on it, so tear the backend down and keep the
+        // game running on OpenGL ES - the same fallback used when Vulkan fails to
+        // initialise.
+        if (a.vkReady && gpu::VkRenderer::get().hasFailed()) {
+            LOGE("Vulkan renderer failed at runtime; falling back to OpenGL ES 3.2");
+            if (a.vkTarget.framebuffer) {
+                gpu::VkRenderer::get().destroyTarget(a.vkTarget);
+            }
+            a.vkTarget = gpu::VkTarget{};
+            a.targetReady = false;
+            gpu::VkRenderer::get().shutdown();
+            a.vkReady = false;
+            if (initEgl(a) && createSurface(a)) {
+                mobile_ui::get().setActiveBackend(0);
+                LOGI("OpenGL ES 3.2 fallback renderer active");
+            } else {
+                LOGE("OpenGL ES fallback failed too; no rendering backend is available");
+            }
+            continue;
+        }
+
         // Presentation & Render Loop
         if (a.vkReady) {
             gpu::VkRenderer& vkr = gpu::VkRenderer::get();
@@ -1123,33 +1183,19 @@ extern "C" __attribute__((visibility("default"))) void port_android_main(struct 
                 vkr.present(a.vkTarget, a.vpX, a.vpY, a.vpW, a.vpH);
                 int64_t renderEndNs = port_host_time_ns();
                 port_perf_render(renderEndNs - renderStartNs, 0);
+                mobile_ui::get().reportGpuRenderTime(renderEndNs - renderStartNs);
 
-                // Frame pacing
-                static int64_t lastVkFrameNs = 0;
+                // Frame pacing (30, 60, 90, 120, 144 FPS blocker)
                 int targetFps = mobile_ui::get().settings().targetFps;
-                if (mobile_ui::get().settings().batterySaver) {
-                    targetFps = 30;
-                }
-                float speed = port_get_game_speed();
-                if (speed > 1.05f) {
-                    targetFps = (int)((float)targetFps * speed);
-                }
-                if (targetFps > 0) {
-                    int64_t framePeriodNs = 1000000000ll / targetFps;
-                    int64_t nowNs = port_host_time_ns();
-                    int64_t elapsedNs = nowNs - lastVkFrameNs;
-                    if (elapsedNs < framePeriodNs && lastVkFrameNs != 0) {
-                        int64_t sleepUs = (framePeriodNs - elapsedNs) / 1000;
-                        if (sleepUs > 300) {
-                            usleep((useconds_t)sleepUs);
-                        }
-                    }
-                    lastVkFrameNs = port_host_time_ns();
-                }
+                if (mobile_ui::get().settings().batterySaver) targetFps = 30;
+                syncMobileFrameRate(targetFps, port_get_game_speed());
             } else {
                 if (mobile_ui::get().needsRedraw() && a.targetReady && vkr.hasFrame()) {
                     updateViewport(a);
                     vkr.present(a.vkTarget, a.vpX, a.vpY, a.vpW, a.vpH);
+                    int targetFps = mobile_ui::get().settings().targetFps;
+                    if (mobile_ui::get().settings().batterySaver) targetFps = 30;
+                    syncMobileFrameRate(targetFps, 1.0f);
                 } else {
                     usleep(1000);
                 }
@@ -1226,66 +1272,52 @@ extern "C" __attribute__((visibility("default"))) void port_android_main(struct 
                 eglSwapBuffers(a.display, a.surface);
                 int64_t renderEndNs = port_host_time_ns();
                 port_perf_render(renderEndNs - renderStartNs, 0);
+                mobile_ui::get().reportGpuRenderTime(renderEndNs - renderStartNs);
 
-                // Precise frame pacer (60, 90, 120 FPS target, scaled by game speed)
-                static int64_t lastFrameNs = 0;
+                // Precise frame pacer (30, 60, 90, 120, 144 FPS blocker)
                 int targetFps = mobile_ui::get().settings().targetFps;
-                if (mobile_ui::get().settings().batterySaver) {
-                    targetFps = 30;
-                }
-                float speed = port_get_game_speed();
-                if (speed > 1.05f) {
-                    targetFps = (int)((float)targetFps * speed);
-                }
-                if (targetFps > 0) {
-                    int64_t framePeriodNs = 1000000000ll / targetFps;
-                    int64_t nowNs = port_host_time_ns();
-                    int64_t elapsedNs = nowNs - lastFrameNs;
-                    if (elapsedNs < framePeriodNs && lastFrameNs != 0) {
-                        int64_t sleepUs = (framePeriodNs - elapsedNs) / 1000;
-                        if (sleepUs > 300) {
-                            usleep((useconds_t)sleepUs);
-                        }
-                    }
-                    lastFrameNs = port_host_time_ns();
-                }
+                if (mobile_ui::get().settings().batterySaver) targetFps = 30;
+                syncMobileFrameRate(targetFps, port_get_game_speed());
             } else {
                 if (mobile_ui::get().needsRedraw()) {
-                glBindFramebuffer(GL_FRAMEBUFFER, 0);
-                glViewport(0, 0, a.screenWidth, a.screenHeight);
-                glDisable(GL_SCISSOR_TEST);
-                glDisable(GL_DEPTH_TEST);
-                glDisable(GL_CULL_FACE);
-                glDisable(GL_BLEND);
-                glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+                    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+                    glViewport(0, 0, a.screenWidth, a.screenHeight);
+                    glDisable(GL_SCISSOR_TEST);
+                    glDisable(GL_DEPTH_TEST);
+                    glDisable(GL_CULL_FACE);
+                    glDisable(GL_BLEND);
+                    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
 
-                glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-                glClear(GL_COLOR_BUFFER_BIT);
+                    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+                    glClear(GL_COLOR_BUFFER_BIT);
 
-                updateViewport(a);
-                if (a.targetReady && r.hasFrame()) {
-                    glBindFramebuffer(GL_READ_FRAMEBUFFER, a.efbTarget.fbo);
-                    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
-                    glBlitFramebuffer(0, 0, a.efbTarget.width, a.efbTarget.height,
-                                      a.vpX, a.vpY, a.vpX + a.vpW, a.vpY + a.vpH,
-                                      GL_COLOR_BUFFER_BIT, GL_LINEAR);
+                    updateViewport(a);
+                    if (a.targetReady && r.hasFrame()) {
+                        glBindFramebuffer(GL_READ_FRAMEBUFFER, a.efbTarget.fbo);
+                        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+                        glBlitFramebuffer(0, 0, a.efbTarget.width, a.efbTarget.height,
+                                          a.vpX, a.vpY, a.vpX + a.vpW, a.vpY + a.vpH,
+                                          GL_COLOR_BUFFER_BIT, GL_LINEAR);
+                    }
+
+                    mobile_ui::get().render(a.screenWidth, a.screenHeight);
+                    eglSwapBuffers(a.display, a.surface);
+                    int targetFps = mobile_ui::get().settings().targetFps;
+                    if (mobile_ui::get().settings().batterySaver) targetFps = 30;
+                    syncMobileFrameRate(targetFps, 1.0f);
+                } else if (!r.hasFrame()) {
+                    // Idle screen while waiting for the game to boot or submit frames
+                    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+                    glViewport(0, 0, a.screenWidth, a.screenHeight);
+                    glClearColor(0.04f, 0.05f, 0.10f, 1.0f);  // Galaxy deep blue
+                    glClear(GL_COLOR_BUFFER_BIT);
+                    mobile_ui::get().render(a.screenWidth, a.screenHeight);
+                    eglSwapBuffers(a.display, a.surface);
+                    usleep(16000);
+                } else {
+                    usleep(1000);
                 }
-
-                mobile_ui::get().render(a.screenWidth, a.screenHeight);
-                eglSwapBuffers(a.display, a.surface);
-            } else if (!r.hasFrame()) {
-                // Idle screen while waiting for the game to boot or submit frames
-                glBindFramebuffer(GL_FRAMEBUFFER, 0);
-                glViewport(0, 0, a.screenWidth, a.screenHeight);
-                glClearColor(0.04f, 0.05f, 0.10f, 1.0f);  // Galaxy deep blue
-                glClear(GL_COLOR_BUFFER_BIT);
-                mobile_ui::get().render(a.screenWidth, a.screenHeight);
-                eglSwapBuffers(a.display, a.surface);
-                usleep(16000);
-            } else {
-                usleep(1000);
             }
-        }
     }
 }
 

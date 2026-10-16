@@ -193,6 +193,14 @@ def main():
             if lib.endswith(".so"):
                 shutil.copyfile(os.path.join(py_lib_dir, lib), os.path.join(arm64_dir, lib))
 
+    # Extra prebuilt libraries (e.g. Vulkan validation layers)
+    extra_libs_dir = os.path.join(ROOT, "platform", "mobile", "libs", "arm64-v8a")
+    if os.path.isdir(extra_libs_dir):
+        for lib in os.listdir(extra_libs_dir):
+            if lib.endswith(".so"):
+                print(f"[EXTRA LIB] Packaging {lib}...")
+                shutil.copyfile(os.path.join(extra_libs_dir, lib), os.path.join(arm64_dir, lib))
+
     # 5. Add dex, assets, and lib into base.apk
     dex_file = os.path.join(dex_dir, "classes.dex")
     with zipfile.ZipFile(base_apk, "a") as z:

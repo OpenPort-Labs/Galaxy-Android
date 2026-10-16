@@ -288,6 +288,7 @@ static void dumpTrace(const u8* data, size_t start) {
 }
 
 u64 gStreamSerial = 0;
+u64 gDrawCount = 0;
 
 size_t process(const u8* data, size_t len, bool isDisplayList) {
     if (!isDisplayList) {
@@ -390,6 +391,7 @@ size_t process(const u8* data, size_t len, bool isDisplayList) {
                     return start;
                 }
                 if (count && sBackend) {
+                    gDrawCount++;
                     sBackend->draw(op & 0xF8, vat, count, data + pos, stride);
                 }
                 pos += bytes;

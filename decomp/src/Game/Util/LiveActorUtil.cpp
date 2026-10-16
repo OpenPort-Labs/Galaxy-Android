@@ -912,6 +912,10 @@ namespace MR {
             return pActor->mAnimKeeper->isPlaying(pName);
         }
 
+        if (pActor->mModelManager == nullptr || pActor->mModelManager->mXanimePlayer == nullptr) {
+            return false;
+        }
+
         return isBckPlaying(pActor->mModelManager->mXanimePlayer, pName);
     }
 

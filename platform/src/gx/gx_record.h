@@ -72,12 +72,21 @@ struct TexImage {
     // Renderer-side upload state (render thread only).
     uint32_t glTex = 0;
     uint64_t glVersion = 0;
+    // Vulkan-side upload state (render thread only).  Opaque handles so this
+    // header stays independent of the Vulkan headers.
+    uint64_t vkImage = 0;
+    uint64_t vkMemory = 0;
+    uint64_t vkView = 0;
+    uint64_t vkVersion = 0;
 
-    ~TexImage();  // queues glTex for deletion on the render thread
+    ~TexImage();  // queues glTex / the Vulkan images for deletion on the render thread
 };
 
 // GL objects released by other threads, deleted by the render thread.
 void queueGlTextureDelete(uint32_t tex);
+
+// Vulkan objects released by other threads, deleted by the render thread.
+void queueVkTextureDelete(uint64_t image, uint64_t memory, uint64_t view);
 
 enum Cmd : uint32_t {
     CMD_XF = 1,        // addr, count, values[count]

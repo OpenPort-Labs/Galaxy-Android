@@ -44,7 +44,8 @@ for lib in libgame.so libmain.so libreserve.so; do
 done
 
 rm -f $OUT/res.zip
-"$BT/aapt2$EXE" compile --dir platform/android/res -o $OUT/res.zip
+# The mobile manifest themes come from platform/mobile/res (Theme.GalaxyAndroid).
+"$BT/aapt2$EXE" compile --dir platform/mobile/res -o $OUT/res.zip
 
 package_flavor() {
   local MANIFEST="$1"

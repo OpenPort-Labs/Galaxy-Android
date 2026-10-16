@@ -49,9 +49,7 @@ SphereAccelSensorController::SphereAccelSensorController()
 }
 
 void SphereAccelSensorController::getPadAcceleration(TVec3f* pAccel) const {
-#ifdef TARGET_PC
     port_input_use_tilt(90.0f - ::sCoreBaseDegreeYZ);  // neutral (clacXY): upright, leaning towards the screen
-#endif
     if (mPad == Pad_Core) {
         MR::getCorePadAcceleration(pAccel, WPAD_CHAN0);
     } else {

@@ -842,9 +842,7 @@ void SurfRay::updateRotate() {
 
     if (isRotateStart()) {
         TVec3f accel(0.0f, 0.0f, 0.0f);
-#ifdef TARGET_PC
         port_input_use_tilt(0.0f);  // neutral: level
-#endif
         MR::getCorePadAcceleration(&accel, mPadChannel);
 
         if (accel.z > -0.7f || MR::abs(accel.x) > 0.15f) {

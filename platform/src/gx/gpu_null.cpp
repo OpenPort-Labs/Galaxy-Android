@@ -8,8 +8,7 @@
 
 namespace {
 struct NullBackend : gpu::Backend {
-    uint64_t draws = 0;
-    void draw(int, int, gpu::u32, const gpu::u8*, gpu::u32) override { draws++; }
+    void draw(int, int, gpu::u32, const gpu::u8*, gpu::u32) override {}
     void bpWrite(gpu::u32, gpu::u32, gpu::u32) override {}
     void xfWrite(gpu::u32, gpu::u32) override {}
     void cpWrite(gpu::u32, gpu::u32) override {}
@@ -33,7 +32,9 @@ extern "C" void __attribute__((weak)) port_gx_present_xfb(void* xfb, int black) 
     sFrames++;
     gPresentedFrames.store(sFrames);
     if ((sFrames % 300) == 1) {
+        // gDrawCount is incremented by the command processor for every backend,
+        // so this reports real progress with the recorder attached as well.
         port_log("gx: frame %llu presented (xfb %p%s), %llu draws so far", (unsigned long long)sFrames, xfb, black ? ", black" : "",
-                 (unsigned long long)sNull.draws);
+                 (unsigned long long)gpu::gDrawCount);
     }
 }

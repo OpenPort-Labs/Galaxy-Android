@@ -46,9 +46,7 @@ SurfRayTutorial::SurfRayTutorial(LiveActor* pHost, TalkMessageCtrl* pTalkCtrl, c
 }
 
 bool SurfRayTutorial::update() {
-#ifdef TARGET_PC
     port_input_use_tilt(0.0f);  // as SurfRay
-#endif
     MR::getCorePadAcceleration(&mPadAccel, WPAD_CHAN0);
     updateNerve();
 

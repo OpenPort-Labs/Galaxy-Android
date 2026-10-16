@@ -30,28 +30,43 @@ struct VkTarget {
     VkDeviceMemory depthMemory = VK_NULL_HANDLE;
     VkImageView depthView = VK_NULL_HANDLE;
     VkFramebuffer framebuffer = VK_NULL_HANDLE;
+    VkImageLayout colorLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    bool hasValidContent = false;
+};
+
+struct VkCopyTex {
+    VkImage image = VK_NULL_HANDLE;
+    VkDeviceMemory memory = VK_NULL_HANDLE;
+    VkImageView view = VK_NULL_HANDLE;
+    int w = 0;
+    int h = 0;
+    uint64_t frame = 0;
 };
 
 struct PipelineKey {
-    uint32_t uidIndex;
+    ShaderUid uid;
     uint32_t flags;
     uint32_t depthState;   // test(1) | (write << 1) | (depthFunc << 4)
-    uint32_t blendState;   // blend(1) | (srcRGB << 1) | (dstRGB << 6) | (eq << 11) | (colorMask << 16) | (dstAlpha << 20)
+    // Blend factors are stored as the mapped VkBlendFactor (0..14), not as the
+    // GL enums: GL_FUNC_* and the 0x03xx/0x80xx factors overlap in their low
+    // bits, which used to make distinct blend states share one pipeline.
+    uint32_t blendState;   // blendOn(1) | (srcRGB << 1) | (dstRGB << 6) | (srcAlpha << 11) | (dstAlpha << 16)
+    uint32_t blendState2;  // colorOp(2) | (alphaOp << 2) | (colorMask << 4) | (constantAlpha << 8)
     uint32_t rasterState;  // cull(1) | (cullFace << 1) | (prim << 4)
 
     bool operator==(const PipelineKey& o) const {
-        return uidIndex == o.uidIndex && flags == o.flags && depthState == o.depthState &&
-               blendState == o.blendState && rasterState == o.rasterState;
+        return uid == o.uid && flags == o.flags && depthState == o.depthState &&
+               blendState == o.blendState && blendState2 == o.blendState2 && rasterState == o.rasterState;
     }
 };
 
 struct PipelineKeyHash {
     size_t operator()(const PipelineKey& k) const {
-        size_t h = 1469598103934665603ull;
-        h = (h ^ k.uidIndex) * 1099511628211ull;
+        size_t h = ShaderUidHash()(k.uid);
         h = (h ^ k.flags) * 1099511628211ull;
         h = (h ^ k.depthState) * 1099511628211ull;
         h = (h ^ k.blendState) * 1099511628211ull;
+        h = (h ^ k.blendState2) * 1099511628211ull;
         h = (h ^ k.rasterState) * 1099511628211ull;
         return h;
     }
@@ -75,6 +90,14 @@ struct SamplerDescKeyHash {
         }
         return h;
     }
+};
+
+// One cached descriptor set per distinct (views, samplers) combination, with the
+// frame it was last used in so unused sets can be freed again instead of
+// draining the descriptor pool.
+struct SamplerSetEntry {
+    VkDescriptorSet set = VK_NULL_HANDLE;
+    uint64_t lastUse = 0;
 };
 
 struct FrameResource {
@@ -135,8 +158,14 @@ public:
     void shutdown();
 
     bool isReady() const { return mInitialized; }
+    // True once a fatal Vulkan error (lost device, out of memory, failed
+    // submission) has been seen.  Rendering then stops instead of retrying every
+    // frame forever, which is the caller's cue to tear the backend down and
+    // continue on OpenGL ES.
+    bool hasFailed() const { return mFatal; }
     int width() const { return mWidth; }
     int height() const { return mHeight; }
+    const char* deviceName() const { return mDeviceProperties.deviceName; }
 
     VkTarget createTarget(int w, int h);
     void destroyTarget(VkTarget& target);
@@ -156,20 +185,32 @@ private:
     bool createSurface(ANativeWindow* window);
     bool createSwapchain();
     bool createRenderPasses();
+    bool createSwapchainFramebuffers();
     bool createCommandPool();
     bool createSyncObjects();
     bool createDescriptorLayouts();
     bool createPresentationPipeline();
+    void destroyPresentationPipeline();
     bool createUiPipeline();
     void destroyUiPipeline();
     void renderUiOverlay(int width, int height);
 
     uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
     VkFormat findSupportedDepthFormat();
+    // Destroys texture images whose TexImage died on another thread, and frees
+    // descriptor sets (and other cached resources) the recent frames did not use.
+    void flushDeferredDeletes();
+    void trimFrameCaches(uint64_t frame);
+    // Waits for every submission still in flight.  This is the only point where
+    // cached GPU resources, the render target and the frame resources may be
+    // touched or destroyed safely.
+    bool waitInFlightSubmissions(const char* where);
+    // Records a fatal Vulkan error (once) and stops rendering.
+    void markFatal(const char* where, const char* what, int result);
 
     bool createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties,
                       VkBuffer& buffer, VkDeviceMemory& bufferMemory);
-    void uploadDynamicBuffer(VkBuffer& buf, VkDeviceMemory& mem, size_t& currentCap,
+    bool uploadDynamicBuffer(VkBuffer& buf, VkDeviceMemory& mem, size_t& currentCap,
                              VkBufferUsageFlags usage, const void* data, size_t bytes);
 
     VkSampler getSampler(uint32_t mode0, uint32_t mode1, uint32_t levels);
@@ -197,19 +238,29 @@ private:
     VkSwapchainKHR mSwapchain = VK_NULL_HANDLE;
     VkFormat mSwapchainFormat = VK_FORMAT_R8G8B8A8_UNORM;
     VkImageUsageFlags mSwapchainUsage = 0;
+    VkSurfaceTransformFlagBitsKHR mSwapchainPreTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
+    // The extent the swapchain was actually created with.  The framebuffers and
+    // the presentation render area have to follow it, which is not necessarily
+    // the window size on every device.
+    VkExtent2D mSwapchainExtent{0, 0};
     VkFormat mDepthFormat = VK_FORMAT_UNDEFINED;
     std::vector<VkImage> mSwapchainImages;
     std::vector<VkImageView> mSwapchainImageViews;
     std::vector<VkFramebuffer> mSwapchainFramebuffers;
 
     VkRenderPass mEfbRenderPass = VK_NULL_HANDLE;
+    VkRenderPass mEfbLoadRenderPass = VK_NULL_HANDLE;
     VkRenderPass mPresentRenderPass = VK_NULL_HANDLE;
     VkCommandPool mCommandPool = VK_NULL_HANDLE;
     VkCommandBuffer mCommandBuffer = VK_NULL_HANDLE;
 
     VkSemaphore mImageAvailableSem = VK_NULL_HANDLE;
     VkSemaphore mRenderFinishedSem = VK_NULL_HANDLE;
-    VkFence mFlightFence = VK_NULL_HANDLE;
+    VkFence mRenderFence = VK_NULL_HANDLE;
+    VkFence mPresentFence = VK_NULL_HANDLE;
+    bool mRenderFenceInFlight = false;
+    bool mPresentFenceInFlight = false;
+    bool mFatal = false;
 
     // Descriptors & Pipelines
     VkDescriptorSetLayout mStorageDescLayout = VK_NULL_HANDLE;
@@ -239,8 +290,11 @@ private:
     // Caches
     std::unordered_map<PipelineKey, VkPipeline, PipelineKeyHash> mPipelines;
     std::unordered_map<uint64_t, VkSampler> mSamplers;
-    std::unordered_map<const TexImage*, VkTexture> mTextures;
-    std::unordered_map<SamplerDescKey, VkDescriptorSet, SamplerDescKeyHash> mSamplerDescSets;
+    std::unordered_map<SamplerDescKey, SamplerSetEntry, SamplerDescKeyHash> mSamplerDescSets;
+    std::unordered_map<uint64_t, VkCopyTex> mCopies;
+
+    VkCopyTex& getCopyTex(uint64_t key, int w, int h);
+    void evictCopies(uint64_t currentFrame);
 
     VkTexture mDummyTexture;
     VkSampler mDummySampler = VK_NULL_HANDLE;

@@ -55,7 +55,7 @@ struct Settings {
     bool haptics = false;
 
     // FPS configuration
-    int targetFps = 60;  // 60, 90, or 120
+    int targetFps = 60;  // 30, 60, 90, 120, or 144
     bool adaptiveFps = true;
     bool batterySaver = false; // 30 FPS thermal protection & power save mode
     bool gyroAiming = false;   // Gyroscope / accelerometer Star Pointer motion aiming
@@ -114,6 +114,20 @@ public:
     void setCurrentSlot(int s) { mCurrentSlot = (s >= 1 && s <= 3) ? s : 1; }
     void showToast(const std::string& msg);
     Settings& settings() { return mSettings; }
+    // The backend that actually initialised (1 = Vulkan 1.0, 0 = OpenGL ES):
+    // OpenGL takes over when no usable Vulkan device or driver is present, so
+    // the requested setting and the running backend can differ.
+    void setActiveBackend(int backend) { mActiveBackend = backend; }
+    int activeBackend() const { return mActiveBackend; }
+    // Device name reported by the running backend (set from the Vulkan device
+    // properties when Vulkan is active, from GL_RENDERER otherwise).
+    void setGpuRendererName(const std::string& name) { if (!name.empty()) mGpuRendererName = name; }
+    void reportGpuRenderTime(int64_t renderDurationNs) {
+        if (renderDurationNs > 0) {
+            mGpuRenderTimeAccumNs += renderDurationNs;
+            mGpuRenderFrameCount++;
+        }
+    }
     void setPlusEdition(bool plus) { mPlusEdition = plus; }
     bool isPlusEdition() const { return mPlusEdition; }
 
@@ -140,6 +154,7 @@ private:
     Settings mSettings;
     std::string mSavePath;
     int mCurrentSlot = 1;
+    int mActiveBackend = 1;  // what actually initialised (see setActiveBackend)
     bool mPlusEdition = true;
     bool mInitialized = false;
     bool mDirty = false;
@@ -235,7 +250,10 @@ private:
     int mFpsFrameCounter = 0;
     int64_t mFpsLastTimeNs = 0;
     float mCpuUsagePercent = 0.0f;
+    float mGpuUsagePercent = 0.0f;
     float mRamUsageMB = 0.0f;
+    int64_t mGpuRenderTimeAccumNs = 0;
+    int mGpuRenderFrameCount = 0;
     int64_t mLastHwSampleTime = 0;
     std::string mGpuRendererName = "Mali-G68 GPU";
 

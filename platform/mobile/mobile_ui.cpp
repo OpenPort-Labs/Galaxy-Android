@@ -283,8 +283,14 @@ void Settings::load(const std::string& path) {
             else if (!strcmp(key, "game_speed")) gameSpeed = std::max(1, std::min(5, (int)val));
             else if (!strcmp(key, "language_choice")) languageChoice = std::max(0, std::min(5, (int)val));
             else if (!strcmp(key, "render_scale")) renderScale = std::max(0, std::min(3, (int)val));
-            else if (!strcmp(key, "haptics")) haptics = (val > 0.5f);
-            else if (!strcmp(key, "target_fps")) targetFps = (int)val;  // 60, 90, or 120
+            else if (!strcmp(key, "target_fps")) {
+                int v = (int)val;
+                if (v >= 144) targetFps = 144;
+                else if (v >= 120) targetFps = 120;
+                else if (v >= 90) targetFps = 90;
+                else if (v >= 60) targetFps = 60;
+                else targetFps = 30;
+            }
             else if (!strcmp(key, "adaptive_fps")) adaptiveFps = (val > 0.5f);
             else if (!strcmp(key, "battery_saver")) batterySaver = (val > 0.5f);
             else if (!strcmp(key, "gyro_aiming")) gyroAiming = (val > 0.5f);
@@ -705,6 +711,41 @@ void UIOverlay::update(PortPadState& pad, int& spinFrames) {
             fclose(fpStatm);
         }
 
+        // Sample GPU usage
+        bool gotGpu = false;
+        static const char* const gpuSysfsPaths[] = {
+            "/sys/kernel/ged/hal/gpu_utilization",
+            "/sys/class/misc/mali0/device/utilization",
+            "/sys/devices/platform/13000000.mali/utilization",
+            "/sys/class/kgsl/kgsl-3d0/gpu_busy_percentage"
+        };
+        for (const char* path : gpuSysfsPaths) {
+            FILE* fpGpu = fopen(path, "r");
+            if (fpGpu) {
+                int val = -1;
+                if (fscanf(fpGpu, "%d", &val) == 1 && val >= 0) {
+                    mGpuUsagePercent = (float)(val > 100 ? 100 : val);
+                    gotGpu = true;
+                }
+                fclose(fpGpu);
+                if (gotGpu) break;
+            }
+        }
+        if (!gotGpu) {
+            // Render duty cycle fallback: measured active GPU render time vs window duration
+            if (diffNs > 0 && mGpuRenderFrameCount > 0) {
+                float gpuDuty = ((float)mGpuRenderTimeAccumNs / (float)diffNs) * 100.0f;
+                if (gpuDuty < 0.0f) gpuDuty = 0.0f;
+                if (gpuDuty > 100.0f) gpuDuty = 100.0f;
+                mGpuUsagePercent = gpuDuty;
+            } else if (mCurrentFps > 0.0f) {
+                // Approximate fallback based on frame pacing
+                mGpuUsagePercent = std::min(100.0f, (mAvgFrameTimeMs / 16.67f) * 40.0f);
+            }
+        }
+        mGpuRenderTimeAccumNs = 0;
+        mGpuRenderFrameCount = 0;
+
         mDirty = true;
     }
 }
@@ -988,12 +1029,13 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
                         }
                         // Row 12: Target Frame Rate
                         else if (contentRelY >= 660.0f * uiScale && contentRelY < 718.0f * uiScale) {
-                            float segW = contentW / 4.0f;
+                            float segW = contentW / 5.0f;
                             int idx = (int)((px - (drawerX + padX)) / segW);
                             if (idx <= 0) mSettings.targetFps = 30;
                             else if (idx == 1) mSettings.targetFps = 60;
                             else if (idx == 2) mSettings.targetFps = 90;
-                            else mSettings.targetFps = 120;
+                            else if (idx == 3) mSettings.targetFps = 120;
+                            else mSettings.targetFps = 144;
                         }
                         // Row 13: Graphics Backend
                         else if (contentRelY >= 718.0f * uiScale && contentRelY < 776.0f * uiScale) {
@@ -1972,15 +2014,15 @@ void UIOverlay::generateVertices(int screenW, int screenH, std::vector<UIVertex>
     }
 
     // -------------------------------------------------------------
-    // Realtime Hardware Monitor HUD (FPS, Frame Time, CPU, RAM)
+    // Realtime Hardware Monitor HUD (FPS, Frame Time, CPU, GPU, RAM)
     // -------------------------------------------------------------
     if (mSettings.perfHudMode > 0 && !mEditLayoutMode) {
-        char hudBuf[128];
+        char hudBuf[144];
         if (mSettings.perfHudMode == 1) {
             snprintf(hudBuf, sizeof(hudBuf), "%.1f FPS  •  %.1f ms", mCurrentFps, mAvgFrameTimeMs);
         } else {
-            snprintf(hudBuf, sizeof(hudBuf), "%.1f FPS  •  %.1f ms  •  CPU %.0f%%  •  RAM %.0f MB",
-                     mCurrentFps, mAvgFrameTimeMs, mCpuUsagePercent, mRamUsageMB);
+            snprintf(hudBuf, sizeof(hudBuf), "%.1f FPS  •  %.1f ms  •  CPU %.0f%%  •  GPU %.0f%%  •  RAM %.0f MB",
+                     mCurrentFps, mAvgFrameTimeMs, mCpuUsagePercent, mGpuUsagePercent, mRamUsageMB);
         }
 
         float hudTextScale = 0.28f * uiScale;
@@ -2221,9 +2263,9 @@ void UIOverlay::generateVertices(int screenW, int screenH, std::vector<UIVertex>
             // Row 12: Target Frame Rate Segmented Button
             renderRow(664.0f * uiScale, 54.0f * uiScale, [&](float y) {
                 drawText("Target Frame Rate", drawerX + padX, y + 14.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
-                const char* fpsOpts[4] = {"30 FPS", "60 FPS", "90 FPS", "120 FPS"};
-                int fpsIdx = (mSettings.targetFps >= 120) ? 3 : (mSettings.targetFps >= 90) ? 2 : (mSettings.targetFps >= 60) ? 1 : 0;
-                drawSegmentedGroup(drawerX + padX, y + 22.0f * uiScale, contentW, 34.0f * uiScale, fpsOpts, 4, fpsIdx);
+                const char* fpsOpts[5] = {"30", "60", "90", "120", "144"};
+                int fpsIdx = (mSettings.targetFps >= 144) ? 4 : (mSettings.targetFps >= 120) ? 3 : (mSettings.targetFps >= 90) ? 2 : (mSettings.targetFps >= 60) ? 1 : 0;
+                drawSegmentedGroup(drawerX + padX, y + 22.0f * uiScale, contentW, 34.0f * uiScale, fpsOpts, 5, fpsIdx);
             });
 
             // Row 13: Graphics Backend Segmented Button
@@ -2335,7 +2377,7 @@ void UIOverlay::generateVertices(int screenW, int screenH, std::vector<UIVertex>
                 snprintf(gpuLine, sizeof(gpuLine), "GPU: %s", mGpuRendererName.empty() ? "OpenGL ES 3.2" : mGpuRendererName.c_str());
                 const char* resStr = (mSettings.renderScale == 0) ? "480p" : (mSettings.renderScale == 1) ? "720p" : (mSettings.renderScale == 2) ? "1080p" : "1440p";
                 snprintf(resLine, sizeof(resLine), "Display: %dx%d (%s Target • Hor+)", (int)w, (int)h, resStr);
-                snprintf(apiLine, sizeof(apiLine), "Active Engine: %s • Native ARM64", (mSettings.graphicsBackend == 1) ? "Vulkan 1.0" : "OpenGL ES 3.2");
+                snprintf(apiLine, sizeof(apiLine), "Active Engine: %s • Native ARM64", (mActiveBackend == 1) ? "Vulkan 1.0" : "OpenGL ES 3.2 (fallback)");
 
                 drawText(gpuLine, cardX0 + 12.0f * uiScale, y + 18.0f * uiScale, 0.28f * uiScale, rgba(0.40f, 0.75f, 1.0f, 0.95f), 0);
                 drawText(resLine, cardX0 + 12.0f * uiScale, y + 34.0f * uiScale, 0.26f * uiScale, rgba(0.80f, 0.84f, 0.90f, 0.85f), 0);

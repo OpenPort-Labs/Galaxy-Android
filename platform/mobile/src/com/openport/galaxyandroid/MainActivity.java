@@ -98,7 +98,7 @@ public class MainActivity extends Activity {
 
         if (isGameDataReady()) {
             btnLaunchGame.setVisibility(View.VISIBLE);
-            btnLaunchGame.setText("Launch Installed Game \uD83D\uDE80");
+            btnLaunchGame.setText("Launch Installed Game");
             txtProgressStatus.setText("Installed game data verified! Tap to launch or select an ISO below to reinstall.");
         }
 
@@ -163,6 +163,14 @@ public class MainActivity extends Activity {
                     Intent generic = new Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION);
                     startActivity(generic);
                 }
+            }
+        } else {
+            if (checkSelfPermission(android.Manifest.permission.WRITE_EXTERNAL_STORAGE) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                appendLog("[Permission] Requesting legacy storage permission for game data...");
+                requestPermissions(new String[]{
+                    android.Manifest.permission.READ_EXTERNAL_STORAGE,
+                    android.Manifest.permission.WRITE_EXTERNAL_STORAGE
+                }, 2001);
             }
         }
     }

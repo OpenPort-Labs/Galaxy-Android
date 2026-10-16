@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.openport.galaxyandroid"
-    android:versionCode="5"
-    android:versionName="0.0.1cx"
+    android:versionCode="6"
+    android:versionName="0.0.1d"
     android:installLocation="auto">
 
-    <uses-sdk android:minSdkVersion="30" android:targetSdkVersion="34" />
+    <uses-sdk android:minSdkVersion="28" android:targetSdkVersion="34" />
 
     <uses-feature android:glEsVersion="0x00030002" android:required="true" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
@@ -26,7 +26,8 @@
         android:hasCode="true"
         android:debuggable="true"
         android:extractNativeLibs="true"
-        android:allowBackup="false">
+        android:allowBackup="false"
+        android:requestLegacyExternalStorage="true">
 
         <!-- Launcher & In-App Setup Activity -->
         <activity

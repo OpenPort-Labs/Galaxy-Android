@@ -3,6 +3,7 @@
 #include <android/log.h>
 #include <algorithm>
 #include <array>
+#include <cstdio>
 #include <cstring>
 
 #define TAG "PetariVK"
@@ -150,6 +151,8 @@ bool VkRenderer::init(ANativeWindow* window) {
         shutdown();
         return false;
     }
+
+    initPipelineCache();
 
     if (!createSwapchain()) {
         LOGE("Failed to create Vulkan swapchain");
@@ -428,6 +431,12 @@ void VkRenderer::shutdown() {
         }
         mPipelines.clear();
 
+        savePipelineCache();
+        if (mPipelineCache != VK_NULL_HANDLE) {
+            vkDestroyPipelineCache(mDevice, mPipelineCache, nullptr);
+            mPipelineCache = VK_NULL_HANDLE;
+        }
+
         // Presentation resources
         destroyPresentationPipeline();
 
@@ -521,6 +530,65 @@ void VkRenderer::shutdown() {
     mSwapchain = VK_NULL_HANDLE;
     mInitialized = false;
     LOGI("Vulkan 1.0 renderer shut down cleanly.");
+}
+
+static const char* getPipelineCachePath() {
+    static char sPath[512] = "";
+    if (!sPath[0]) {
+        snprintf(sPath, sizeof(sPath), "/sdcard/GalaxyData/vk_pipeline_cache.bin");
+    }
+    return sPath;
+}
+
+void VkRenderer::initPipelineCache() {
+    if (mPipelineCache != VK_NULL_HANDLE || mDevice == VK_NULL_HANDLE) return;
+
+    std::vector<char> cacheData;
+    FILE* f = fopen(getPipelineCachePath(), "rb");
+    if (f) {
+        fseek(f, 0, SEEK_END);
+        long sz = ftell(f);
+        fseek(f, 0, SEEK_SET);
+        if (sz > 32) {
+            cacheData.resize(sz);
+            if (fread(cacheData.data(), 1, sz, f) != (size_t)sz) {
+                cacheData.clear();
+            }
+        }
+        fclose(f);
+    }
+
+    VkPipelineCacheCreateInfo pcci{};
+    pcci.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
+    if (!cacheData.empty()) {
+        pcci.initialDataSize = cacheData.size();
+        pcci.pInitialData = cacheData.data();
+        LOGI("Loading Vulkan pipeline cache (%zu bytes)", cacheData.size());
+    }
+
+    if (vkCreatePipelineCache(mDevice, &pcci, nullptr, &mPipelineCache) != VK_SUCCESS) {
+        LOGW("Failed to create Vulkan pipeline cache");
+        mPipelineCache = VK_NULL_HANDLE;
+    }
+}
+
+void VkRenderer::savePipelineCache() {
+    if (mPipelineCache == VK_NULL_HANDLE || mDevice == VK_NULL_HANDLE) return;
+
+    size_t dataSize = 0;
+    if (vkGetPipelineCacheData(mDevice, mPipelineCache, &dataSize, nullptr) != VK_SUCCESS || dataSize == 0) {
+        return;
+    }
+
+    std::vector<char> data(dataSize);
+    if (vkGetPipelineCacheData(mDevice, mPipelineCache, &dataSize, data.data()) == VK_SUCCESS) {
+        FILE* f = fopen(getPipelineCachePath(), "wb");
+        if (f) {
+            fwrite(data.data(), 1, dataSize, f);
+            fclose(f);
+            LOGI("Saved Vulkan pipeline cache (%zu bytes)", dataSize);
+        }
+    }
 }
 
 bool VkRenderer::createInstance() {
@@ -635,6 +703,7 @@ bool VkRenderer::createLogicalDevice() {
 
     VkPhysicalDeviceFeatures deviceFeatures{};
     deviceFeatures.samplerAnisotropy = mDeviceFeatures.samplerAnisotropy;
+    deviceFeatures.depthClamp = mDeviceFeatures.depthClamp;
     createInfo.pEnabledFeatures = &deviceFeatures;
 
     if (vkCreateDevice(mPhysicalDevice, &createInfo, nullptr, &mDevice) != VK_SUCCESS) {
@@ -660,13 +729,26 @@ bool VkRenderer::createSwapchain() {
     vkGetPhysicalDeviceSurfaceFormatsKHR(mPhysicalDevice, mSurface, &formatCount, formats.data());
 
     VkSurfaceFormatKHR surfaceFormat = formats[0];
+    bool foundUnorm = false;
     for (const auto& fmt : formats) {
-        if (fmt.format == VK_FORMAT_R8G8B8A8_UNORM && fmt.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
+        if ((fmt.format == VK_FORMAT_R8G8B8A8_UNORM || fmt.format == VK_FORMAT_B8G8R8A8_UNORM) &&
+            fmt.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
             surfaceFormat = fmt;
+            foundUnorm = true;
             break;
         }
     }
+    if (!foundUnorm) {
+        for (const auto& fmt : formats) {
+            if (fmt.format == VK_FORMAT_R8G8B8A8_UNORM || fmt.format == VK_FORMAT_B8G8R8A8_UNORM) {
+                surfaceFormat = fmt;
+                foundUnorm = true;
+                break;
+            }
+        }
+    }
     mSwapchainFormat = surfaceFormat.format;
+    LOGI("Selected Vulkan swapchain format: %d (foundUnorm=%d)", (int)mSwapchainFormat, foundUnorm ? 1 : 0);
 
     uint32_t imageCount = caps.minImageCount + 1;
     if (caps.maxImageCount > 0 && imageCount > caps.maxImageCount) {
@@ -1156,7 +1238,7 @@ void main() {
     pci.layout = mPresentPipelineLayout;
     pci.renderPass = mPresentRenderPass;
 
-    VkResult res = vkCreateGraphicsPipelines(mDevice, VK_NULL_HANDLE, 1, &pci, nullptr, &mPresentPipeline);
+    VkResult res = vkCreateGraphicsPipelines(mDevice, mPipelineCache, 1, &pci, nullptr, &mPresentPipeline);
 
     vkDestroyShaderModule(mDevice, vsMod, nullptr);
     vkDestroyShaderModule(mDevice, fsMod, nullptr);
@@ -1591,7 +1673,7 @@ void main() {
     pci.layout = mUiPipelineLayout;
     pci.renderPass = mPresentRenderPass;
 
-    VkResult res = vkCreateGraphicsPipelines(mDevice, VK_NULL_HANDLE, 1, &pci, nullptr, &mUiPipeline);
+    VkResult res = vkCreateGraphicsPipelines(mDevice, mPipelineCache, 1, &pci, nullptr, &mUiPipeline);
 
     vkDestroyShaderModule(mDevice, vsMod, nullptr);
     vkDestroyShaderModule(mDevice, fsMod, nullptr);
@@ -2433,6 +2515,7 @@ VkPipeline VkRenderer::getPipeline(const Item& it, const ShaderUid& uid) {
 
     VkPipelineRasterizationStateCreateInfo rsci{};
     rsci.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+    rsci.depthClampEnable = mDeviceFeatures.depthClamp ? VK_TRUE : VK_FALSE;
     rsci.polygonMode = VK_POLYGON_MODE_FILL;
     rsci.cullMode = it.cull ? ((it.cullFace == 0x0404) ? VK_CULL_MODE_FRONT_BIT : VK_CULL_MODE_BACK_BIT) : VK_CULL_MODE_NONE;
     rsci.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
@@ -2501,7 +2584,7 @@ VkPipeline VkRenderer::getPipeline(const Item& it, const ShaderUid& uid) {
     pci.renderPass = mEfbRenderPass;
 
     VkPipeline pipeline = VK_NULL_HANDLE;
-    VkResult res = vkCreateGraphicsPipelines(mDevice, VK_NULL_HANDLE, 1, &pci, nullptr, &pipeline);
+    VkResult res = vkCreateGraphicsPipelines(mDevice, mPipelineCache, 1, &pci, nullptr, &pipeline);
 
     vkDestroyShaderModule(mDevice, vsMod, nullptr);
     vkDestroyShaderModule(mDevice, fsMod, nullptr);

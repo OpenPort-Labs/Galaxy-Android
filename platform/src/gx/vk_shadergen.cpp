@@ -253,7 +253,7 @@ std::string genVulkanVertexShader(const ShaderUid& u) {
     o.w("    if ((fetch_recs(rb + %uu) & 2u) != 0u) {\n", (unsigned)kRecFlags);
     o.w("      clipPos.z = clipPos.w * 0.99999;\n");
     o.w("    } else {\n");
-    o.w("      clipPos.z = min(clipPos.z, clipPos.w * 0.99999);\n");
+    o.w("      clipPos.z = clamp(clipPos.z, 0.0, clipPos.w * 0.99999);\n");
     o.w("    }\n");
     if (u.cutaway) o.w("    v_eye = vec3(0.0, 0.0, 1.0e6);\n");
     o.w("  }\n");

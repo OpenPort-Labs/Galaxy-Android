@@ -194,6 +194,8 @@ private:
     bool createUiPipeline();
     void destroyUiPipeline();
     void renderUiOverlay(int width, int height);
+    void initPipelineCache();
+    void savePipelineCache();
 
     uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
     VkFormat findSupportedDepthFormat();
@@ -267,6 +269,7 @@ private:
     VkDescriptorSetLayout mTextureDescLayout = VK_NULL_HANDLE;
     VkDescriptorPool mDescriptorPool = VK_NULL_HANDLE;
     VkPipelineLayout mPipelineLayout = VK_NULL_HANDLE;
+    VkPipelineCache mPipelineCache = VK_NULL_HANDLE;
 
     // Presentation pipeline
     VkDescriptorSetLayout mPresentDescLayout = VK_NULL_HANDLE;

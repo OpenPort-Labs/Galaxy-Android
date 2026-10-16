@@ -129,7 +129,7 @@ def main():
         "--auto-add-overlay",
         "-I", ANDROID_JAR,
         "--java", gen_dir,
-        "--min-sdk-version", "30",
+        "--min-sdk-version", "28",
         "--target-sdk-version", "34"
     ])
 
@@ -143,7 +143,7 @@ def main():
     # 3. Desugar and Dex with D8
     class_files = glob.glob(os.path.join(classes_dir, "**", "*.class"), recursive=True)
     print(f"[D8] Converting {len(class_files)} classes to classes.dex...")
-    run([D8, "--output", dex_dir, "--lib", ANDROID_JAR, "--min-api", "30"] + class_files)
+    run([D8, "--output", dex_dir, "--lib", ANDROID_JAR, "--min-api", "28"] + class_files)
 
     # 4. Copy and strip wrap.sh and native libraries into arm64-v8a
     wrap_src = os.path.join(ROOT, "platform", "android", "wrap.sh")

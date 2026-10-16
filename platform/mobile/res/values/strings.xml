@@ -10,8 +10,8 @@
     <string name="section_options">Step 2: Conversion Options</string>
     <string name="include_movies">Include Cutscene Movies (+2.3 GB space)</string>
     <string name="section_cook">Step 3: Installation &amp; Launch</string>
-    <string name="btn_start_cook">Install &amp; Launch Game 🚀</string>
-    <string name="btn_launch_game">Launch Game 🚀</string>
+    <string name="btn_start_cook">Install &amp; Launch Game</string>
+    <string name="btn_launch_game">Launch Game</string>
     <string name="status_ready">Ready to install game data.</string>
     <string name="status_cooking">Converting game assets... Please keep app open.</string>
     <string name="status_done">All game assets ready! Launching game...</string>

@@ -36,16 +36,16 @@ The first native ARM64 Android port of **Super Mario Galaxy**, executing compile
 - **Mutually-Exclusive Nearest-Distance Matching**: Replaced overlapping hitboxes with exclusive Euclidean distance selection. A single touch can never trigger two buttons simultaneously (e.g. A + Spin or B + Z).
 - **Eliminated Ghost Tap Injections**: Removed accidental `WPAD_BUTTON_A` press injections upon screen release during gameplay. Mario now jumps strictly when the A button is pressed.
 - **Ergonomic Arc Layout**: Spaced out primary action buttons (A: Jump, B: Star Bit Shoot, Z: Crouch/Pound, SPIN: Shake/Cyclone, +: Pause) with comfortable thumb clearance matching rendering sub-pixels.
-- **Directional Camera D-Pad**: Smooth camera orbit (◀ ▶) and recenter (▲ ▼) controls with customizable left/right dock positioning.
+- **Directional Camera D-Pad**: Smooth camera orbit ( ) and recenter ( ) controls with customizable left/right dock positioning.
 
 #### 2. Shading & Graphics Pipeline Fixes (Mali GPU & GLES 3.2)
 - **Actor Lighting Fix**: Solved the actor over-saturation glitch where Mario and NPCs rendered glowing cyan/white. Added division-by-zero protection against `(0,0,0)` camera-origin rim lights (`GX_LIGHT2`) that caused `NaN`/`INF` light vectors on ARM Mali-G68 GPUs.
 - **Water Refraction & EFB Distortion Mapping**: Corrected Y-axis screen coordinate mapping in `gl_shadergen.cpp`, fixing flipped texture distortion on water surfaces and heat shimmers.
 - **GX Ambient & Material Registers**: Properly initialized default hardware state registers (`0x0A..0x0D`) matching Nintendo's `GXInit.c` specification.
 
-#### 3. ⚡ Quick Save Anywhere
+#### 3.  Quick Save Anywhere
 - **Save Anywhere In-Game**: Integrated native save routine into the engine sequence (`GameSequenceFunction::quickSaveAnywhere()`) saving Mario's progress, star bits, coin count, comet scheduler, and unlocked galaxies to NAND storage immediately without needing to return to the observatory.
-- **Settings Drawer Quick Save**: Dedicated row in the Material 3 drawer (`⚙` -> "⚡ Quick Save Anywhere") triggering the save sequence.
+- **Settings Drawer Quick Save**: Dedicated row in the Material 3 drawer (`` -> " Quick Save Anywhere") triggering the save sequence.
 - **Floating Toast HUD Banner**: Animated top pill toast notifying player: `"Game Progress Saved Anywhere!"`.
 
 #### 4. Vulkan 1.1 Renderer & Frame-Replay Hardening

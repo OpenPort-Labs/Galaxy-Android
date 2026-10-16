@@ -149,7 +149,7 @@
             android:layout_width="match_parent"
             android:layout_height="44dp"
             android:layout_marginTop="8dp"
-            android:text="Clean / Reset Game Data 🗑️"
+            android:text="Clean / Reset Game Data"
             android:backgroundTint="@color/surface_card"
             android:textColor="#FF6B6B"
             android:textSize="13sp" />

@@ -118,10 +118,10 @@ adb shell am start -n com.openport.galaxyandroid/.MainActivity
 - Make sure you are using release `v0.0.1cx` or newer, which resolves uninitialized target swapchain presentation bugs.
 
 ### Star Pointer moves vertically when turning phone
-- Open the Settings drawer (`⚙`), scroll to Row 19b, and adjust **Invert X** / **Invert Y** or toggle **Gyro Aiming**.
+- Open the Settings drawer (`Gear`), scroll to Row 19b, and adjust **Invert X** / **Invert Y** or toggle **Gyro Aiming**.
 
 ### Low Frame Rate on Budget Devices
-- Open the Settings drawer (`⚙`), set **Render Resolution** to **720p HD** or **480p Native**, or toggle **Battery Saver** mode.
+- Open the Settings drawer (`Gear`), set **Render Resolution** to **720p HD** or **480p Native**, or toggle **Battery Saver** mode.
 
 ---
 

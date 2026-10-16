@@ -12,7 +12,7 @@
     <string name="include_movies">Include Cutscene Movies (~2.3 GB) (Optional - Faster setup without)</string>
     <string name="section_cook">Step 3: Prepare Game Data</string>
     <string name="btn_start_cook">Start Cooking Game Data</string>
-    <string name="btn_launch_game">Launch GalaxyMobile 🚀</string>
+    <string name="btn_launch_game">Launch GalaxyMobile</string>
     <string name="status_ready">Ready to prepare game files.</string>
     <string name="status_cooking">Cooking game data... Please keep app open.</string>
     <string name="status_done">All game files cooked successfully! Ready to play.</string>

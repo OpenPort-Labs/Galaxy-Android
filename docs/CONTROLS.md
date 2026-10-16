@@ -108,9 +108,9 @@ Galaxy Android automatically detects physical gamepads connected via Bluetooth o
 
 ## 4. Customizing Controls & Settings Drawer
 
-Open the slide-out **Material 3 Settings Drawer** by tapping the gear icon (`⚙`) at the top-left edge of the screen:
+Open the slide-out **Material 3 Settings Drawer** by tapping the gear icon (`Gear`) at the top-left edge of the screen:
 
-- **⚡ Quick Save Anywhere:** Instantly write your game state, coins, star bits, and comet schedule to persistent storage without opening the pause menu or finishing the stage. Confirmed with an animated HUD toast.
+- ** Quick Save Anywhere:** Instantly write your game state, coins, star bits, and comet schedule to persistent storage without opening the pause menu or finishing the stage. Confirmed with an animated HUD toast.
 - **Touch Controls Visibility:** Toggle on/off entirely when using a physical gamepad or playing on a dedicated gaming handheld (Retroid Pocket, Odin, Logitech G Cloud).
 - **Button Opacity:** Adjust between 25%, 50%, 75%, and 100% transparency.
 - **Button Scale:** Scale all touch buttons between 0.75x and 1.5x for phones or tablets.

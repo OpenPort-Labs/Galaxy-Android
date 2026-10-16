@@ -141,7 +141,7 @@ void main() {
         // Mode 2: Font glyph texture: sample red channel
         alpha = texture(uFontTex, vUv).r;
     } else if (mode > 2.5 && mode < 3.5) {
-        // Mode 3: Iconic Material 3 Settings Cogwheel (⚙)
+        // Mode 3: Iconic Material 3 Settings Cogwheel
         float d = length(vUv);
         float fw = fwidth(d);
         if (fw < 0.001) fw = 0.005;
@@ -162,7 +162,7 @@ void main() {
         float box = smoothstep(0.65, 0.65 - fw, capDist);
         alpha = line * box;
     } else if (mode > 4.5 && mode < 5.5) {
-        // Mode 5: Spin Cyclone / Galaxy Swirl Glyph (🌀)
+        // Mode 5: Spin Cyclone / Galaxy Swirl Glyph
         float d = length(vUv);
         float a = atan(vUv.y, vUv.x) + param;
         float aFold = mod(a, 3.14159265);
@@ -191,7 +191,7 @@ void main() {
         float strokeW = 0.16;
         alpha = smoothstep(strokeW, strokeW - fw * 1.5, dLine);
     } else if (mode > 6.5 && mode < 7.5) {
-        // Mode 7: Modern Minimalist Camera Glyph (📷)
+        // Mode 7: Modern Minimalist Camera Glyph
         vec2 p = vUv;
         vec2 bBody = vec2(0.48, 0.32);
         vec2 pBody = p - vec2(0.0, 0.06);
@@ -448,7 +448,7 @@ void UIOverlay::triggerSaveSlot(int slot) {
 
     if (mSettings.haptics) port_android_vibrate(50);
     char msg[96];
-    snprintf(msg, sizeof(msg), "Saved to Slot %d! 💾 (GalaxyData/saves)", slot);
+    snprintf(msg, sizeof(msg), "Saved to Slot %d! (GalaxyData/saves)", slot);
     showToast(msg);
     LOGI("NAND saved to slot %d: %s and mirrored to %s", slot, slotDir.c_str(), pubSlot.c_str());
 }
@@ -474,7 +474,7 @@ void UIOverlay::triggerLoadSlot(int slot) {
     copyDirRecursive(slotDir, nandDir);
     if (mSettings.haptics) port_android_vibrate(75);
     char msg[64];
-    snprintf(msg, sizeof(msg), "Slot %d Loaded! 🔄", slot);
+    snprintf(msg, sizeof(msg), "Slot %d Loaded!", slot);
     showToast(msg);
     LOGI("NAND restored from slot %d: %s", slot, slotDir.c_str());
 }
@@ -1109,7 +1109,7 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
                         // Row 19c: Relative Pointer Switch (Issue #11)
                         else if (contentRelY >= 1162.0f * uiScale && contentRelY < 1216.0f * uiScale) {
                             mSettings.relativePointer = !mSettings.relativePointer;
-                            showToast(mSettings.relativePointer ? "Relative Pointer: ON (Trackpad mode 🖱️)" : "Relative Pointer: OFF (Direct touch)");
+                            showToast(mSettings.relativePointer ? "Relative Pointer: ON (Trackpad mode)" : "Relative Pointer: OFF (Direct touch)");
                         }
                         // Row 19d: Screen Orientation Choice (Issues #18 & #19)
                         else if (contentRelY >= 1216.0f * uiScale && contentRelY < 1276.0f * uiScale) {
@@ -1139,27 +1139,27 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
                         // Mod 1: Fly Mode Switch
                         if (contentRelY >= 48.0f * uiScale && contentRelY <= 104.0f * uiScale) {
                             mSettings.modFly = !mSettings.modFly;
-                            showToast(mSettings.modFly ? "Fly Mode: ON 🪽" : "Fly Mode: OFF");
+                            showToast(mSettings.modFly ? "Fly Mode: ON" : "Fly Mode: OFF");
                         }
                         // Mod 2: Cutscene Prevention Switch
                         else if (contentRelY >= 106.0f * uiScale && contentRelY <= 160.0f * uiScale) {
                             mSettings.modSkipCutscenes = !mSettings.modSkipCutscenes;
-                            showToast(mSettings.modSkipCutscenes ? "Skip Cutscenes: ON ⏩" : "Skip Cutscenes: OFF");
+                            showToast(mSettings.modSkipCutscenes ? "Skip Cutscenes: ON" : "Skip Cutscenes: OFF");
                         }
                         // Mod 3: Infinite Health Switch
                         else if (contentRelY >= 162.0f * uiScale && contentRelY <= 216.0f * uiScale) {
                             mSettings.modInfiniteHealth = !mSettings.modInfiniteHealth;
-                            showToast(mSettings.modInfiniteHealth ? "Infinite Health: ON 🛡️" : "Infinite Health: OFF");
+                            showToast(mSettings.modInfiniteHealth ? "Infinite Health: ON" : "Infinite Health: OFF");
                         }
                         // Mod 4: Infinite Lives Switch
                         else if (contentRelY >= 218.0f * uiScale && contentRelY <= 272.0f * uiScale) {
                             mSettings.modInfiniteLives = !mSettings.modInfiniteLives;
-                            showToast(mSettings.modInfiniteLives ? "Infinite Lives (99): ON 🍄" : "Infinite Lives: OFF");
+                            showToast(mSettings.modInfiniteLives ? "Infinite Lives (99): ON" : "Infinite Lives: OFF");
                         }
                         // Mod 5: Infinite Star Bits Switch
                         else if (contentRelY >= 274.0f * uiScale && contentRelY <= 334.0f * uiScale) {
                             mSettings.modInfiniteStarBits = !mSettings.modInfiniteStarBits;
-                            showToast(mSettings.modInfiniteStarBits ? "Infinite Star Bits (999): ON ⭐" : "Infinite Star Bits: OFF");
+                            showToast(mSettings.modInfiniteStarBits ? "Infinite Star Bits (999): ON" : "Infinite Star Bits: OFF");
                         }
                         // Row 6: Save Slot Selector
                         else if (contentRelY >= 336.0f * uiScale && contentRelY < 396.0f * uiScale) {
@@ -1985,7 +1985,7 @@ void UIOverlay::generateVertices(int screenW, int screenH, std::vector<UIVertex>
             drawLine(dpadX + divInner * diag, dpadY - divInner * diag, dpadX + divOuter * diag, dpadY - divOuter * diag, 1.4f * scale, divCol);
             drawLine(dpadX - divInner * diag, dpadY - divInner * diag, dpadX - divOuter * diag, dpadY - divOuter * diag, 1.4f * scale, divCol);
 
-            // 4 Directional Chevron Sectors (◀ ▶ ▲ ▼)
+            // 4 Directional Chevron Sectors (Left, Right, Up, Down)
             auto drawDpadSector = [&](float cx, float cy, float rotAngle, bool pressed) {
                 if (pressed) {
                     drawCircle(cx, cy, 20.0f * scale, rgba(0.22f, 0.74f, 0.97f, hudOp * 0.80f));
@@ -2005,7 +2005,7 @@ void UIOverlay::generateVertices(int screenW, int screenH, std::vector<UIVertex>
             // Down (rot = PI/2)
             drawDpadSector(dpadX, dpadY + armDist, 1.5707963f, mBtnDpadDown);
 
-            // Center Concave Hub with Modern Camera Icon (📷)
+            // Center Concave Hub with Modern Camera Icon
             float hubR = 18.0f * scale;
             drawCircle(dpadX, dpadY, hubR, rgba(0.09f, 0.13f, 0.22f, hudOp * 0.80f));
             drawRing(dpadX, dpadY, hubR, 0.88f, rgba(0.55f, 0.75f, 1.0f, hudOp * 0.55f));
@@ -2049,7 +2049,7 @@ void UIOverlay::generateVertices(int screenW, int screenH, std::vector<UIVertex>
     }
 
     // -------------------------------------------------------------
-    // Material 3 Settings Tab Dock (Pinned to Top-Left Edge ⚙)
+    // Material 3 Settings Tab Dock (Pinned to Top-Left Edge)
     // -------------------------------------------------------------
     if (mDrawerAnim < 0.95f) {
         float tabW = 56.0f * uiScale;
@@ -2064,7 +2064,7 @@ void UIOverlay::generateVertices(int screenW, int screenH, std::vector<UIVertex>
         // Rotating Material 3 Cogwheel icon in Google Accent Blue
         drawCogwheel(tabW * 0.50f, tabY + tabH * 0.5f, 15.0f * uiScale, rgba(0.659f, 0.780f, 0.980f, 1.0f), cogRot);
 
-        // Direct Quick Save Pill Button (💾)
+        // Direct Quick Save Pill Button
         float qsX = tabW + 16.0f * uiScale;
         float qsW = 58.0f * uiScale;
         drawRoundRect(qsX, tabY + 4.0f * uiScale, qsX + qsW, tabY + tabH - 4.0f * uiScale, 16.0f * uiScale, rgba(0.12f, 0.14f, 0.18f, 0.88f));
@@ -2391,7 +2391,7 @@ void UIOverlay::generateVertices(int screenW, int screenH, std::vector<UIVertex>
                 float btnY = y + 4.0f * uiScale;
                 drawRoundRect(bX0, btnY, bX1, btnY + 40.0f * uiScale, 14.0f * uiScale, rgba(0.40f, 0.12f, 0.15f, 0.95f));
                 drawRoundRect(bX0, btnY, bX1, btnY + 40.0f * uiScale, 14.0f * uiScale, rgba(0.90f, 0.25f, 0.30f, 0.60f));
-                drawText("Exit to Setup Launcher 🚪", (bX0 + bX1) * 0.5f, btnY + 25.0f * uiScale, 0.38f * uiScale, rgba(1.0f, 0.88f, 0.88f, 1.0f), 1);
+                drawText("Exit to Setup Launcher", (bX0 + bX1) * 0.5f, btnY + 25.0f * uiScale, 0.38f * uiScale, rgba(1.0f, 0.88f, 0.88f, 1.0f), 1);
             });
         } else {
             // Advanced / Cheats Tab Settings Items (Gameplay Mods)
@@ -2459,7 +2459,7 @@ void UIOverlay::generateVertices(int screenW, int screenH, std::vector<UIVertex>
                 float sX1 = sX0 + bW;
                 drawRoundRect(sX0, btnY, sX1, btnY + 40.0f * uiScale, 12.0f * uiScale, rgba(0.06f, 0.42f, 0.32f, 0.95f));
                 drawRoundRect(sX0, btnY, sX1, btnY + 40.0f * uiScale, 12.0f * uiScale, rgba(0.25f, 0.85f, 0.65f, 0.60f));
-                char sTxt[32]; snprintf(sTxt, sizeof(sTxt), "💾 Save Slot %d", mCurrentSlot);
+                char sTxt[32]; snprintf(sTxt, sizeof(sTxt), "Save Slot %d", mCurrentSlot);
                 drawText(sTxt, (sX0 + sX1) * 0.5f, btnY + 25.0f * uiScale, 0.34f * uiScale, rgba(1.0f, 1.0f, 1.0f, 1.0f), 1);
 
                 // Reload Button (Blue)
@@ -2467,7 +2467,7 @@ void UIOverlay::generateVertices(int screenW, int screenH, std::vector<UIVertex>
                 float rX1 = rX0 + bW;
                 drawRoundRect(rX0, btnY, rX1, btnY + 40.0f * uiScale, 12.0f * uiScale, rgba(0.12f, 0.28f, 0.55f, 0.95f));
                 drawRoundRect(rX0, btnY, rX1, btnY + 40.0f * uiScale, 12.0f * uiScale, rgba(0.35f, 0.65f, 0.98f, 0.60f));
-                char rTxt[32]; snprintf(rTxt, sizeof(rTxt), "🔄 Reload Slot %d", mCurrentSlot);
+                char rTxt[32]; snprintf(rTxt, sizeof(rTxt), "Reload Slot %d", mCurrentSlot);
                 drawText(rTxt, (rX0 + rX1) * 0.5f, btnY + 25.0f * uiScale, 0.34f * uiScale, rgba(1.0f, 1.0f, 1.0f, 1.0f), 1);
             });
 

@@ -549,7 +549,7 @@ int32_t onInput(android_app* app, AInputEvent* event) {
         if (isJoystickSource) {
             if (!a->gamepadDetected) {
                 a->gamepadDetected = true;
-                mobile_ui::get().showToast("Gamepad Connected 🎮");
+                mobile_ui::get().showToast("Gamepad Connected");
             }
 
             // Left Stick (Analog Movement)
@@ -657,7 +657,7 @@ int32_t onInput(android_app* app, AInputEvent* event) {
 
         if (!a->gamepadDetected && (keyCode >= AKEYCODE_BUTTON_A && keyCode <= AKEYCODE_BUTTON_16)) {
             a->gamepadDetected = true;
-            mobile_ui::get().showToast("Gamepad Connected 🎮");
+            mobile_ui::get().showToast("Gamepad Connected");
         }
 
         int32_t keyAction = AKeyEvent_getAction(event);

@@ -65,6 +65,8 @@ struct Settings {
     bool fullTouchMode = true;
     int perfHudMode = 2; // 0 = Off, 1 = FPS, 2 = Full Hardware Stats
     int graphicsBackend = 1; // 1 = Vulkan 1.0 (Full Native Default), 0 = OpenGL ES 3.2
+    bool relativePointer = false; // Relative trackpad-style Star Pointer aiming (Issue #11)
+    int screenOrientationChoice = 0; // 0 = Auto Sensor Landscape, 1 = Landscape, 2 = Reverse Landscape (Issues #18 & #19)
 
     void load(const std::string& path);
     void save(const std::string& path) const;
@@ -213,6 +215,8 @@ private:
         TouchRole role = TouchRole::NONE;
         float startX = 0.0f;
         float startY = 0.0f;
+        float lastX = 0.0f;
+        float lastY = 0.0f;
         int64_t startTime = 0;
     };
     TouchPoint mTouches[10];

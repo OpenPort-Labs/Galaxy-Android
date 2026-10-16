@@ -208,11 +208,13 @@ std::string genVulkanVertexShader(const ShaderUid& u) {
         o.w("  uint nr = slotRow(rb, %uu, nidx);\n", (unsigned)kRecNrmSlots);
         if (f & VF_NRM) {
             o.w("  vec3 nrm = vec3(dot(fetch_rows(nr).xyz, a_nrm), dot(fetch_rows(nr + 1u).xyz, a_nrm), dot(fetch_rows(nr + 2u).xyz, a_nrm));\n");
-            o.w("  if (dot(nrm, nrm) > 0.0) nrm = normalize(nrm);\n");
+            o.w("  nrm = (dot(nrm, nrm) > 1e-6 && !any(isnan(nrm)) && !any(isinf(nrm))) ? normalize(nrm) : vec3(0.0, 0.0, 1.0);\n");
         }
         if (f & VF_NBT) {
             o.w("  vec3 bin = vec3(dot(fetch_rows(nr).xyz, a_bin), dot(fetch_rows(nr + 1u).xyz, a_bin), dot(fetch_rows(nr + 2u).xyz, a_bin));\n");
+            o.w("  bin = (dot(bin, bin) > 1e-6 && !any(isnan(bin)) && !any(isinf(bin))) ? normalize(bin) : vec3(0.0, 1.0, 0.0);\n");
             o.w("  vec3 tan = vec3(dot(fetch_rows(nr).xyz, a_tan), dot(fetch_rows(nr + 1u).xyz, a_tan), dot(fetch_rows(nr + 2u).xyz, a_tan));\n");
+            o.w("  tan = (dot(tan, tan) > 1e-6 && !any(isnan(tan)) && !any(isinf(tan))) ? normalize(tan) : vec3(1.0, 0.0, 0.0);\n");
         }
     } else {
         o.w("  vec3 nrm = vec3(0.0, 0.0, 1.0);\n");
@@ -300,27 +302,28 @@ std::string genVulkanVertexShader(const ShaderUid& u) {
                     o.w("      ldir = (d2 > 1e-6) ? (lv / d) : vec3(0.0, 0.0, 1.0);\n");
                     o.w("      vec3 dv = (dot(ldirv, ldirv) > 1e-6) ? normalize(ldirv) : vec3(0.0, 0.0, -1.0);\n");
                     o.w("      float a = clamp(dot(ldir, dv), 0.0, 1.0);\n");
-                    o.w("      float distDenom = dot(ldist, vec3(1.0, d, d2));\n");
+                    o.w("      float distDenom = max(dot(ldist, vec3(1.0, d, d2)), 1e-4);\n");
                     o.w("      float cosNum = max(0.0, dot(lcos, vec3(1.0, a, a * a)));\n");
-                    o.w("      att = (distDenom > 1e-5) ? clamp(cosNum / distDenom, 0.0, 1.0) : 0.0;\n");
+                    o.w("      att = clamp(cosNum / distDenom, 0.0, 1.0);\n");
                 } else {
                     o.w("      vec3 lv = (dot(lpos, lpos) > 1e-6) ? (lpos - pos) : -pos;\n");
                     o.w("      ldir = (dot(lv, lv) > 1e-6) ? normalize(lv) : vec3(0.0, 0.0, 1.0);\n");
                     o.w("      vec3 dv = (dot(ldirv, ldirv) > 1e-6) ? normalize(ldirv) : vec3(0.0, 0.0, -1.0);\n");
                     o.w("      float a = (dot(nrm, ldir) >= 0.0) ? clamp(dot(nrm, dv), 0.0, 1.0) : 0.0;\n");
-                    o.w("      float distDenom = dot(ldist, vec3(1.0, a, a * a));\n");
+                    o.w("      float distDenom = max(dot(ldist, vec3(1.0, a, a * a)), 1e-4);\n");
                     o.w("      float cosNum = max(0.0, dot(lcos, vec3(1.0, a, a * a)));\n");
-                    o.w("      att = (distDenom > 1e-5) ? clamp(cosNum / distDenom, 0.0, 1.0) : 0.0;\n");
+                    o.w("      att = clamp(cosNum / distDenom, 0.0, 1.0);\n");
                 }
                 const char* dif = diffuse == 0 ? "1.0" : diffuse == 1 ? "clamp(dot(ldir, nrm), -1.0, 1.0)" : "max(0.0, dot(ldir, nrm))";
-                o.w("      att = clamp(isnan(att) ? 0.0 : att, 0.0, 1.0);\n");
-                o.w("      lit += att * %s * lcol.%s;\n", dif, sw);
+                o.w("      att = (isnan(att) || isinf(att)) ? 0.0 : clamp(att, 0.0, 1.0);\n");
+                o.w("      vec4 safeLcol = (any(isnan(lcol)) || any(isinf(lcol))) ? vec4(0.0) : lcol;\n");
+                o.w("      lit += att * %s * safeLcol.%s;\n", dif, sw);
                 o.w("    }\n");
             }
             if (alpha) {
-                o.w("    v_clr%d.%s = %s * clamp(isnan(lit) ? 0.0 : lit, 0.0, 1.0);\n  }\n", c, sw, mat);
+                o.w("    v_clr%d.%s = %s * ((isnan(lit) || isinf(lit)) ? 0.0 : clamp(lit, 0.0, 1.0));\n  }\n", c, sw, mat);
             } else {
-                o.w("    v_clr%d.%s = %s * clamp(any(isnan(lit)) ? vec3(0.0) : lit, 0.0, 1.0);\n  }\n", c, sw, mat);
+                o.w("    v_clr%d.%s = %s * ((any(isnan(lit)) || any(isinf(lit))) ? vec3(0.0) : clamp(lit, 0.0, 1.0));\n  }\n", c, sw, mat);
             }
         }
     }
@@ -379,7 +382,7 @@ std::string genVulkanVertexShader(const ShaderUid& u) {
         }
         if (u.dualTex) {
             uint32_t post = u.postMtxInfo[i];
-            if ((post >> 8) & 1) o.w("    t = normalize(t);\n");
+            if ((post >> 8) & 1) o.w("    t = (dot(t, t) > 1e-6 && !any(isnan(t)) && !any(isinf(t))) ? normalize(t) : vec3(0.0);\n");
             if ((post & 63) == 61) {
                 // GX_PTIDENTITY (125 - 64 = 61): identity post-transform
             } else {
@@ -415,7 +418,7 @@ std::string genVulkanFragmentShader(const ShaderUid& u) {
         o.w("const float kBayer[16] = float[16](0.0, 8.0, 2.0, 10.0, 12.0, 4.0, 14.0, 6.0, 3.0, 11.0, 1.0, 9.0, 15.0, 7.0, 13.0, 5.0);\n");
     }
     o.w("layout(location = 0) out vec4 o_color;\n");
-    o.w("vec2 projUv(vec3 t) { return (abs(t.z) > 1e-6) ? t.xy / t.z : t.xy; }\n");
+    o.w("vec2 projUv(vec3 t) { if (isnan(t.z) || isinf(t.z) || abs(t.z) < 1e-6) return (any(isnan(t.xy)) || any(isinf(t.xy))) ? vec2(0.0) : t.xy; vec2 r = t.xy / t.z; return (any(isnan(r)) || any(isinf(r))) ? vec2(0.0) : r; }\n");
     o.w("int idot(ivec3 a, ivec3 b) { ivec3 t = a * b; return t.x + t.y + t.z; }\n");
 
     o.w("void main() {\n");
@@ -487,13 +490,16 @@ std::string genVulkanFragmentShader(const ShaderUid& u) {
             }
         }
         if (en) {
-            o.w("  tex = ivec4(round(clamp(texture(s_tex%u, %s)%s, 0.0, 1.0) * 255.0));\n", map, uv.c_str(), swapString(u, tswap).c_str());
+            o.w("  vec4 sampleTex%u = texture(s_tex%u, %s)%s;\n", s, map, uv.c_str(), swapString(u, tswap).c_str());
+            o.w("  vec4 safeTex%u = (any(isnan(sampleTex%u)) || any(isinf(sampleTex%u))) ? vec4(0.0) : clamp(sampleTex%u, 0.0, 1.0);\n", s, s, s, s);
+            o.w("  tex = ivec4(round(safeTex%u * 255.0));\n", s);
             if (u.zTex) o.w("  ztex = tex;\n");
         } else {
             o.w("  tex = ivec4(0);\n");
         }
-        const char* rasSrc = (chan == 0) ? "v_clr0" : (chan == 1) ? "v_clr1" : "vec4(0.0)";
-        o.w("  ras = ivec4(round(clamp(%s, 0.0, 1.0)%s * 255.0));\n", rasSrc, swapString(u, rswap).c_str());
+        const char* rasSrc = (chan == 0 || chan == 2 || chan == 4) ? "v_clr0" : (chan == 1 || chan == 3 || chan == 5) ? "v_clr1" : "vec4(0.0)";
+        o.w("  vec4 safeRas%u = (any(isnan(%s)) || any(isinf(%s))) ? vec4(0.0) : clamp(%s, 0.0, 1.0);\n", s, rasSrc, rasSrc, rasSrc);
+        o.w("  ras = ivec4(round(safeRas%u%s * 255.0));\n", s, swapString(u, rswap).c_str());
         o.w("  kc = %s;\n  ka = %s;\n", konstColor(kcsel).c_str(), konstAlpha(kasel).c_str());
 
         {

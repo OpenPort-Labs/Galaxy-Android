@@ -2078,10 +2078,10 @@ bool VkRenderer::render(VkTarget& target, const EyeView* eye, VkTarget* hud, Hud
     }
 
     VkDescriptorBufferInfo bInfo[5]{};
-    bInfo[0] = {fr.rowBuf, 0, p.rows.size() * sizeof(float)};
-    bInfo[1] = {fr.recBuf, 0, p.recs.size() * sizeof(uint32_t)};
-    bInfo[2] = {fr.stBuf, 0, p.states.size() * sizeof(float)};
-    bInfo[3] = {fr.vtxRecBuf, 0, p.vtxRec.size() * sizeof(uint32_t)};
+    bInfo[0] = {fr.rowBuf, 0, VK_WHOLE_SIZE};
+    bInfo[1] = {fr.recBuf, 0, VK_WHOLE_SIZE};
+    bInfo[2] = {fr.stBuf, 0, VK_WHOLE_SIZE};
+    bInfo[3] = {fr.vtxRecBuf, 0, VK_WHOLE_SIZE};
     bInfo[4] = {fr.eyeUbo, 0, sizeof(EyeBlock)};
 
     VkWriteDescriptorSet writes[5]{};

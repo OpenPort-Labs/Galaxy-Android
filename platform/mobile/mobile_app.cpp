@@ -383,8 +383,15 @@ bool initEgl(MobileApp& a) {
 }
 
 static void enforceLandscapeOrientation(MobileApp& a) {
-    if (a.screenWidth < a.screenHeight && a.android && a.android->activity) {
-        LOGW("Surface detected in portrait (%dx%d)! Enforcing landscape mode...", a.screenWidth, a.screenHeight);
+    if (a.android && a.android->activity) {
+        int orientationChoice = mobile_ui::UIOverlay::get().settings().screenOrientationChoice;
+        // 0 = SCREEN_ORIENTATION_SENSOR_LANDSCAPE (6, auto-flips 180 deg)
+        // 1 = SCREEN_ORIENTATION_LANDSCAPE (0, natural 90 deg)
+        // 2 = SCREEN_ORIENTATION_REVERSE_LANDSCAPE (8, reverse 270 deg)
+        int requested = 6;
+        if (orientationChoice == 1) requested = 0;
+        else if (orientationChoice == 2) requested = 8;
+
         ANativeActivity* act = a.android->activity;
         JNIEnv* env = nullptr;
         act->vm->AttachCurrentThread(&env, nullptr);
@@ -393,7 +400,7 @@ static void enforceLandscapeOrientation(MobileApp& a) {
             if (actClass) {
                 jmethodID setOrient = env->GetMethodID(actClass, "setRequestedOrientation", "(I)V");
                 if (setOrient) {
-                    env->CallVoidMethod(act->clazz, setOrient, 0); // 0 = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+                    env->CallVoidMethod(act->clazz, setOrient, requested);
                 }
                 env->DeleteLocalRef(actClass);
             }

@@ -73,6 +73,9 @@ extern "C" void port_input_use_tilt(float neutralPitchDeg) {
     sTiltUsedAt.store(port_host_time_ns());
 }
 
+static float sFilteredTiltX = 0.0f;
+static float sFilteredTiltY = 0.0f;
+
 // Gravity as the remote's accelerometer reads it, in g.  KPAD's axes: x left,
 // y out of the button face, z where the remote points; held level, (0, -1, 0)
 // (KPADReset).  The game turns these into its own (WPadAcceleration::update:
@@ -83,16 +86,36 @@ extern "C" void port_input_use_tilt(float neutralPitchDeg) {
 static Vec remoteGravity(const PortPadState& s) {
     Vec g = {0.0f, -1.0f, 0.0f};
     if (port_host_time_ns() - sTiltUsedAt.load() >= 500000000) {  // 0.5 s
+        sFilteredTiltX = 0.0f;
+        sFilteredTiltY = 0.0f;
         return g;
     }
     // A controller whose orientation is unknown counts as held level.
     Vec down = s.tilted ? Vec{s.downX, s.downY, s.downZ} : Vec{0.0f, -1.0f, 0.0f};
     if (!s.tilted) {
-        // Fallback for mobile touchscreen and gamepads: steer ball and surfing ray using analog stick
-        float maxTiltAngle = 0.55f; // ~31.5 degrees, full deflection for Tamakoro and SurfRay
-        float tiltPitch = s.stickY * maxTiltAngle;
-        float tiltRoll = s.stickX * maxTiltAngle;
-        down.x = -__builtin_sinf(tiltRoll);
+        // Fallback for mobile touchscreen and gamepads: steer ball and surfing ray using analog stick.
+        // Derived from official NVIDIA Shield smg_controller.ini:
+        // - RaySurfing: MaxAccelVelocityDelta=0.025 (prevents manta jumping when pushing LS quickly)
+        // - BallRolling: MaxAccelVelocityDelta=0.015 (smooth ball rolling inertia)
+        float maxDelta = (sTiltNeutralPitch.load() == 0.0f) ? 0.025f : 0.015f;
+        float targetX = s.stickX;
+        float targetY = s.stickY;
+        float dx = targetX - sFilteredTiltX;
+        float dy = targetY - sFilteredTiltY;
+        if (dx > maxDelta) sFilteredTiltX += maxDelta;
+        else if (dx < -maxDelta) sFilteredTiltX -= maxDelta;
+        else sFilteredTiltX = targetX;
+
+        if (dy > maxDelta) sFilteredTiltY += maxDelta;
+        else if (dy < -maxDelta) sFilteredTiltY -= maxDelta;
+        else sFilteredTiltY = targetY;
+
+        float maxTiltAngle = 1.05f; // ~60 degrees for full deflection in SurfRay and Tamakoro
+        float tiltPitch = sFilteredTiltY * maxTiltAngle;
+        float tiltRoll = sFilteredTiltX * maxTiltAngle;
+        // In Galaxy: accel.x = -pStatus->acc.x = -g.x = down.x.
+        // For turn right, game expects accel.x > 0; down.x must be positive for positive stickX.
+        down.x = __builtin_sinf(tiltRoll);
         down.z = __builtin_sinf(tiltPitch);
         float rem = 1.0f - (down.x * down.x + down.z * down.z);
         down.y = -(rem > 0.0f ? __builtin_sqrtf(rem) : 0.0f);
@@ -242,8 +265,9 @@ s32 KPADRead(s32 chan, KPADStatus samples[], u32 length) {
     k->acc_vertical.y = len > 0.0f ? -k->acc.z / len : 0.0f;
     k->pos.x = s.pointerX;
     k->pos.y = s.pointerY;
-    k->horizon.x = 1.0f;
-    k->horizon.y = 0.0f;
+    float rollAngle = sFilteredTiltX * 1.05f;
+    k->horizon.x = __builtin_cosf(rollAngle);
+    k->horizon.y = __builtin_sinf(rollAngle);
     k->dist = s.pointerDist > 0.0f ? s.pointerDist : 2.0f;
     k->dpd_valid_fg = s.pointerValid ? 2 : 0;
     k->dev_type = WPAD_DEV_FREESTYLE;

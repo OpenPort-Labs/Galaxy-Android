@@ -104,6 +104,9 @@ public:
     // Render the overlay in OpenGL ES 3.2
     void render(int screenW, int screenH);
 
+    // Call when a frame is presented to display to track true presented FPS
+    void reportFramePresented();
+
     bool needsRedraw();
     bool isSettingsOpen() const { return mSettingsOpen || mDrawerAnim > 0.01f; }
     void closeSettings();

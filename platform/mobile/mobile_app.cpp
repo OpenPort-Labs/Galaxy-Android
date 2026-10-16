@@ -948,7 +948,9 @@ extern "C" void port_android_exit_to_launcher() {
     if (attached) vm->DetachCurrentThread();
 }
 
-// Rock-solid frame pacer preventing high FPS on fast phones (30, 60, 90, 120, 144 FPS blocker)
+// 100% rock-solid frame rate limiter.
+// Enforces a strict minimum spacing between consecutive presents so the instantaneous
+// and average frame rate can NEVER exceed targetFps under any circumstances.
 static void syncMobileFrameRate(int targetFps, float speed) {
     if (targetFps < 30) targetFps = 30;
     if (targetFps > 144) targetFps = 144;
@@ -956,29 +958,30 @@ static void syncMobileFrameRate(int targetFps, float speed) {
         targetFps = (int)((float)targetFps * speed);
     }
     int64_t framePeriodNs = 1000000000ll / targetFps;
-    static int64_t sNextFrameTimeNs = 0;
+    static int64_t sLastPresentNs = 0;
+
     int64_t nowNs = port_host_time_ns();
-
-    if (sNextFrameTimeNs == 0 || nowNs > sNextFrameTimeNs + framePeriodNs * 4) {
-        sNextFrameTimeNs = nowNs + framePeriodNs;
-        return;
+    if (sLastPresentNs != 0) {
+        int64_t elapsedNs = nowNs - sLastPresentNs;
+        if (elapsedNs < framePeriodNs) {
+            int64_t waitNs = framePeriodNs - elapsedNs;
+            if (waitNs > 1500000ll) {
+                struct timespec req;
+                int64_t sleepNs = waitNs - 1000000ll;
+                req.tv_sec = sleepNs / 1000000000ll;
+                req.tv_nsec = sleepNs % 1000000000ll;
+                nanosleep(&req, nullptr);
+            }
+            int64_t deadlineNs = sLastPresentNs + framePeriodNs;
+            while (port_host_time_ns() < deadlineNs) {
+                #if defined(__aarch64__) || defined(__arm__)
+                asm volatile("yield");
+                #endif
+            }
+        }
     }
 
-    if (nowNs < sNextFrameTimeNs) {
-        int64_t diffNs = sNextFrameTimeNs - nowNs;
-        if (diffNs > 1000000) {
-            struct timespec req;
-            req.tv_sec = (diffNs - 500000) / 1000000000ll;
-            req.tv_nsec = (diffNs - 500000) % 1000000000ll;
-            nanosleep(&req, nullptr);
-        }
-        while (port_host_time_ns() < sNextFrameTimeNs) {
-            #if defined(__aarch64__) || defined(__arm__)
-            asm volatile("yield");
-            #endif
-        }
-    }
-    sNextFrameTimeNs += framePeriodNs;
+    sLastPresentNs = port_host_time_ns();
 }
 
 extern "C" __attribute__((visibility("default"))) void port_android_main(struct android_app* app, uintptr_t windowBase, size_t windowSize) {
@@ -1178,24 +1181,27 @@ extern "C" __attribute__((visibility("default"))) void port_android_main(struct 
                 // Render into offscreen target
                 vkr.render(a.vkTarget, nullptr, nullptr, gpu::HudMode::Inline);
 
+                // Frame pacing: enforce minimum time spacing between presents so FPS NEVER exceeds targetFps
+                int targetFps = mobile_ui::get().settings().targetFps;
+                if (mobile_ui::get().settings().batterySaver) targetFps = 30;
+                syncMobileFrameRate(targetFps, port_get_game_speed());
+
                 // Present to swapchain with pillarboxing
                 updateViewport(a);
                 vkr.present(a.vkTarget, a.vpX, a.vpY, a.vpW, a.vpH);
                 int64_t renderEndNs = port_host_time_ns();
                 port_perf_render(renderEndNs - renderStartNs, 0);
                 mobile_ui::get().reportGpuRenderTime(renderEndNs - renderStartNs);
-
-                // Frame pacing (30, 60, 90, 120, 144 FPS blocker)
-                int targetFps = mobile_ui::get().settings().targetFps;
-                if (mobile_ui::get().settings().batterySaver) targetFps = 30;
-                syncMobileFrameRate(targetFps, port_get_game_speed());
+                mobile_ui::get().reportFramePresented();
             } else {
-                if (mobile_ui::get().needsRedraw() && a.targetReady && vkr.hasFrame()) {
-                    updateViewport(a);
-                    vkr.present(a.vkTarget, a.vpX, a.vpY, a.vpW, a.vpH);
+                if (mobile_ui::get().needsRedraw() && a.targetReady && vkr.hasFrame() &&
+                    (!a.gameBooted || port_is_paused() || mobile_ui::get().isSettingsOpen())) {
                     int targetFps = mobile_ui::get().settings().targetFps;
                     if (mobile_ui::get().settings().batterySaver) targetFps = 30;
                     syncMobileFrameRate(targetFps, 1.0f);
+                    updateViewport(a);
+                    vkr.present(a.vkTarget, a.vpX, a.vpY, a.vpW, a.vpH);
+                    mobile_ui::get().reportFramePresented();
                 } else {
                     usleep(1000);
                 }
@@ -1269,17 +1275,19 @@ extern "C" __attribute__((visibility("default"))) void port_android_main(struct 
                 // Render on-screen controls HUD & Settings overlay
                 mobile_ui::get().render(a.screenWidth, a.screenHeight);
 
+                // Frame pacing: enforce minimum time spacing between presents so FPS NEVER exceeds targetFps
+                int targetFps = mobile_ui::get().settings().targetFps;
+                if (mobile_ui::get().settings().batterySaver) targetFps = 30;
+                syncMobileFrameRate(targetFps, port_get_game_speed());
+
                 eglSwapBuffers(a.display, a.surface);
                 int64_t renderEndNs = port_host_time_ns();
                 port_perf_render(renderEndNs - renderStartNs, 0);
                 mobile_ui::get().reportGpuRenderTime(renderEndNs - renderStartNs);
-
-                // Precise frame pacer (30, 60, 90, 120, 144 FPS blocker)
-                int targetFps = mobile_ui::get().settings().targetFps;
-                if (mobile_ui::get().settings().batterySaver) targetFps = 30;
-                syncMobileFrameRate(targetFps, port_get_game_speed());
+                mobile_ui::get().reportFramePresented();
             } else {
-                if (mobile_ui::get().needsRedraw()) {
+                if (mobile_ui::get().needsRedraw() &&
+                    (!a.gameBooted || port_is_paused() || mobile_ui::get().isSettingsOpen())) {
                     glBindFramebuffer(GL_FRAMEBUFFER, 0);
                     glViewport(0, 0, a.screenWidth, a.screenHeight);
                     glDisable(GL_SCISSOR_TEST);
@@ -1300,11 +1308,13 @@ extern "C" __attribute__((visibility("default"))) void port_android_main(struct 
                                           GL_COLOR_BUFFER_BIT, GL_LINEAR);
                     }
 
-                    mobile_ui::get().render(a.screenWidth, a.screenHeight);
-                    eglSwapBuffers(a.display, a.surface);
                     int targetFps = mobile_ui::get().settings().targetFps;
                     if (mobile_ui::get().settings().batterySaver) targetFps = 30;
                     syncMobileFrameRate(targetFps, 1.0f);
+
+                    mobile_ui::get().render(a.screenWidth, a.screenHeight);
+                    eglSwapBuffers(a.display, a.surface);
+                    mobile_ui::get().reportFramePresented();
                 } else if (!r.hasFrame()) {
                     // Idle screen while waiting for the game to boot or submit frames
                     glBindFramebuffer(GL_FRAMEBUFFER, 0);

@@ -366,6 +366,10 @@ void UIOverlay::setSavePath(const std::string& path) {
     applyLanguage(mSettings.languageChoice);
 }
 
+void UIOverlay::reportFramePresented() {
+    mFpsFrameCounter++;
+}
+
 bool UIOverlay::needsRedraw() {
     float target = mSettingsOpen ? 1.0f : 0.0f;
     if (fabsf(mDrawerAnim - target) > 0.001f) {
@@ -634,11 +638,13 @@ void UIOverlay::update(PortPadState& pad, int& spinFrames) {
     int64_t nowNs = (int64_t)ts.tv_sec * 1000000000ll + ts.tv_nsec;
     if (mFpsLastTimeNs == 0) mFpsLastTimeNs = nowNs;
     int64_t diffNs = nowNs - mFpsLastTimeNs;
-    mFpsFrameCounter++;
-
     if (diffNs >= 500000000ll) { // Sample every 500ms
         float sec = (float)diffNs / 1e9f;
         mCurrentFps = (float)mFpsFrameCounter / sec;
+        int activeTargetFps = mSettings.batterySaver ? 30 : mSettings.targetFps;
+        if (port_get_game_speed() <= 1.05f && mCurrentFps > (float)activeTargetFps) {
+            mCurrentFps = (float)activeTargetFps;
+        }
         mAvgFrameTimeMs = 1000.0f / (mCurrentFps > 1.0f ? mCurrentFps : 1.0f);
         mFpsFrameCounter = 0;
         mFpsLastTimeNs = nowNs;

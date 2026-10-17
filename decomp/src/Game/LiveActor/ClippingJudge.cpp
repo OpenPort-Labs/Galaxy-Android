@@ -12,13 +12,13 @@ ClippingJudge::ClippingJudge(const char* pName) : NameObj(pName), mFrustum() {
     }
 
     mClipDistances[0] = 0.0f;
-    mClipDistances[1] = 90000.0f;
-    mClipDistances[2] = 75000.0f;
-    mClipDistances[3] = 60000.0f;
-    mClipDistances[4] = 45000.0f;
-    mClipDistances[5] = 30000.0f;
-    mClipDistances[6] = 20000.0f;
-    mClipDistances[7] = 12000.0f;
+    mClipDistances[1] = 60000.0f;
+    mClipDistances[2] = 50000.0f;
+    mClipDistances[3] = 40000.0f;
+    mClipDistances[4] = 30000.0f;
+    mClipDistances[5] = 20000.0f;
+    mClipDistances[6] = 10000.0f;
+    mClipDistances[7] = 5000.0f;
 }
 
 void ClippingJudge::init(const JMapInfoIter& rIter) {

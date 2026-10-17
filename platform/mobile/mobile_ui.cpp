@@ -470,18 +470,23 @@ void UIOverlay::triggerSaveSlot(int slot) {
     size_t lastSlash = mSavePath.find_last_of('/');
     if (lastSlash == std::string::npos) return;
     std::string nandDir = mSavePath.substr(0, lastSlash);
-    std::string slotDir = nandDir + "_slot" + std::to_string(slot);
+    std::string slotSuffix = (slot == 4) ? "_quick" : ("_slot" + std::to_string(slot));
+    std::string slotDir = nandDir + slotSuffix;
     copyDirRecursive(nandDir, slotDir);
 
     mkdir("/sdcard/GalaxyData", 0775);
     mkdir("/sdcard/GalaxyData/saves", 0775);
-    std::string pubSlot = "/sdcard/GalaxyData/saves/slot" + std::to_string(slot);
+    std::string pubSlot = "/sdcard/GalaxyData/saves/" + ((slot == 4) ? std::string("quick") : ("slot" + std::to_string(slot)));
     copyDirRecursive(nandDir, pubSlot);
     copyDirRecursive(nandDir, "/sdcard/GalaxyData/saves/current");
 
     if (mSettings.haptics) port_android_vibrate(50);
     char msg[96];
-    snprintf(msg, sizeof(msg), "Saved to Slot %d! (GalaxyData/saves)", slot);
+    if (slot == 4) {
+        snprintf(msg, sizeof(msg), "Quick Saved Anywhere! (GalaxyData/saves)");
+    } else {
+        snprintf(msg, sizeof(msg), "Saved to Slot %d! (GalaxyData/saves)", slot);
+    }
     showToast(msg);
     LOGI("NAND saved to slot %d: %s and mirrored to %s", slot, slotDir.c_str(), pubSlot.c_str());
 }
@@ -491,23 +496,33 @@ void UIOverlay::triggerLoadSlot(int slot) {
     size_t lastSlash = mSavePath.find_last_of('/');
     if (lastSlash == std::string::npos) return;
     std::string nandDir = mSavePath.substr(0, lastSlash);
-    std::string slotDir = nandDir + "_slot" + std::to_string(slot);
+    std::string slotSuffix = (slot == 4) ? "_quick" : ("_slot" + std::to_string(slot));
+    std::string slotDir = nandDir + slotSuffix;
     struct stat st;
     if (stat(slotDir.c_str(), &st) != 0 || !S_ISDIR(st.st_mode)) {
-        std::string pubSlot = "/sdcard/GalaxyData/saves/slot" + std::to_string(slot);
+        std::string pubSlot = "/sdcard/GalaxyData/saves/" + ((slot == 4) ? std::string("quick") : ("slot" + std::to_string(slot)));
         if (stat(pubSlot.c_str(), &st) == 0 && S_ISDIR(st.st_mode)) {
             slotDir = pubSlot;
         } else {
             char msg[64];
-            snprintf(msg, sizeof(msg), "Slot %d is empty!", slot);
+            if (slot == 4) {
+                snprintf(msg, sizeof(msg), "Quick Save slot is empty!");
+            } else {
+                snprintf(msg, sizeof(msg), "Slot %d is empty!", slot);
+            }
             showToast(msg);
             return;
         }
     }
     copyDirRecursive(slotDir, nandDir);
+    port_trigger_quick_load(slot);
     if (mSettings.haptics) port_android_vibrate(75);
     char msg[64];
-    snprintf(msg, sizeof(msg), "Slot %d Loaded!", slot);
+    if (slot == 4) {
+        snprintf(msg, sizeof(msg), "Quick Save Loaded & Stage Reloaded!");
+    } else {
+        snprintf(msg, sizeof(msg), "Slot %d Loaded & Stage Reloaded!", slot);
+    }
     showToast(msg);
     LOGI("NAND restored from slot %d: %s", slot, slotDir.c_str());
 }
@@ -1080,9 +1095,14 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
 
                     if (mSettingsTab == 0 || !mPlusEdition) {
                         // General Tab items
-                        // Row 0: Quick Save Anywhere Action Button
+                        // Row 0: Quick Save / Quick Load Anywhere Action Buttons
                         if (contentRelY >= 0.0f && contentRelY <= 52.0f * uiScale) {
-                            triggerSaveAnywhere();
+                            float midX = drawerX + padX + contentW * 0.5f;
+                            if (px < midX) {
+                                triggerSaveSlot(4);
+                            } else {
+                                triggerLoadSlot(4);
+                            }
                         }
                         // Row 1: Visibility Switch
                         else if (contentRelY >= 54.0f * uiScale && contentRelY <= 102.0f * uiScale) {
@@ -1342,9 +1362,9 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
                         }
                         // Row 6: Save Slot Selector
                         else if (contentRelY >= 336.0f * uiScale && contentRelY < 396.0f * uiScale) {
-                            float segW = contentW / 3.0f;
+                            float segW = contentW / 4.0f;
                             int idx = (int)((px - (drawerX + padX)) / segW);
-                            mCurrentSlot = std::max(1, std::min(3, idx + 1));
+                            mCurrentSlot = std::max(1, std::min(4, idx + 1));
                         }
                         // Row 7: Slot Save / Reload Buttons
                         else if (contentRelY >= 398.0f * uiScale && contentRelY < 458.0f * uiScale) {
@@ -2348,15 +2368,26 @@ void UIOverlay::generateVertices(int screenW, int screenH, std::vector<UIVertex>
                 }
             };
 
-            // Row 0: Quick Save Anywhere Action Button
+            // Row 0: Quick Save & Quick Load Anywhere Action Buttons
             renderRow(8.0f * uiScale, 48.0f * uiScale, [&](float y) {
+                float bW = (contentW - 10.0f * uiScale) * 0.5f;
                 float btnY = y + 4.0f * uiScale;
-                float bX0 = drawerX + padX;
-                float bX1 = drawerX + drawerW - padX;
-                drawRoundRect(bX0, btnY, bX1, btnY + 40.0f * uiScale, 14.0f * uiScale, rgba(0.06f, 0.42f, 0.32f, 0.95f));
-                drawRoundRect(bX0, btnY, bX1, btnY + 40.0f * uiScale, 14.0f * uiScale, rgba(0.25f, 0.85f, 0.65f, 0.60f));
-                drawCircle(bX0 + 24.0f * uiScale, btnY + 20.0f * uiScale, 6.0f * uiScale, rgba(0.35f, 0.98f, 0.75f, 1.0f));
-                drawText("QUICK SAVE ANYWHERE", (bX0 + bX1) * 0.5f + 8.0f * uiScale, btnY + 26.0f * uiScale, 0.38f * uiScale, rgba(1.0f, 1.0f, 1.0f, 1.0f), 1);
+
+                // Quick Save (Green)
+                float sX0 = drawerX + padX;
+                float sX1 = sX0 + bW;
+                drawRoundRect(sX0, btnY, sX1, btnY + 40.0f * uiScale, 14.0f * uiScale, rgba(0.06f, 0.42f, 0.32f, 0.95f));
+                drawRoundRect(sX0, btnY, sX1, btnY + 40.0f * uiScale, 14.0f * uiScale, rgba(0.25f, 0.85f, 0.65f, 0.60f));
+                drawCircle(sX0 + 18.0f * uiScale, btnY + 20.0f * uiScale, 5.0f * uiScale, rgba(0.35f, 0.98f, 0.75f, 1.0f));
+                drawText("QUICK SAVE", (sX0 + sX1) * 0.5f + 6.0f * uiScale, btnY + 25.0f * uiScale, 0.35f * uiScale, rgba(1.0f, 1.0f, 1.0f, 1.0f), 1);
+
+                // Quick Load (Blue)
+                float lX0 = sX1 + 10.0f * uiScale;
+                float lX1 = lX0 + bW;
+                drawRoundRect(lX0, btnY, lX1, btnY + 40.0f * uiScale, 14.0f * uiScale, rgba(0.12f, 0.28f, 0.55f, 0.95f));
+                drawRoundRect(lX0, btnY, lX1, btnY + 40.0f * uiScale, 14.0f * uiScale, rgba(0.35f, 0.65f, 0.98f, 0.60f));
+                drawCircle(lX0 + 18.0f * uiScale, btnY + 20.0f * uiScale, 5.0f * uiScale, rgba(0.45f, 0.80f, 1.0f, 1.0f));
+                drawText("QUICK LOAD", (lX0 + lX1) * 0.5f + 6.0f * uiScale, btnY + 25.0f * uiScale, 0.35f * uiScale, rgba(1.0f, 1.0f, 1.0f, 1.0f), 1);
             });
 
             // Row 1: Visibility Switch
@@ -2643,8 +2674,8 @@ void UIOverlay::generateVertices(int screenW, int screenH, std::vector<UIVertex>
             // Row 6: Save Slot Selector
             renderRow(340.0f * uiScale, 54.0f * uiScale, [&](float y) {
                 drawText("Multi-Save Slot", drawerX + padX, y + 14.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
-                const char* slotOpts[3] = {"Slot 1", "Slot 2", "Slot 3"};
-                drawSegmentedGroup(drawerX + padX, y + 22.0f * uiScale, contentW, 34.0f * uiScale, slotOpts, 3, mCurrentSlot - 1);
+                const char* slotOpts[4] = {"Slot 1", "Slot 2", "Slot 3", "Quick"};
+                drawSegmentedGroup(drawerX + padX, y + 22.0f * uiScale, contentW, 34.0f * uiScale, slotOpts, 4, mCurrentSlot - 1);
             });
 
             // Row 7: Slot Save / Reload Action Buttons
@@ -2656,7 +2687,12 @@ void UIOverlay::generateVertices(int screenW, int screenH, std::vector<UIVertex>
                 float sX1 = sX0 + bW;
                 drawRoundRect(sX0, btnY, sX1, btnY + 40.0f * uiScale, 12.0f * uiScale, rgba(0.06f, 0.42f, 0.32f, 0.95f));
                 drawRoundRect(sX0, btnY, sX1, btnY + 40.0f * uiScale, 12.0f * uiScale, rgba(0.25f, 0.85f, 0.65f, 0.60f));
-                char sTxt[32]; snprintf(sTxt, sizeof(sTxt), "Save Slot %d", mCurrentSlot);
+                char sTxt[32];
+                if (mCurrentSlot == 4) {
+                    snprintf(sTxt, sizeof(sTxt), "Quick Save");
+                } else {
+                    snprintf(sTxt, sizeof(sTxt), "Save Slot %d", mCurrentSlot);
+                }
                 drawText(sTxt, (sX0 + sX1) * 0.5f, btnY + 25.0f * uiScale, 0.34f * uiScale, rgba(1.0f, 1.0f, 1.0f, 1.0f), 1);
 
                 // Reload Button (Blue)
@@ -2664,7 +2700,12 @@ void UIOverlay::generateVertices(int screenW, int screenH, std::vector<UIVertex>
                 float rX1 = rX0 + bW;
                 drawRoundRect(rX0, btnY, rX1, btnY + 40.0f * uiScale, 12.0f * uiScale, rgba(0.12f, 0.28f, 0.55f, 0.95f));
                 drawRoundRect(rX0, btnY, rX1, btnY + 40.0f * uiScale, 12.0f * uiScale, rgba(0.35f, 0.65f, 0.98f, 0.60f));
-                char rTxt[32]; snprintf(rTxt, sizeof(rTxt), "Reload Slot %d", mCurrentSlot);
+                char rTxt[32];
+                if (mCurrentSlot == 4) {
+                    snprintf(rTxt, sizeof(rTxt), "Quick Load");
+                } else {
+                    snprintf(rTxt, sizeof(rTxt), "Reload Slot %d", mCurrentSlot);
+                }
                 drawText(rTxt, (rX0 + rX1) * 0.5f, btnY + 25.0f * uiScale, 0.34f * uiScale, rgba(1.0f, 1.0f, 1.0f, 1.0f), 1);
             });
 

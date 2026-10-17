@@ -25,6 +25,7 @@
 #include "Game/Util/MemoryUtil.hpp"
 #include "Game/Util/MutexHolder.hpp"
 #include "Game/Util/NerveUtil.hpp"
+#include "Game/Util/SceneUtil.hpp"
 #include "Game/Util/SequenceUtil.hpp"
 #include "Game/Util/SingletonHolder.hpp"
 #include "Game/Util/SystemUtil.hpp"
@@ -242,47 +243,24 @@ void GameSystem::frameLoop() {
     MainLoopFramework::sManager->beginRender();
     draw();
     MainLoopFramework::sManager->endRender();
-#ifdef TARGET_PC
+
     if (port_check_quick_save_request()) {
         GameSequenceFunction::quickSaveAnywhere();
     }
 
-    // Decoupled fixed 60Hz physics simulation tick
-    // Enables high-refresh display pacing (90Hz / 120Hz / 144Hz) without accelerating physics or game speed
-    static int64_t sLastTickNs = 0;
-    static double sAccumulatorNs = 0.0;
-    const double kSimTickNs = 1000000000.0 / 60.0; // 16.666666 ms fixed step
-
-    if (port_is_paused()) {
-        sLastTickNs = 0;
-        sAccumulatorNs = 0.0;
+    int loadSlot = 1;
+    if (port_check_quick_load_request(&loadSlot)) {
+        GameSequenceFunction::startPreLoadSaveDataSequence();
+        GameSequenceFunction::startGameDataLoadSequence(0, true);
+        GameSequenceFunction::storeSceneStartGameDataHolder();
+        const char* stage = MR::getCurrentStageName();
+        if (stage && stage[0] && strcmp(stage, "Logo") != 0 && strcmp(stage, "Title") != 0) {
+            MR::requestChangeScene(stage);
+        }
     }
 
-    int64_t nowNs = port_host_time_ns();
-    if (sLastTickNs == 0) {
-        sLastTickNs = nowNs;
-        sAccumulatorNs = kSimTickNs; // Ensure initial step
-    } else {
-        int64_t deltaNs = nowNs - sLastTickNs;
-        sLastTickNs = nowNs;
-        if (deltaNs > 100000000ll) deltaNs = 100000000ll; // clamp lag spike to 100ms
-        if (deltaNs < 0) deltaNs = 0;
-        float speed = port_get_game_speed();
-        if (speed < 0.25f) speed = 0.25f;
-        sAccumulatorNs += (double)deltaNs * speed;
-    }
-
-    int updates = 0;
-    while (sAccumulatorNs >= kSimTickNs && updates < 4) {
-        update();
-        calcAnim();
-        sAccumulatorNs -= kSimTickNs;
-        updates++;
-    }
-#else
     update();
     calcAnim();
-#endif
     mObjHolder->captureIfAllowForScreenPreserver();
     MainLoopFramework::sManager->endFrame();
 #ifdef TARGET_PC

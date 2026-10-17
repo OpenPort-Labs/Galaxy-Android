@@ -124,7 +124,7 @@ public:
     void triggerSaveSlot(int slot);
     void triggerLoadSlot(int slot);
     int currentSlot() const { return mCurrentSlot; }
-    void setCurrentSlot(int s) { mCurrentSlot = (s >= 1 && s <= 3) ? s : 1; }
+    void setCurrentSlot(int s) { mCurrentSlot = (s >= 1 && s <= 4) ? s : 1; }
     void showToast(const std::string& msg);
     Settings& settings() { return mSettings; }
     // The backend that actually initialised (1 = Vulkan 1.0, 0 = OpenGL ES):

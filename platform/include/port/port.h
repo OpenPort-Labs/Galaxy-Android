@@ -153,6 +153,8 @@ void port_set_game_speed(float speed);
 float port_get_game_speed(void);
 void port_trigger_quick_save(void);
 int port_check_quick_save_request(void);
+void port_trigger_quick_load(int slot);
+int port_check_quick_load_request(int* slot);
 void port_android_vibrate(int ms);
 
 // Frame-time statistics (platform/src/port/perf.cpp), logged every 10 s.

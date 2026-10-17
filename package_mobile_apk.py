@@ -387,8 +387,11 @@ def main():
             raise RuntimeError("CRITICAL ERROR: pythonhome.zip is missing! Cannot build APK without Python environment.")
 
         if os.path.isdir(assets_dir):
-            for root, _, files in os.walk(assets_dir):
+            for root, dirs, files in os.walk(assets_dir):
+                dirs[:] = [d for d in dirs if d != "__pycache__"]
                 for f in files:
+                    if f.endswith(".pyc") or f == ".DS_Store":
+                        continue
                     p = os.path.join(root, f)
                     arc = os.path.relpath(p, INSTALLER_DIR).replace("\\", "/")
                     z.write(p, arc, compress_type=zipfile.ZIP_DEFLATED)

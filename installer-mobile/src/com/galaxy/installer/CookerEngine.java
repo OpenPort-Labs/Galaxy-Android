@@ -220,6 +220,16 @@ public class CookerEngine {
         if (scriptAssets != null) {
             byte[] buffer = new byte[8192];
             for (String file : scriptAssets) {
+                if (file == null || file.equals("__pycache__") || file.endsWith(".pyc")) {
+                    continue;
+                }
+                try {
+                    String[] sub = context.getAssets().list("scripts/" + file);
+                    if (sub != null && sub.length > 0) {
+                        continue;
+                    }
+                } catch (Exception ignored) {}
+
                 File dest = new File(scriptsDir, file);
                 try (InputStream in = context.getAssets().open("scripts/" + file);
                      OutputStream out = new FileOutputStream(dest)) {
@@ -227,6 +237,8 @@ public class CookerEngine {
                     while ((len = in.read(buffer)) > 0) {
                         out.write(buffer, 0, len);
                     }
+                } catch (java.io.FileNotFoundException fnf) {
+                    Log.w(TAG, "Skipping directory or unopenable asset: scripts/" + file);
                 }
             }
         }

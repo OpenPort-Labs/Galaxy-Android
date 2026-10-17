@@ -331,15 +331,16 @@ def convert(data_dir, out_dir, jobs=None, only=None, no_audio=False,
     for msg, v in notes.most_common(40):
         print('note (%dx): %s' % (v, msg))
     if errors:
-        print('[Engine] Finished with %d non-critical warnings:' % len(errors))
-        for e in errors[:5]:
-            print('  [Warning]', e)
-        has_fst = os.path.isfile(os.path.join(args.out_dir, 'sys', 'fst.bin'))
-        has_objects = os.path.isdir(os.path.join(args.out_dir, 'files', 'ObjectData'))
-        if has_fst and has_objects and len(errors) < 50:
-            print('[Engine] All core game assets ready! Proceeding to launch.')
-            return 0
-    return 1 if errors else 0
+        print('[Engine] Conversion failed with %d error(s):' % len(errors))
+        for e in errors[:20]:
+            print('  [Error]', e)
+        return 1
+    # Fail closed: whatever is left in out_dir gets installed, so never report
+    # success without the core converted output present.
+    if not os.path.isfile(os.path.join(args.out_dir, 'sys', 'fst.bin')):
+        print('[Engine] Conversion failed: sys/fst.bin missing from %s' % args.out_dir)
+        return 1
+    return 0
 
 
 def main(args=None):

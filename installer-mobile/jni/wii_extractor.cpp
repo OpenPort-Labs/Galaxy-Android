@@ -39,6 +39,31 @@ static inline uint32_t read_be32(const uint8_t* p) {
            (uint32_t(p[2]) << 8)  | uint32_t(p[3]);
 }
 
+// True when [offset, offset + length) lies inside [0, limit).
+static bool rangeFits(uint64_t offset, uint64_t length, uint64_t limit) {
+    return offset <= limit && length <= limit - offset;
+}
+
+// A single FST path component: non-empty, relative, no separators.
+static bool safeName(const char* name) {
+    if (!name || !*name) return false;
+    if (strcmp(name, ".") == 0 || strcmp(name, "..") == 0) return false;
+    for (const char* c = name; *c; ++c) {
+        if (*c == '/' || *c == '\\') return false;
+    }
+    return true;
+}
+
+// Resolves the NUL-terminated name at `nameOff` inside the FST string table.
+// Returns null when the offset is out of range, the name runs past the table,
+// or the name is not a safe single path component.
+static const char* fstName(const char* stringTable, size_t stringTableSize, uint32_t nameOff) {
+    if (nameOff >= stringTableSize) return nullptr;
+    const char* name = stringTable + nameOff;
+    if (!memchr(name, '\0', stringTableSize - nameOff)) return nullptr;
+    return safeName(name) ? name : nullptr;
+}
+
 static void ensure_directory_exists(const std::string& path) {
     size_t pos = 0;
     while ((pos = path.find('/', pos + 1)) != std::string::npos) {
@@ -109,6 +134,7 @@ public:
                     memset(out, 0, chunk);
                 } else {
                     uint64_t physOffset = (uint64_t)physBlock * m_wbfsBlockSize + blockRem;
+                    if (!rangeFits(physOffset, chunk, m_fileSize)) return false;
                     if (fseeko(m_fp, (off_t)physOffset, SEEK_SET) != 0) return false;
                     if (fread(out, 1, chunk, m_fp) != chunk) return false;
                 }
@@ -144,8 +170,19 @@ static std::unique_ptr<DiscImageReader> openDiscImage(const std::string& path) {
     if (read_be32(header) == 0x57424653) {
         uint8_t hdSecSzShift = header[8];
         uint8_t wbfsSecSzShift = header[9];
-        uint32_t hdSecSz = 1 << hdSecSzShift;
+        // Reject implausible shifts: they seed every derived size and the block
+        // count, so an out-of-range value would either overflow or allocate
+        // gigabytes.
+        if (hdSecSzShift < 9 || hdSecSzShift > 31 || wbfsSecSzShift < 15 || wbfsSecSzShift > 31) {
+            fclose(fp);
+            return nullptr;
+        }
+        uint32_t hdSecSz = 1u << hdSecSzShift;
         uint64_t wbfsSecSz = (uint64_t)1 << wbfsSecSzShift;
+        if (fileSz < hdSecSz + 0x100) {
+            fclose(fp);
+            return nullptr;
+        }
 
         // In a standalone .wbfs file, disc_info starts at hdSecSz
         if (fseeko(fp, (off_t)hdSecSz, SEEK_SET) != 0) {
@@ -165,8 +202,13 @@ static std::unique_ptr<DiscImageReader> openDiscImage(const std::string& path) {
             return nullptr;
         }
 
-        // Read WLBA table
-        size_t numBlocks = (size_t)(4699979776ULL / wbfsSecSz);
+        // Read WLBA table (one 16-bit physical block index per disc block).
+        uint64_t blocks = 4699979776ULL / wbfsSecSz;
+        if (blocks == 0 || blocks > fileSz / 2) {  // the table itself must fit in the file
+            fclose(fp);
+            return nullptr;
+        }
+        size_t numBlocks = (size_t)blocks;
         std::vector<uint16_t> wlba(numBlocks);
         std::vector<uint8_t> rawTable(numBlocks * 2);
         if (fread(rawTable.data(), 1, rawTable.size(), fp) != rawTable.size()) {
@@ -213,6 +255,9 @@ private:
 public:
     WiiPartitionSession(DiscImageReader* disc) : m_disc(disc) {}
 
+    // Size of the decrypted DATA partition, used to bound every logical read.
+    uint64_t dataSize() const { return m_dataSize; }
+
     bool initDataPartition(LogCallback log) {
         // Read partition table info at 0x40000
         uint8_t partInfo[8];
@@ -223,9 +268,16 @@ public:
 
         uint32_t numPartitions = read_be32(partInfo);
         uint64_t tableOffset = (uint64_t)read_be32(partInfo + 4) << 2;
+        // A Wii disc has at most four partitions; anything else is a corrupt
+        // header and would otherwise size the allocation below.
+        if (numPartitions == 0 || numPartitions > 4) {
+            if (log) log("[Error] Implausible partition count in the disc header.");
+            return false;
+        }
 
-        std::vector<uint8_t> tableData(numPartitions * 8);
-        if (!m_disc->read(tableOffset, tableData.size(), tableData.data())) {
+        std::vector<uint8_t> tableData((size_t)numPartitions * 8);
+        if (!rangeFits(tableOffset, tableData.size(), m_disc->size()) ||
+            !m_disc->read(tableOffset, tableData.size(), tableData.data())) {
             if (log) log("[Error] Failed to read partition table entries.");
             return false;
         }
@@ -376,6 +428,12 @@ bool extractWiiDisc(
     uint64_t fstOffset = (uint64_t)read_be32(bootBin + 0x424) << 2;
     uint32_t fstSize   = read_be32(bootBin + 0x428) << 2;
 
+    // The FST must be at least a header and lie inside the partition.
+    if (fstSize < 12 || !rangeFits(fstOffset, fstSize, session.dataSize())) {
+        if (logCb) logCb("[Error] FST offset/size in the disc header is out of range.");
+        return false;
+    }
+
     // 1. Extract main.dol
     if (logCb) logCb("[Extractor] Extracting sys/main.dol...");
     uint8_t dolHeader[0x100];
@@ -396,6 +454,10 @@ bool extractWiiDisc(
         if (off + len > dolSize) dolSize = off + len;
     }
 
+    if (dolSize == 0 || !rangeFits(dolOffset, dolSize, session.dataSize())) {
+        if (logCb) logCb("[Error] DOL offset/size in the disc header is out of range.");
+        return false;
+    }
     if (!session.extractFileToDisk(dolOffset, dolSize, sysDir + "/main.dol")) {
         if (logCb) logCb("[Error] Failed to extract sys/main.dol.");
         return false;
@@ -415,8 +477,17 @@ bool extractWiiDisc(
         return false;
     }
 
+    // The 12-byte entry table and the name strings after it must both fit
+    // inside the buffer read from the disc; numEntries * 12 is widened so it
+    // cannot wrap before the comparison.
     uint32_t numEntries = read_be32(fstData.data() + 8);
-    const char* stringTable = (const char*)(fstData.data() + numEntries * 12);
+    if (numEntries == 0 || (uint64_t)numEntries * 12 >= fstSize) {
+        if (logCb) logCb("[Error] FST entry count is out of range.");
+        return false;
+    }
+    const size_t stringTableOffset = (size_t)numEntries * 12;
+    const char* stringTable = (const char*)(fstData.data() + stringTableOffset);
+    const size_t stringTableSize = fstSize - stringTableOffset;
 
     struct DirFrame {
         uint32_t nextIdx;
@@ -428,6 +499,7 @@ bool extractWiiDisc(
     if (logCb) logCb("[Extractor] Found " + std::to_string(numEntries) + " FST entries. Extracting game files...");
 
     uint32_t filesExtracted = 0;
+    uint32_t failedFiles = 0;
     for (uint32_t i = 1; i < numEntries; ++i) {
         const uint8_t* entry = fstData.data() + i * 12;
         while (!dirStack.empty() && i >= dirStack.back().nextIdx) {
@@ -436,16 +508,28 @@ bool extractWiiDisc(
 
         uint8_t flags = entry[0];
         uint32_t nameOff = ((uint32_t)entry[1] << 16) | ((uint32_t)entry[2] << 8) | (uint32_t)entry[3];
-        const char* name = stringTable + nameOff;
+        const char* name = fstName(stringTable, stringTableSize, nameOff);
+        if (!name) {
+            if (logCb) logCb("[Warning] Skipping an FST entry with an invalid name.");
+            continue;
+        }
 
         if (flags & 1) { // Directory
             uint32_t nextIdx = read_be32(entry + 8);
+            if (nextIdx <= i || nextIdx > numEntries) {
+                if (logCb) logCb("[Warning] Skipping an FST directory with an invalid span.");
+                continue;
+            }
             std::string dirPath = dirStack.back().path.empty() ? name : dirStack.back().path + "/" + name;
             dirStack.push_back({nextIdx, dirPath});
             ensure_directory_exists(filesDir + "/" + dirPath);
         } else { // File
             uint64_t fileOffset = (uint64_t)read_be32(entry + 4) << 2;
             uint32_t fileLen    = read_be32(entry + 8);
+            if (!rangeFits(fileOffset, fileLen, session.dataSize())) {
+                if (logCb) logCb("[Warning] Skipping an FST entry with an out-of-range file offset.");
+                continue;
+            }
             std::string filePath = dirStack.back().path.empty() ? name : dirStack.back().path + "/" + name;
 
             // Skip movies if user did not request them
@@ -458,7 +542,9 @@ bool extractWiiDisc(
 
             std::string fullOutPath = filesDir + "/" + filePath;
             if (!session.extractFileToDisk(fileOffset, fileLen, fullOutPath)) {
-                if (logCb) logCb("[Warning] Failed to extract: " + filePath);
+                if (logCb) logCb("[Error] Failed to extract: " + filePath);
+                failedFiles++;
+                continue;
             }
 
             filesExtracted++;
@@ -467,6 +553,14 @@ bool extractWiiDisc(
                 if (progressCb) progressCb(percent, "Extracting: " + filePath);
             }
         }
+    }
+
+    // Fail closed: a partial tree would be handed straight to the cooker, so an
+    // incomplete extraction must not be reported as success.
+    if (failedFiles > 0) {
+        if (logCb) logCb("[Error] Disc extraction was incomplete: " + std::to_string(failedFiles) +
+                         " file(s) could not be written.");
+        return false;
     }
 
     if (logCb) logCb("[Extractor] Successfully extracted " + std::to_string(filesExtracted) + " files!");

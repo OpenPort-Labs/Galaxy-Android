@@ -236,7 +236,15 @@ static bool loadFst() {
     }
 
     u32 count = be32(&data[8]);
-    const u8* strings = &data[count * 12];
+    // readFst() has already checked that the entry table fits in the file, but a
+    // zero count would leave the root entry missing and the name offsets below
+    // need a bounded string table to be validated against.
+    if (count < 1) {
+        port_log("dvd: fst holds no entries");
+        return false;
+    }
+    const u8* strings = &data[(size_t)count * 12];
+    const size_t stringsSize = data.size() - (size_t)count * 12;
     sFst.resize(count);
     // Directory path of each directory entry, built as we walk.
     std::vector<std::string> dirPath(count);
@@ -254,12 +262,32 @@ static bool loadFst() {
         FstEntry& fe = sFst[i];
         fe.isDir = e[0] != 0;
         u32 nameOff = be32(e) & 0x00FFFFFF;
-        fe.name = (const char*)(strings + nameOff);
+        // An offset outside the string table, or a name that never terminates
+        // inside it, would make the std::string below scan past the buffer.
+        if (nameOff >= stringsSize || !memchr(strings + nameOff, '\0', stringsSize - nameOff)) {
+            port_log("dvd: fst entry %u has an out-of-range name offset", i);
+            return false;
+        }
+        const char* name = (const char*)(strings + nameOff);
+        // Names become host paths, so no separator, parent reference or empty name.
+        if (*name == '\0' || strchr(name, '/') || strchr(name, '\\') || strcmp(name, "..") == 0) {
+            port_log("dvd: fst entry %u has an unusable name", i);
+            return false;
+        }
+        fe.name = name;
         u32 parentDir = stack.back();
         std::string full = dirPath[parentDir].empty() ? fe.name : dirPath[parentDir] + "/" + fe.name;
         if (fe.isDir) {
-            fe.parent = be32(e + 4);
-            fe.next = be32(e + 8);
+            u32 parent = be32(e + 4);
+            u32 next = be32(e + 8);
+            // findChild() walks entries up to `next` and `..` jumps to `parent`,
+            // both by indexing sFst, so an unchecked span reads past the table.
+            if (parent >= count || next > count) {
+                port_log("dvd: fst dir entry %u has an invalid parent/next span", i);
+                return false;
+            }
+            fe.parent = parent;
+            fe.next = next;
             dirPath[i] = full;
             stack.push_back(i);
         } else {

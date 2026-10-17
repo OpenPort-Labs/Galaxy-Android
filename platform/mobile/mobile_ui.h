@@ -30,6 +30,16 @@ struct Settings {
     float stickOffsetY = 0.0f;
     float buttonOffsetX = 0.0f;
     float buttonOffsetY = 0.0f;
+    // Per-button offsets on top of the shared button cluster offset, so A, B,
+    // Z and SPIN can be pulled apart instead of only moving as one pad.
+    float btnAOffsetX = 0.0f;
+    float btnAOffsetY = 0.0f;
+    float btnBOffsetX = 0.0f;
+    float btnBOffsetY = 0.0f;
+    float btnZOffsetX = 0.0f;
+    float btnZOffsetY = 0.0f;
+    float btnSpinOffsetX = 0.0f;
+    float btnSpinOffsetY = 0.0f;
     bool showDpad = true;
     bool dpadOnRight = false;
     float dpadOffsetX = 0.0f;
@@ -154,6 +164,20 @@ public:
 private:
     UIOverlay();
 
+    // Positions (px) of A, B, Z and SPIN for a given screen size.  Shared by
+    // input hit-testing, the overlay drawing and the layout editor so a button
+    // always reacts where it is drawn.
+    struct ButtonLayout {
+        float ax, ay, ar;
+        float bx, by, br;
+        float zx, zy, zr;
+        float spinX, spinY, spinR;
+    };
+    ButtonLayout buttonLayout(int screenW, int screenH) const;
+
+    // Clear every layout offset: pad clusters and individual buttons.
+    void clearLayoutOffsets();
+
     Settings mSettings;
     std::string mSavePath;
     int mCurrentSlot = 1;
@@ -167,7 +191,10 @@ private:
     float mDrawerAnim = 0.0f; // 0.0 = closed offscreen, 1.0 = fully open
     int64_t mLastAnimTime = 0;
     bool mEditLayoutMode = false;
+    bool mDebugEditChecked = false;
     int mDraggingCluster = 0; // 0 = none, 1 = stick cluster, 2 = button cluster
+    int mDraggingButton = -1; // 0 = A, 1 = B, 2 = Z, 3 = SPIN (layout editor)
+    float mInitialOwnOfsX = 0.0f, mInitialOwnOfsY = 0.0f;
     float mDragStartX = 0.0f, mDragStartY = 0.0f;
     float mInitialStickOfsX = 0.0f, mInitialStickOfsY = 0.0f;
     float mInitialBtnOfsX = 0.0f, mInitialBtnOfsY = 0.0f;

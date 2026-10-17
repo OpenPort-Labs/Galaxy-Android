@@ -345,12 +345,18 @@ void idct(const s32* coef, int count, const float* q, u8* out /* 8x8 */) {
     }
 }
 
-// Writes an 8x8 block at (x, y) into an I8 texture of the given size.
+// Writes an 8x8 block at (x, y) into an I8 texture of the given size.  Widths
+// that are not a multiple of 8 put the last block of a row past the plane, so
+// the block is clipped to it instead of overwriting the next tile row.
 void storeBlock(u8* plane, u32 width, u32 height, u32 x, u32 y, const u8* px) {
+    if (x >= width) {
+        return;
+    }
     u32 tilesPerRow = (width + 7) / 8;
+    size_t rowBytes = (x + 8 <= width) ? 8 : (size_t)(width - x);
     for (u32 r = 0; r < 8 && y + r < height; r++) {
         u32 row = y + r;
-        memcpy(plane + ((size_t)(row >> 2) * tilesPerRow + (x >> 3)) * 32 + (row & 3) * 8, px + r * 8, 8);
+        memcpy(plane + ((size_t)(row >> 2) * tilesPerRow + (x >> 3)) * 32 + (row & 3) * 8, px + r * 8, rowBytes);
     }
 }
 

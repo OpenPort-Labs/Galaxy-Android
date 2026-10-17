@@ -88,12 +88,17 @@ void android_main(struct android_app* app) {
         if (!dladdr((void*)android_main, &info) || !info.dli_fname) {
             FATAL("dladdr failed");
         }
-        snprintf(path, sizeof(path), "%s", info.dli_fname);
+        size_t used = (size_t)snprintf(path, sizeof(path), "%s", info.dli_fname);
         char* slash = strrchr(path, '/');
         if (!slash) {
             FATAL("bad library path %s", path);
         }
-        strcpy(slash + 1, "libgame.so");
+        if (used >= sizeof(path)) {
+            // Truncated: appending the name would either overflow the buffer or
+            // dlopen a path that is not the real library location.
+            FATAL("library path too long for %zu bytes: %s", sizeof(path), path);
+        }
+        snprintf(slash + 1, sizeof(path) - (size_t)(slash + 1 - path), "libgame.so");
     } else {
         LOG("using developer libgame.so from %s", path);
     }

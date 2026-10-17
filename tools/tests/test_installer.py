@@ -1,7 +1,9 @@
 """Installer regression tests; never touch a real headset or game disc."""
 import collections
 import contextlib
+import hashlib
 import io
+import os
 from pathlib import Path
 import sys
 import tempfile
@@ -12,6 +14,7 @@ import zipfile
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import install
 import build_installer
+import package_mobile_apk
 import push_data
 
 
@@ -238,6 +241,47 @@ class InstallerTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'Unsafe'):
                 build_installer.extract_tools(archive, root / 'assets')
             self.assertFalse((root / 'escape.txt').exists())
+
+    def test_packager_refuses_a_debuggable_release(self):
+        # The attribute is read as XML, so the manifest's own comment about
+        # android:debuggable="true" does not count as setting it.
+        self.assertTrue(package_mobile_apk.manifest_is_debuggable())
+        with tempfile.TemporaryDirectory() as tmp:
+            clean = Path(tmp) / 'AndroidManifest.xml'
+            clean.write_text(
+                '<?xml version="1.0" encoding="utf-8"?>\n'
+                '<manifest xmlns:android="http://schemas.android.com/apk/res/android">\n'
+                '  <!-- android:debuggable="true" is only mentioned here -->\n'
+                '  <application android:debuggable="false" />\n'
+                '</manifest>\n', encoding='utf-8')
+            self.assertFalse(package_mobile_apk.manifest_is_debuggable(clean))
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop('GALAXY_ALLOW_DEBUGGABLE', None)
+            with self.assertRaisesRegex(SystemExit, 'REFUSING TO PACKAGE'):
+                package_mobile_apk.require_deliberate_debuggable()
+        with mock.patch.dict(os.environ, {'GALAXY_ALLOW_DEBUGGABLE': '1'}):
+            package_mobile_apk.require_deliberate_debuggable()
+
+    def test_platform_tools_download_stays_pinned(self):
+        for name, (archive, size, sha256) in build_installer.PLATFORM_TOOLS.items():
+            self.assertTrue(archive.startswith('platform-tools_r'))
+            self.assertTrue(archive.endswith('.zip'))
+            self.assertEqual(len(sha256), 64)
+            self.assertGreater(size, 1_000_000)
+            url = build_installer.DOWNLOADS[name]
+            self.assertTrue(url.endswith('/' + archive), url)
+            self.assertNotIn('latest', url)
+
+    def test_platform_tools_archive_is_verified_before_extraction(self):
+        payload = b'not the pinned platform-tools archive'
+        with tempfile.TemporaryDirectory() as tmp:
+            archive = Path(tmp) / 'platform-tools.zip'
+            archive.write_bytes(payload)
+            with self.assertRaisesRegex(RuntimeError, 'is %d bytes, expected' % len(payload)):
+                build_installer.verify_download(archive, len(payload) + 1, hashlib.sha256(payload).hexdigest())
+            with self.assertRaisesRegex(RuntimeError, 'SHA-256'):
+                build_installer.verify_download(archive, len(payload), '0' * 64)
+            build_installer.verify_download(archive, len(payload), hashlib.sha256(payload).hexdigest())
 
 
 if __name__ == '__main__':

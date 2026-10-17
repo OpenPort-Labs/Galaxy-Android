@@ -158,6 +158,11 @@ void port_perf_record(int64_t ns);     // GX command recording, game thread
 void port_perf_prepare(int64_t ns);    // a frame prepared for the renderer
 void port_perf_render(int64_t cpuNs, int64_t uploadNs);  // a displayed frame
 void port_perf_gpu_wait(int64_t ns);   // GPU time after submission (simulation)
+// Render-thread phases, so a log can say where a slow frame went instead of only
+// how long the whole frame took.
+void port_perf_update(int64_t ns);   // taking a frame and preparing it
+void port_perf_present(int64_t ns);  // swapchain acquire/submit/present
+void port_perf_pace(int64_t ns);     // time the frame-rate pacer slept on purpose
 
 #ifdef __cplusplus
 }

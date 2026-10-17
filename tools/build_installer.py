@@ -20,11 +20,35 @@ import urllib.request
 import zipfile
 
 REPO = Path(__file__).resolve().parent.parent
-DOWNLOADS = {
-    'win32': 'https://dl.google.com/android/repository/platform-tools-latest-windows.zip',
-    'darwin': 'https://dl.google.com/android/repository/platform-tools-latest-darwin.zip',
-    'linux': 'https://dl.google.com/android/repository/platform-tools-latest-linux.zip',
+# Android platform-tools, pinned to one released archive per platform with the
+# size and SHA-256 of the exact bytes Google serves (repository2-1.xml lists the
+# same version, size and SHA-1).  The "latest" URLs are deliberately not used:
+# they change under us, so a swapped or truncated download would be packaged into
+# an installer unnoticed.  Bump the version, size and hash together.
+PLATFORM_TOOLS = {
+    'win32': ('platform-tools_r37.0.1-win.zip', 8044989,
+              '45f4d63113e895ebde0c90f194099a4676b6ac653bd28d54314a9e022bbc1a99'),
+    'darwin': ('platform-tools_r37.0.1-darwin.zip', 16110554,
+               'ee39ad5967e95c2a07f04dbcbde96b1a0c916ba376096db5d2f498b7727a5d1d'),
+    'linux': ('platform-tools_r37.0.1-linux.zip', 9054187,
+              'd230f13842f60f782a8645f9c813f8f845bf36089ea7289f28c48f17979313f1'),
 }
+DOWNLOADS = {platform: 'https://dl.google.com/android/repository/' + tools[0]
+             for platform, tools in PLATFORM_TOOLS.items()}
+
+
+def verify_download(archive, expected_size, expected_sha256):
+    """Refuse to unpack anything but the pinned platform-tools archive."""
+    actual_size = archive.stat().st_size
+    if actual_size != expected_size:
+        raise RuntimeError('%s is %d bytes, expected %d' % (archive.name, actual_size, expected_size))
+    digest = hashlib.sha256()
+    with archive.open('rb') as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b''):
+            digest.update(chunk)
+    if digest.hexdigest() != expected_sha256:
+        raise RuntimeError('%s has SHA-256 %s, expected %s'
+                           % (archive.name, digest.hexdigest(), expected_sha256))
 
 
 def extract_tools(archive, destination):
@@ -108,6 +132,7 @@ def main():
         request = urllib.request.Request(DOWNLOADS[sys.platform], headers={'User-Agent': 'GalaxyQuest-Installer-Builder'})
         with urllib.request.urlopen(request, timeout=120) as src, archive.open('wb') as dst:
             shutil.copyfileobj(src, dst)
+        verify_download(archive, *PLATFORM_TOOLS[sys.platform][1:])
         extract_tools(archive, assets)
     shutil.copyfile(apk, assets / 'GalaxyQuest.apk')
     shutil.copyfile(REPO / 'LICENSE', assets / 'GalaxyQuest-LICENSE.txt')

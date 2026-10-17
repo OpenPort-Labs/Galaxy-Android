@@ -17,6 +17,10 @@
 #include <string>
 #include <vector>
 
+#if defined(__ANDROID__)
+#include <sys/system_properties.h>
+#endif
+
 #include "port/port.h"
 #include "xr/ui_font.h"
 
@@ -271,6 +275,14 @@ void Settings::load(const std::string& path) {
             else if (!strcmp(key, "stick_offset_y")) stickOffsetY = val;
             else if (!strcmp(key, "button_offset_x")) buttonOffsetX = val;
             else if (!strcmp(key, "button_offset_y")) buttonOffsetY = val;
+            else if (!strcmp(key, "btn_a_offset_x")) btnAOffsetX = val;
+            else if (!strcmp(key, "btn_a_offset_y")) btnAOffsetY = val;
+            else if (!strcmp(key, "btn_b_offset_x")) btnBOffsetX = val;
+            else if (!strcmp(key, "btn_b_offset_y")) btnBOffsetY = val;
+            else if (!strcmp(key, "btn_z_offset_x")) btnZOffsetX = val;
+            else if (!strcmp(key, "btn_z_offset_y")) btnZOffsetY = val;
+            else if (!strcmp(key, "btn_spin_offset_x")) btnSpinOffsetX = val;
+            else if (!strcmp(key, "btn_spin_offset_y")) btnSpinOffsetY = val;
             else if (!strcmp(key, "show_dpad")) showDpad = (val > 0.5f);
             else if (!strcmp(key, "dpad_on_right")) dpadOnRight = (val > 0.5f);
             else if (!strcmp(key, "dpad_offset_x")) dpadOffsetX = val;
@@ -329,6 +341,14 @@ void Settings::save(const std::string& path) const {
     fprintf(f, "stick_offset_y=%.1f\n", stickOffsetY);
     fprintf(f, "button_offset_x=%.1f\n", buttonOffsetX);
     fprintf(f, "button_offset_y=%.1f\n", buttonOffsetY);
+    fprintf(f, "btn_a_offset_x=%.1f\n", btnAOffsetX);
+    fprintf(f, "btn_a_offset_y=%.1f\n", btnAOffsetY);
+    fprintf(f, "btn_b_offset_x=%.1f\n", btnBOffsetX);
+    fprintf(f, "btn_b_offset_y=%.1f\n", btnBOffsetY);
+    fprintf(f, "btn_z_offset_x=%.1f\n", btnZOffsetX);
+    fprintf(f, "btn_z_offset_y=%.1f\n", btnZOffsetY);
+    fprintf(f, "btn_spin_offset_x=%.1f\n", btnSpinOffsetX);
+    fprintf(f, "btn_spin_offset_y=%.1f\n", btnSpinOffsetY);
     fprintf(f, "show_dpad=%d\n", showDpad ? 1 : 0);
     fprintf(f, "dpad_on_right=%d\n", dpadOnRight ? 1 : 0);
     fprintf(f, "dpad_offset_x=%.1f\n", dpadOffsetX);
@@ -598,6 +618,19 @@ uint32_t UIOverlay::getTouchButtons() const {
 }
 
 void UIOverlay::update(PortPadState& pad, int& spinFrames) {
+    // Diagnostic hook: open the layout editor straight away so it can be driven
+    // from `adb shell setprop debug.petari.editlayout 1` without walking the menu.
+    if (!mDebugEditChecked) {
+        mDebugEditChecked = true;
+        char value[PROP_VALUE_MAX] = {0};
+        if (__system_property_get("debug.petari.editlayout", value) > 0 && value[0] == '1') {
+            mEditLayoutMode = true;
+            mSettingsOpen = false;
+            mDirty = true;
+            LOGI("layout edit: opened by debug.petari.editlayout");
+        }
+    }
+
     // 1. Decay virtual tap pulse for full-touch controls (Title screen only)
     if (mTapDelayFrames > 0) {
         mTapDelayFrames--;
@@ -756,6 +789,42 @@ void UIOverlay::update(PortPadState& pad, int& spinFrames) {
     }
 }
 
+UIOverlay::ButtonLayout UIOverlay::buttonLayout(int screenW, int screenH) const {
+    float baseDpi = (float)screenH / 650.0f;
+    float scale = baseDpi * mSettings.scale;
+    float w = (float)screenW;
+    float h = (float)screenH;
+
+    // Shared anchor of the action pad.  Dragging the pad in the layout editor
+    // moves it; the per-button offsets below move a single button.
+    float baseX = w - 150.0f * scale + mSettings.buttonOffsetX;
+    float baseY = h - 150.0f * scale + mSettings.buttonOffsetY;
+
+    ButtonLayout l{};
+
+    // A (Jump) - primary action, the pad anchor
+    l.ax = baseX + mSettings.btnAOffsetX;
+    l.ay = baseY + mSettings.btnAOffsetY;
+    l.ar = 54.0f * scale;
+
+    // B (Shoot Star Bit) - left of A, elevated comfortably
+    l.bx = baseX - 118.0f * scale + mSettings.btnBOffsetX;
+    l.by = baseY - 14.0f * scale + mSettings.btnBOffsetY;
+    l.br = 45.0f * scale;
+
+    // Z (Crouch) - upper left of A, far enough to press Z+A with two fingers
+    l.zx = baseX - 98.0f * scale + mSettings.btnZOffsetX;
+    l.zy = baseY - 132.0f * scale + mSettings.btnZOffsetY;
+    l.zr = 44.0f * scale;
+
+    // SPIN - above A, shifted slightly right for a natural thumb roll
+    l.spinX = baseX + 34.0f * scale + mSettings.btnSpinOffsetX;
+    l.spinY = baseY - 128.0f * scale + mSettings.btnSpinOffsetY;
+    l.spinR = 48.0f * scale;
+
+    return l;
+}
+
 bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& spinFrames,
                             int screenW, int screenH, int vpX, int vpY, int vpW, int vpH) {
     int32_t eventType = AInputEvent_getType(event);
@@ -774,7 +843,6 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
     float scale = baseDpi * mSettings.scale;
     float w = (float)screenW;
     float h = (float)screenH;
-
     // Material 3 Settings Tab Dock (Top-Left Edge)
     float tabW = 56.0f * uiScale;
     float tabH = 48.0f * uiScale;
@@ -840,13 +908,36 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
             }
             float rstBtnX = w * 0.5f + 10.0f, rstBtnY = 50.0f;
             if (px >= rstBtnX && px <= rstBtnX + 100.0f && py >= rstBtnY && py <= rstBtnY + 50.0f) {
-                mSettings.stickOffsetX = 0.0f;
-                mSettings.stickOffsetY = 0.0f;
-                mSettings.buttonOffsetX = 0.0f;
-                mSettings.buttonOffsetY = 0.0f;
-                mSettings.dpadOffsetX = 0.0f;
-                mSettings.dpadOffsetY = 0.0f;
+                clearLayoutOffsets();
                 if (!mSavePath.empty()) mSettings.save(mSavePath);
+                mDirty = true;
+                return true;
+            }
+
+            // A touch that starts on one action button drags just that button,
+            // so Z, A, B and SPIN can be pulled apart.
+            ButtonLayout bl = buttonLayout(screenW, screenH);
+            struct BtnHit { int id; float cx, cy, r; } hits[4] = {
+                {0, bl.ax, bl.ay, bl.ar},
+                {1, bl.bx, bl.by, bl.br},
+                {2, bl.zx, bl.zy, bl.zr},
+                {3, bl.spinX, bl.spinY, bl.spinR},
+            };
+            for (const BtnHit& hit : hits) {
+                float hitR = hit.r * 1.15f;
+                float d2 = (px - hit.cx) * (px - hit.cx) + (py - hit.cy) * (py - hit.cy);
+                if (d2 > hitR * hitR) continue;
+
+                mDraggingButton = hit.id;
+                LOGI("layout edit: dragging button %d from %.0f,%.0f", hit.id, px, py);
+                mDragStartX = px;
+                mDragStartY = py;
+                switch (hit.id) {
+                case 0: mInitialOwnOfsX = mSettings.btnAOffsetX; mInitialOwnOfsY = mSettings.btnAOffsetY; break;
+                case 1: mInitialOwnOfsX = mSettings.btnBOffsetX; mInitialOwnOfsY = mSettings.btnBOffsetY; break;
+                case 2: mInitialOwnOfsX = mSettings.btnZOffsetX; mInitialOwnOfsY = mSettings.btnZOffsetY; break;
+                default: mInitialOwnOfsX = mSettings.btnSpinOffsetX; mInitialOwnOfsY = mSettings.btnSpinOffsetY; break;
+                }
                 mDirty = true;
                 return true;
             }
@@ -890,7 +981,28 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
         } else if (action == AMOTION_EVENT_ACTION_MOVE) {
             float px = AMotionEvent_getX(event, 0);
             float py = AMotionEvent_getY(event, 0);
-            if (mDraggingCluster == 1) {
+            if (mDraggingButton >= 0) {
+                float dx = px - mDragStartX;
+                float dy = py - mDragStartY;
+                switch (mDraggingButton) {
+                case 0:
+                    mSettings.btnAOffsetX = mInitialOwnOfsX + dx;
+                    mSettings.btnAOffsetY = mInitialOwnOfsY + dy;
+                    break;
+                case 1:
+                    mSettings.btnBOffsetX = mInitialOwnOfsX + dx;
+                    mSettings.btnBOffsetY = mInitialOwnOfsY + dy;
+                    break;
+                case 2:
+                    mSettings.btnZOffsetX = mInitialOwnOfsX + dx;
+                    mSettings.btnZOffsetY = mInitialOwnOfsY + dy;
+                    break;
+                default:
+                    mSettings.btnSpinOffsetX = mInitialOwnOfsX + dx;
+                    mSettings.btnSpinOffsetY = mInitialOwnOfsY + dy;
+                    break;
+                }
+            } else if (mDraggingCluster == 1) {
                 mSettings.stickOffsetX = mInitialStickOfsX + (px - mDragStartX);
                 mSettings.stickOffsetY = mInitialStickOfsY + (py - mDragStartY);
             } else if (mDraggingCluster == 2) {
@@ -903,7 +1015,18 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
             mDirty = true;
             return true;
         } else if (action == AMOTION_EVENT_ACTION_UP || action == AMOTION_EVENT_ACTION_CANCEL) {
+            if (mDraggingButton >= 0) {
+                float ox = 0.0f, oy = 0.0f;
+                switch (mDraggingButton) {
+                case 0: ox = mSettings.btnAOffsetX; oy = mSettings.btnAOffsetY; break;
+                case 1: ox = mSettings.btnBOffsetX; oy = mSettings.btnBOffsetY; break;
+                case 2: ox = mSettings.btnZOffsetX; oy = mSettings.btnZOffsetY; break;
+                default: ox = mSettings.btnSpinOffsetX; oy = mSettings.btnSpinOffsetY; break;
+                }
+                LOGI("layout edit: button %d now offset %.0f,%.0f", mDraggingButton, ox, oy);
+            }
             mDraggingCluster = 0;
+            mDraggingButton = -1;
             if (!mSavePath.empty()) mSettings.save(mSavePath);
             mDirty = true;
             return true;
@@ -1010,13 +1133,9 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
                             if (px < splitX) {
                                 mSettingsOpen = false;
                                 mEditLayoutMode = true;
+                                LOGI("layout edit: opened from the settings drawer");
                             } else {
-                                mSettings.stickOffsetX = 0.0f;
-                                mSettings.stickOffsetY = 0.0f;
-                                mSettings.buttonOffsetX = 0.0f;
-                                mSettings.buttonOffsetY = 0.0f;
-                                mSettings.dpadOffsetX = 0.0f;
-                                mSettings.dpadOffsetY = 0.0f;
+                                clearLayoutOffsets();
                             }
                         }
                         // Row 10: View System Logs
@@ -1298,18 +1417,12 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
     mBtnDpadUp = false;
     mBtnDpadDown = false;
 
-    // Button layout positions - Ergonomic arc matching render exactly
-    float btnBaseX = w - 150.0f * scale + mSettings.buttonOffsetX;
-    float btnBaseY = h - 150.0f * scale + mSettings.buttonOffsetY;
-
-    // A (Jump) - Primary action
-    float aX = btnBaseX, aY = btnBaseY, aR = 54.0f * scale;
-    // B (Shoot Star Bit) - Left of A, elevated comfortably
-    float bX = btnBaseX - 110.0f * scale, bY = btnBaseY - 20.0f * scale, bR = 45.0f * scale;
-    // SPIN - Above A, shifted slightly right for natural thumb roll
-    float spinX = btnBaseX + 30.0f * scale, spinY = btnBaseY - 125.0f * scale, spinR = 48.0f * scale;
-    // Z (Crouch) - Upper left of A
-    float zX = btnBaseX - 85.0f * scale, zY = btnBaseY - 115.0f * scale, zR = 44.0f * scale;
+    // Button layout positions - shared with the renderer and the layout editor
+    ButtonLayout bl = buttonLayout(screenW, screenH);
+    float aX = bl.ax, aY = bl.ay, aR = bl.ar;
+    float bX = bl.bx, bY = bl.by, bR = bl.br;
+    float spinX = bl.spinX, spinY = bl.spinY, spinR = bl.spinR;
+    float zX = bl.zx, zY = bl.zy, zR = bl.zr;
     // Plus (+) - Top right
     float plusX = w - 65.0f * scale, plusY = 65.0f * scale, plusR = 34.0f * scale;
 
@@ -1938,6 +2051,7 @@ void UIOverlay::generateVertices(int screenW, int screenH, std::vector<UIVertex>
         // ---------------------------------------------------------
         float btnBaseX = w - 150.0f * scale + mSettings.buttonOffsetX;
         float btnBaseY = h - 150.0f * scale + mSettings.buttonOffsetY;
+        ButtonLayout bl = buttonLayout(screenW, screenH);
 
         auto drawModernButton = [&](float cx, float cy, float r, const char* label, uint32_t accentHex, bool pressed, int specialGlyph = 0) {
             float pr = pressed ? (r * 0.93f) : r;
@@ -1975,16 +2089,16 @@ void UIOverlay::generateVertices(int screenW, int screenH, std::vector<UIVertex>
         };
 
         // Button A (Jump) - Luminous Electric Cyan (#38BDF8)
-        drawModernButton(btnBaseX, btnBaseY, 54.0f * scale, "A", 0x38BDF8, mBtnAPressed);
+        drawModernButton(bl.ax, bl.ay, bl.ar, "A", 0x38BDF8, mBtnAPressed);
 
         // Button B (Star Bit Shoot) - Luminous Star Amber (#FBBF24)
-        drawModernButton(btnBaseX - 110.0f * scale, btnBaseY - 20.0f * scale, 45.0f * scale, "B", 0xFBBF24, mBtnBPressed);
+        drawModernButton(bl.bx, bl.by, bl.br, "B", 0xFBBF24, mBtnBPressed);
 
         // Button SPIN - Luminous Emerald Mint (#34D399) with Cyclone Glyph
-        drawModernButton(btnBaseX + 30.0f * scale, btnBaseY - 125.0f * scale, 48.0f * scale, "SPIN", 0x34D399, mBtnSpinPressed, 1);
+        drawModernButton(bl.spinX, bl.spinY, bl.spinR, "SPIN", 0x34D399, mBtnSpinPressed, 1);
 
         // Button Z (Crouch) - Luminous Lavender Violet (#A78BFA)
-        drawModernButton(btnBaseX - 85.0f * scale, btnBaseY - 115.0f * scale, 44.0f * scale, "Z", 0xA78BFA, mBtnZPressed);
+        drawModernButton(bl.zx, bl.zy, bl.zr, "Z", 0xA78BFA, mBtnZPressed);
 
         // Button + (Pause) - Minimalist Pearl Slate (#E2E8F0) with Vector Cross
         drawModernButton(w - 65.0f * scale, 65.0f * scale, 34.0f * scale, "+", 0x94A3B8, mBtnPlusPressed, 2);
@@ -2113,7 +2227,7 @@ void UIOverlay::generateVertices(int screenW, int screenH, std::vector<UIVertex>
 
         // M3 Top bar card
         drawRoundRect(w * 0.5f - 240.0f, 30.0f, w * 0.5f + 240.0f, 95.0f, 20.0f, rgba(0.12f, 0.14f, 0.18f, 0.96f));
-        drawText("DRAG TO REPOSITION CONTROLS", w * 0.5f, 55.0f, 0.46f, rgba(0.90f, 0.92f, 0.96f, 1.0f), 1);
+        drawText("DRAG ANY CONTROL TO MOVE IT", w * 0.5f, 55.0f, 0.46f, rgba(0.90f, 0.92f, 0.96f, 1.0f), 1);
 
         // Save button (M3 Primary Pill)
         float saveBtnX = w * 0.5f - 110.0f;
@@ -2135,7 +2249,22 @@ void UIOverlay::generateVertices(int screenW, int screenH, std::vector<UIVertex>
         float btnBaseX = w - 160.0f * scale + mSettings.buttonOffsetX;
         float btnBaseY = h - 160.0f * scale + mSettings.buttonOffsetY;
         drawRing(btnBaseX - 60.0f * scale, btnBaseY - 60.0f * scale, 160.0f * scale, 0.96f, rgba(0.40f, 0.65f, 0.98f, 0.85f));
-        drawText("BUTTONS", btnBaseX - 60.0f * scale, btnBaseY - 230.0f * scale, 0.45f, rgba(0.40f, 0.65f, 0.98f, 0.95f), 1);
+
+        // Each action button gets its own grip ring so it can be dragged apart
+        // from the others (e.g. Z away from A).
+        ButtonLayout editBl = buttonLayout(screenW, screenH);
+        struct EditBtn { float cx, cy, r; const char* label; } editBtns[4] = {
+            {editBl.ax, editBl.ay, editBl.ar, "A"},
+            {editBl.bx, editBl.by, editBl.br, "B"},
+            {editBl.zx, editBl.zy, editBl.zr, "Z"},
+            {editBl.spinX, editBl.spinY, editBl.spinR, "SPIN"},
+        };
+        for (const EditBtn& b : editBtns) {
+            drawCircle(b.cx, b.cy, b.r, rgba(0.06f, 0.08f, 0.13f, 0.55f));
+            drawRing(b.cx, b.cy, b.r, 0.92f, rgba(0.40f, 0.65f, 0.98f, 0.95f));
+            drawText(b.label, b.cx, b.cy + 8.0f * scale, 0.42f * scale, rgba(0.92f, 0.95f, 1.0f, 0.95f), 1);
+        }
+        drawText("BUTTONS", btnBaseX - 20.0f * scale, btnBaseY - 240.0f * scale, 0.45f, rgba(0.40f, 0.65f, 0.98f, 0.95f), 1);
 
         // Camera D-Pad bounding outline
         if (mSettings.showDpad) {
@@ -2702,13 +2831,25 @@ void UIOverlay::setEditMode(bool active) {
     mDirty = true;
 }
 
-void UIOverlay::resetLayoutOffsets() {
+void UIOverlay::clearLayoutOffsets() {
     mSettings.stickOffsetX = 0.0f;
     mSettings.stickOffsetY = 0.0f;
     mSettings.buttonOffsetX = 0.0f;
     mSettings.buttonOffsetY = 0.0f;
+    mSettings.btnAOffsetX = 0.0f;
+    mSettings.btnAOffsetY = 0.0f;
+    mSettings.btnBOffsetX = 0.0f;
+    mSettings.btnBOffsetY = 0.0f;
+    mSettings.btnZOffsetX = 0.0f;
+    mSettings.btnZOffsetY = 0.0f;
+    mSettings.btnSpinOffsetX = 0.0f;
+    mSettings.btnSpinOffsetY = 0.0f;
     mSettings.dpadOffsetX = 0.0f;
     mSettings.dpadOffsetY = 0.0f;
+}
+
+void UIOverlay::resetLayoutOffsets() {
+    clearLayoutOffsets();
     if (!mSavePath.empty()) {
         mSettings.save(mSavePath);
     }

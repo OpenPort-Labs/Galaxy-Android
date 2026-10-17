@@ -25,6 +25,7 @@
 
 #include "gx/gl_renderer.h"
 #include "gx/vk_renderer.h"
+#include "gx/vk_shadergen.h"
 #include "mobile_ui.h"
 #include "port/input.h"
 #include "port/port.h"
@@ -775,6 +776,51 @@ int32_t onInput(android_app* app, AInputEvent* event) {
     return 0;
 }
 
+// Brings the Vulkan backend up on *window* and creates the offscreen target at
+// the configured render scale.  Shared by startup and by the recovery that runs
+// when a device is lost mid-session, so a recreated device goes through exactly
+// the same setup as the first one.
+static bool bringUpVulkan(MobileApp& a, ANativeWindow* window) {
+    if (!window) return false;
+    if (!gpu::VkRenderer::get().init(window)) return false;
+
+    a.vkReady = true;
+    mobile_ui::get().setActiveBackend(1);
+    mobile_ui::get().setGpuRendererName(gpu::VkRenderer::get().deviceName());
+    a.screenWidth = ANativeWindow_getWidth(window);
+    a.screenHeight = ANativeWindow_getHeight(window);
+    enforceLandscapeOrientation(a);
+    a.windowReady = true;
+
+    int scaleChoice = mobile_ui::get().settings().renderScale;
+    int dispH = std::min(a.screenWidth, a.screenHeight);
+    int dispW = std::max(a.screenWidth, a.screenHeight);
+    int targetH = 1080;
+    if (scaleChoice == 0) targetH = 480;
+    else if (scaleChoice == 1) targetH = 720;
+    else if (scaleChoice == 2) targetH = 1080;
+    else if (scaleChoice == 3) targetH = 1440;
+    else if (dispH > 1080) targetH = std::min(dispH, 1440);
+
+    int targetW;
+    if (mobile_ui::get().settings().fullscreen) {
+        float nativeAspect = (float)dispW / (float)dispH;
+        targetW = (int)lroundf(targetH * nativeAspect);
+    } else {
+        targetW = (targetH * 16) / 9;
+    }
+
+    if (a.vkTarget.framebuffer) {
+        gpu::VkRenderer::get().destroyTarget(a.vkTarget);
+    }
+    a.vkTarget = gpu::VkRenderer::get().createTarget(targetW, targetH);
+    a.targetReady = (a.vkTarget.framebuffer != VK_NULL_HANDLE);
+    updateViewport(a);
+    LOGI("Vulkan 1.0 native renderer initialized (%dx%d), offscreen target: %dx%d",
+         a.screenWidth, a.screenHeight, targetW, targetH);
+    return true;
+}
+
 void onAppCmd(android_app* app, int32_t cmd) {
     MobileApp* a = (MobileApp*)app->userData;
     if (!a) return;
@@ -784,42 +830,7 @@ void onAppCmd(android_app* app, int32_t cmd) {
         bool useVulkan = (mobile_ui::get().settings().graphicsBackend == 1);
         if (useVulkan) {
             LOGI("Selected Vulkan 1.0 backend, initializing VkRenderer with native touch controls...");
-            if (gpu::VkRenderer::get().init(app->window)) {
-                a->vkReady = true;
-                mobile_ui::get().setActiveBackend(1);
-                mobile_ui::get().setGpuRendererName(gpu::VkRenderer::get().deviceName());
-                a->screenWidth = ANativeWindow_getWidth(app->window);
-                a->screenHeight = ANativeWindow_getHeight(app->window);
-                enforceLandscapeOrientation(*a);
-                a->windowReady = true;
-
-                int scaleChoice = mobile_ui::get().settings().renderScale;
-                int dispH = std::min(a->screenWidth, a->screenHeight);
-                int dispW = std::max(a->screenWidth, a->screenHeight);
-                int targetH = 1080;
-                if (scaleChoice == 0) targetH = 480;
-                else if (scaleChoice == 1) targetH = 720;
-                else if (scaleChoice == 2) targetH = 1080;
-                else if (scaleChoice == 3) targetH = 1440;
-                else if (dispH > 1080) targetH = std::min(dispH, 1440);
-
-                int targetW;
-                if (mobile_ui::get().settings().fullscreen) {
-                    float nativeAspect = (float)dispW / (float)dispH;
-                    targetW = (int)lroundf(targetH * nativeAspect);
-                } else {
-                    targetW = (targetH * 16) / 9;
-                }
-
-                if (a->vkTarget.framebuffer) {
-                    gpu::VkRenderer::get().destroyTarget(a->vkTarget);
-                }
-                a->vkTarget = gpu::VkRenderer::get().createTarget(targetW, targetH);
-                a->targetReady = (a->vkTarget.framebuffer != VK_NULL_HANDLE);
-                updateViewport(*a);
-                LOGI("Vulkan 1.0 native renderer initialized (%dx%d), offscreen target: %dx%d",
-                     a->screenWidth, a->screenHeight, targetW, targetH);
-            } else {
+            if (!bringUpVulkan(*a, app->window)) {
                 LOGE("Vulkan 1.0 initialization failed; falling back to OpenGL ES 3.2");
                 a->vkReady = false;
                 initEgl(*a);
@@ -1001,7 +1012,9 @@ static void syncMobileFrameRate(int targetFps, float speed) {
                 struct timespec req;
                 req.tv_sec = waitNs / 1000000000ll;
                 req.tv_nsec = waitNs % 1000000000ll;
+                int64_t sleepStartNs = port_host_time_ns();
                 nanosleep(&req, nullptr);
+                port_perf_pace(port_host_time_ns() - sleepStartNs);
             }
         }
     }
@@ -1050,6 +1063,8 @@ extern "C" __attribute__((visibility("default"))) void port_android_main(struct 
     }
     gpu::setShaderCachePath((std::string(app->activity->internalDataPath) + "/shaders.bin").c_str());
     gpu::setVkPipelineCachePath((std::string(app->activity->internalDataPath) + "/vk_pipeline_cache.bin").c_str());
+    // Compiled SPIR-V, so shaderc only runs for a program once per install.
+    gpu::setVulkanShaderCachePath((std::string(app->activity->internalDataPath) + "/vk_shaders.bin").c_str());
 
     // Search for game data files
     a.dataRoot = findGameData(ext);
@@ -1153,11 +1168,12 @@ extern "C" __attribute__((visibility("default"))) void port_android_main(struct 
 
 
         // A Vulkan device can be lost mid-session (driver reset, GPU fault).
-        // Rendering cannot continue on it, so tear the backend down and keep the
-        // game running on OpenGL ES - the same fallback used when Vulkan fails to
-        // initialise.
+        // Vulkan expects the application to create a new device and carry on, so
+        // that is what is tried first: dropping the rest of the session onto
+        // OpenGL ES changes both the picture and the frame rate, and the player
+        // notices.  Only a Vulkan that cannot be recreated falls back.
         if (a.vkReady && gpu::VkRenderer::get().hasFailed()) {
-            LOGE("Vulkan renderer failed at runtime; falling back to OpenGL ES 3.2");
+            LOGW("Vulkan renderer failed at runtime; recreating the Vulkan device");
             if (a.vkTarget.framebuffer) {
                 gpu::VkRenderer::get().destroyTarget(a.vkTarget);
             }
@@ -1165,6 +1181,13 @@ extern "C" __attribute__((visibility("default"))) void port_android_main(struct 
             a.targetReady = false;
             gpu::VkRenderer::get().shutdown();
             a.vkReady = false;
+            // The shader and pipeline caches on disk mean the recreation below does
+            // not pay for the programs again.
+            if (bringUpVulkan(a, a.android ? a.android->window : nullptr)) {
+                LOGI("Vulkan device recreated; the session continues on Vulkan");
+                continue;
+            }
+            LOGE("Vulkan could not be recreated; falling back to OpenGL ES 3.2");
             if (initEgl(a) && createSurface(a)) {
                 mobile_ui::get().setActiveBackend(0);
                 LOGI("OpenGL ES 3.2 fallback renderer active");
@@ -1177,7 +1200,9 @@ extern "C" __attribute__((visibility("default"))) void port_android_main(struct 
         // Presentation & Render Loop
         if (a.vkReady) {
             gpu::VkRenderer& vkr = gpu::VkRenderer::get();
+            int64_t updateStartNs = port_host_time_ns();
             bool newFrame = vkr.update();
+            port_perf_update(port_host_time_ns() - updateStartNs);
 
             if (newFrame) {
                 gPresentedFrames.store(vkr.frameNumber());
@@ -1215,7 +1240,9 @@ extern "C" __attribute__((visibility("default"))) void port_android_main(struct 
 
                 // Present to swapchain with pillarboxing
                 updateViewport(a);
+                int64_t presentStartNs = port_host_time_ns();
                 vkr.present(a.vkTarget, a.vpX, a.vpY, a.vpW, a.vpH);
+                port_perf_present(port_host_time_ns() - presentStartNs);
                 mobile_ui::get().reportFramePresented();
 
                 // Frame pacing: enforce minimum time spacing between presents so FPS NEVER exceeds targetFps

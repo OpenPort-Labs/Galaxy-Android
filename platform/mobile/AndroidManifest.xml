@@ -17,7 +17,18 @@
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.VIBRATE" />
 
-    <!-- debuggable + extractNativeLibs: required for wrap.sh to preload libreserve.so -->
+    <!-- android:debuggable="true" is load-bearing, not a development leftover: Android
+         only honours lib/<abi>/wrap.sh in a debuggable app, and wrap.sh is what
+         preloads libreserve.so, which reserves the game's 32-bit address window
+         before ART lays out its heap (see platform/android/reserve.c).  A plain
+         System.loadLibrary cannot replace it: by then ART's heap is already mapped
+         across the window.
+
+         Consequence: this APK is debuggable and must not be published to a store -
+         any process can attach a debugger and `run-as` can read the app-private
+         data directory (the extracted disc and its saves live there).  Ship release
+         APKs by sideload only.
+         extractNativeLibs="true" is likewise required for wrap.sh. -->
     <application
         android:label="Galaxy Android"
         android:icon="@mipmap/ic_launcher"

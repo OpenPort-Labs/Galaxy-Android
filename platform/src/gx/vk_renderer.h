@@ -5,9 +5,13 @@
 #include <android/native_window.h>
 #include <memory>
 #include <vector>
+#include <deque>
 #include <string>
+#include <thread>
+#include <condition_variable>
 #include <mutex>
 #include <unordered_map>
+#include <unordered_set>
 #include <array>
 #include <cstring>
 
@@ -218,6 +222,25 @@ private:
     VkSampler getSampler(uint32_t mode0, uint32_t mode1, uint32_t levels);
     void uploadTextures(const std::vector<std::shared_ptr<TexImage>>& textures);
     VkPipeline getPipeline(const Item& it, const ShaderUid& uid);
+    // Builds and caches the pipeline for one (shader, render state) pair.
+    VkPipeline createPipeline(const Item& it, const PipelineKey& key, const ShaderUid& uid,
+                              const std::vector<uint32_t>& vsSpirv, const std::vector<uint32_t>& fsSpirv);
+    // The pipeline drawn while a program is still being compiled off-thread: same
+    // render state as the draw it stands in for, but a minimal program.
+    VkPipeline placeholderPipeline(const Item& it);
+
+    // Shader compilation runs on a worker thread.
+    //
+    // shaderc needs about a quarter of a second per program on a mid-range phone
+    // and the render thread is what the game thread waits on, so compiling there
+    // freezes the whole game: a level that introduces thirty programs froze for
+    // seconds at a time.  The render thread therefore only ever builds a pipeline
+    // from SPIR-V it already has, and hands misses to the worker instead.
+    void startShaderWorker();
+    void stopShaderWorker();
+    void requestShader(const ShaderUid& uid, const Item& it);
+    // Moves whatever the worker finished into pipelines; called once per frame.
+    void drainCompiledShaders();
     VkDescriptorSet getSamplerDescriptorSet(const std::array<VkImageView, 8>& views,
                                             const std::array<VkSampler, 8>& samplers);
 
@@ -289,6 +312,26 @@ private:
     // Rotating frame resources
     FrameResource mFrameRes[2];
     int mFrameIndex = 0;
+
+    // Shader worker state.  mShaderQueue/mShaderQueued/mShaderDone are guarded by
+    // mShaderMutex; mShaderPendingItems belongs to the render thread.
+    struct CompiledShader {
+        ShaderUid uid;
+        std::vector<uint32_t> vsSpirv, fsSpirv;
+        bool ok = false;
+        double ms = 0.0;  // how long shaderc took, reported by the render thread
+    };
+    std::thread mShaderThread;
+    std::mutex mShaderMutex;
+    std::condition_variable mShaderCv;
+    std::deque<ShaderUid> mShaderQueue;
+    std::unordered_set<ShaderUid, ShaderUidHash> mShaderQueued;
+    std::vector<CompiledShader> mShaderDone;
+    std::unordered_set<ShaderUid, ShaderUidHash> mShaderFailed;
+    bool mShaderStop = false;
+    // The draw state the pending program was asked for: a pipeline needs it.
+    std::unordered_map<ShaderUid, Item, ShaderUidHash> mShaderPendingItems;
+    uint64_t mShaderCompiles = 0;
 
     // Caches
     std::unordered_map<PipelineKey, VkPipeline, PipelineKeyHash> mPipelines;

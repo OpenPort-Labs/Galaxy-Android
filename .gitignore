@@ -32,6 +32,11 @@ tools/dolphin/
 # APK output and builds
 out-mobile/
 *.apk
+
+# Signing material must never be committed
+*.keystore
+*.jks
+*.p12
 tools/*.jar
 
 # Debug artifacts & captures

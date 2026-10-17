@@ -1,10 +1,13 @@
 #include "vk_shadergen.h"
 
 #include <cstdarg>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <mutex>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include <shaderc/shaderc.hpp>
@@ -618,11 +621,153 @@ std::string genVulkanFragmentShader(const ShaderUid& u) {
     return o.s;
 }
 
+// The optimizer is the expensive half of a GLSL -> SPIR-V run on ARM, so it can
+// be turned off (PETARI_SHADER_OPT=0) to measure the difference on a device that
+// compiles slowly.
+shaderc_optimization_level optimizationLevel() {
+    static const shaderc_optimization_level level = [] {
+        const char* v = getenv("PETARI_SHADER_OPT");
+        return (v && strcmp(v, "0") == 0) ? shaderc_optimization_level_zero : shaderc_optimization_level_performance;
+    }();
+    return level;
+}
+
+// ---------------------------------------------------------------------------
+// SPIR-V cache
+//
+// shaderc costs roughly a quarter of a second per program on a mid-range phone,
+// while the driver then turns that SPIR-V into a pipeline in a few milliseconds.
+// A scene that introduces thirty programs therefore used to stall the render
+// thread for seconds.  Compiled SPIR-V is stored next to the pipeline cache and
+// reused, which makes the cost per program once per install, not once per launch.
+// ---------------------------------------------------------------------------
+constexpr uint32_t kSpirvCacheVersion = 1;
+constexpr char kSpirvCacheMagic[4] = {'P', 'T', 'S', 'V'};
+constexpr uint32_t kSpirvCacheMaxBytes = 64u << 20;  // sanity bound for file reads
+
+struct SpirvPair {
+    std::vector<uint32_t> vs;
+    std::vector<uint32_t> fs;
+};
+
+std::mutex sSpirvCacheLock;
+std::string sSpirvCachePath;
+// All of these are guarded by sSpirvCacheLock.
+std::unordered_map<uint64_t, SpirvPair> sSpirvCache;
+bool sSpirvCacheLoaded = false;
+bool sSpirvCacheHeaderWritten = false;
+
+uint64_t fnv1a64(const void* data, size_t len, uint64_t h) {
+    const uint8_t* p = (const uint8_t*)data;
+    for (size_t i = 0; i < len; i++) {
+        h ^= (uint64_t)p[i];
+        h *= 1099511628211ull;
+    }
+    return h;
+}
+
+uint32_t fnv1a32(const void* data, size_t len) {
+    const uint8_t* p = (const uint8_t*)data;
+    uint32_t h = 2166136261u;
+    for (size_t i = 0; i < len; i++) {
+        h ^= (uint32_t)p[i];
+        h *= 16777619u;
+    }
+    return h;
+}
+
+// The source of both stages plus the codegen setting: two programs share an entry
+// only when they would compile to the same SPIR-V.
+uint64_t sourceKey(const std::string& vs, const std::string& fs) {
+    static const char* tag = (optimizationLevel() == shaderc_optimization_level_zero)
+                                 ? "petari-vk-spirv/1/opt0"
+                                 : "petari-vk-spirv/1/opt2";
+    uint64_t h = 1469598103934665603ull;
+    h = fnv1a64(tag, strlen(tag), h);
+    h = fnv1a64(vs.data(), vs.size(), h);
+    h = fnv1a64("\0", 1, h);
+    h = fnv1a64(fs.data(), fs.size(), h);
+    return h;
+}
+
+void loadSpirvCacheLocked() {
+    sSpirvCacheLoaded = true;
+    if (sSpirvCachePath.empty()) return;
+    FILE* f = fopen(sSpirvCachePath.c_str(), "rb");
+    if (!f) return;
+
+    char magic[4] = {0};
+    uint32_t version = 0;
+    if (fread(magic, 1, sizeof(magic), f) != sizeof(magic) || memcmp(magic, kSpirvCacheMagic, sizeof(magic)) != 0 ||
+        fread(&version, sizeof(version), 1, f) != 1 || version != kSpirvCacheVersion) {
+        fclose(f);
+        return;  // the next store starts a clean file
+    }
+    sSpirvCacheHeaderWritten = true;
+
+    for (;;) {
+        uint64_t key = 0;
+        uint32_t vsBytes = 0, fsBytes = 0, vsSum = 0, fsSum = 0;
+        if (fread(&key, sizeof(key), 1, f) != 1 || fread(&vsBytes, sizeof(vsBytes), 1, f) != 1 ||
+            fread(&fsBytes, sizeof(fsBytes), 1, f) != 1 || fread(&vsSum, sizeof(vsSum), 1, f) != 1 ||
+            fread(&fsSum, sizeof(fsSum), 1, f) != 1) {
+            break;
+        }
+        if (vsBytes == 0 || fsBytes == 0 || (vsBytes & 3u) || (fsBytes & 3u) || vsBytes > kSpirvCacheMaxBytes ||
+            fsBytes > kSpirvCacheMaxBytes) {
+            break;
+        }
+        SpirvPair pair;
+        pair.vs.resize(vsBytes / 4);
+        pair.fs.resize(fsBytes / 4);
+        if (fread(pair.vs.data(), 1, vsBytes, f) != vsBytes || fread(pair.fs.data(), 1, fsBytes, f) != fsBytes) {
+            break;
+        }
+        // A corrupted or truncated entry is dropped instead of being handed to the
+        // driver; the shader is then simply compiled again.
+        if (fnv1a32(pair.vs.data(), vsBytes) != vsSum || fnv1a32(pair.fs.data(), fsBytes) != fsSum) continue;
+        sSpirvCache[key] = std::move(pair);
+    }
+    fclose(f);
+    port_log("vk_shadergen: %zu compiled shader programs reused from %s", sSpirvCache.size(), sSpirvCachePath.c_str());
+}
+
+// Appends one entry.  Appending keeps everything earlier in the file, so a
+// session that is killed still leaves its compiled programs behind, and a crash
+// can cost at most the entry being written.
+void storeSpirvCacheLocked(uint64_t key, const std::vector<uint32_t>& vs, const std::vector<uint32_t>& fs) {
+    sSpirvCache[key] = SpirvPair{vs, fs};
+    if (sSpirvCachePath.empty()) return;
+
+    FILE* f = fopen(sSpirvCachePath.c_str(), sSpirvCacheHeaderWritten ? "ab" : "wb");
+    if (!f) return;
+    if (!sSpirvCacheHeaderWritten) {
+        uint32_t version = kSpirvCacheVersion;
+        fwrite(kSpirvCacheMagic, 1, sizeof(kSpirvCacheMagic), f);
+        fwrite(&version, sizeof(version), 1, f);
+        sSpirvCacheHeaderWritten = true;
+    }
+
+    const uint32_t vsBytes = (uint32_t)(vs.size() * sizeof(uint32_t));
+    const uint32_t fsBytes = (uint32_t)(fs.size() * sizeof(uint32_t));
+    const uint32_t vsSum = fnv1a32(vs.data(), vsBytes);
+    const uint32_t fsSum = fnv1a32(fs.data(), fsBytes);
+    uint64_t k = key;
+    fwrite(&k, sizeof(k), 1, f);
+    fwrite(&vsBytes, sizeof(vsBytes), 1, f);
+    fwrite(&fsBytes, sizeof(fsBytes), 1, f);
+    fwrite(&vsSum, sizeof(vsSum), 1, f);
+    fwrite(&fsSum, sizeof(fsSum), 1, f);
+    fwrite(vs.data(), 1, vsBytes, f);
+    fwrite(fs.data(), 1, fsBytes, f);
+    fclose(f);
+}
+
 bool compileShaderToSPIRV(const std::string& src, bool isVertex, std::vector<uint32_t>& outSpirv, std::string& outError) {
     shaderc::Compiler compiler;
     shaderc::CompileOptions options;
     options.SetTargetEnvironment(shaderc_target_env_vulkan, shaderc_env_version_vulkan_1_0);
-    options.SetOptimizationLevel(shaderc_optimization_level_performance);
+    options.SetOptimizationLevel(optimizationLevel());
 
     shaderc_shader_kind kind = isVertex ? shaderc_glsl_vertex_shader : shaderc_glsl_fragment_shader;
     shaderc::SpvCompilationResult result = compiler.CompileGlslToSpv(src, kind, isVertex ? "shader.vert" : "shader.frag", options);
@@ -636,9 +781,40 @@ bool compileShaderToSPIRV(const std::string& src, bool isVertex, std::vector<uin
     return true;
 }
 
+bool lookupVulkanShader(const ShaderUid& uid, std::vector<uint32_t>& outVsSpirv, std::vector<uint32_t>& outFsSpirv) {
+    // Generating the GLSL is cheap (string building); shaderc is what costs a
+    // quarter of a second, and this function never calls it.
+    const uint64_t key = sourceKey(genVulkanVertexShader(uid), genVulkanFragmentShader(uid));
+    std::lock_guard<std::mutex> lock(sSpirvCacheLock);
+    if (!sSpirvCacheLoaded) loadSpirvCacheLocked();
+    auto it = sSpirvCache.find(key);
+    if (it == sSpirvCache.end()) return false;
+    outVsSpirv = it->second.vs;
+    outFsSpirv = it->second.fs;
+    return true;
+}
+
 bool compileVulkanShader(const ShaderUid& uid, std::vector<uint32_t>& outVsSpirv, std::vector<uint32_t>& outFsSpirv) {
     std::string vsSrc = genVulkanVertexShader(uid);
     std::string fsSrc = genVulkanFragmentShader(uid);
+
+    // shaderc needs roughly a quarter of a second per program on a mid-range
+    // phone, so the SPIR-V is looked up in a cache on disk first: a program is
+    // compiled once per install instead of once per launch.  The key is the
+    // generated source itself, so editing a generator invalidates its entries
+    // without anyone having to remember to bump a version.
+    const uint64_t key = sourceKey(vsSrc, fsSrc);
+    {
+        std::lock_guard<std::mutex> lock(sSpirvCacheLock);
+        if (!sSpirvCacheLoaded) loadSpirvCacheLocked();
+        auto it = sSpirvCache.find(key);
+        if (it != sSpirvCache.end()) {
+            outVsSpirv = it->second.vs;
+            outFsSpirv = it->second.fs;
+            return true;
+        }
+    }
+
     std::string err;
     if (!compileShaderToSPIRV(vsSrc, true, outVsSpirv, err)) {
         port_log("vk_shadergen: VS error: %s", err.c_str());
@@ -648,7 +824,18 @@ bool compileVulkanShader(const ShaderUid& uid, std::vector<uint32_t>& outVsSpirv
         port_log("vk_shadergen: FS error: %s", err.c_str());
         return false;
     }
+
+    std::lock_guard<std::mutex> lock(sSpirvCacheLock);
+    storeSpirvCacheLocked(key, outVsSpirv, outFsSpirv);
     return true;
+}
+
+void setVulkanShaderCachePath(const char* path) {
+    std::lock_guard<std::mutex> lock(sSpirvCacheLock);
+    sSpirvCachePath = path ? path : "";
+    sSpirvCacheLoaded = false;
+    sSpirvCacheHeaderWritten = false;
+    sSpirvCache.clear();
 }
 
 }  // namespace gpu

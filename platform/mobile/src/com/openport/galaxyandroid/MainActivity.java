@@ -305,16 +305,10 @@ public class MainActivity extends Activity {
                         }
                     }
                 }
-                String displayName = getDisplayName(uri);
-                if (!displayName.isEmpty()) {
-                    File downloadDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
-                    File testFile = new File(downloadDir, displayName);
-                    if (testFile.exists()) return testFile.getAbsolutePath();
-
-                    File extDir = Environment.getExternalStorageDirectory();
-                    File testFile2 = new File(extDir, displayName);
-                    if (testFile2.exists()) return testFile2.getAbsolutePath();
-                }
+                // No name-based search: a bare "<Downloads>/<display name>" guess can
+                // match a different file that shares the name and silently extract the
+                // wrong disc.  Returning null makes the caller stream the content URI it
+                // actually received, which the "raw:"/"primary:" cases above rely on too.
             } catch (Exception ignored) {}
         }
         return null;
@@ -331,12 +325,15 @@ public class MainActivity extends Activity {
         progressBar.setIndeterminate(true);
         txtProgressStatus.setText("Preparing game installation...");
 
+        // Views may only be read on the main thread; the option travels to the
+        // worker as a value.
+        final boolean includeMovies = chkIncludeMovies.isChecked();
+
         new Thread(() -> {
             try {
                 File outputDir = new File(Environment.getExternalStorageDirectory(), "GalaxyData");
                 if (!outputDir.exists()) outputDir.mkdirs();
 
-                boolean includeMovies = chkIncludeMovies.isChecked();
                 String testName = !mSelectedDisplayName.isEmpty() ? mSelectedDisplayName : mSelectedSourcePath;
                 String lowerName = testName.toLowerCase();
                 boolean isDiscImage = lowerName.endsWith(".rvz") || lowerName.endsWith(".wbfs") || lowerName.endsWith(".iso") || lowerName.endsWith(".gcm");

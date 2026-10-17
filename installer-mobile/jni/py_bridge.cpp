@@ -1,4 +1,5 @@
 #include <jni.h>
+#include <mutex>
 #include <string>
 #include <vector>
 #include <android/log.h>
@@ -14,6 +15,11 @@ static JavaVM* gVm = nullptr;
 static jobject gCallbackGlobal = nullptr;
 static jmethodID gOnLogMethod = nullptr;
 static jmethodID gOnProgressMethod = nullptr;
+
+// The callback globals above are shared by every native entry point, so only one
+// installer operation may run at a time (see the try_to_lock in extractDisc /
+// runCooker).  Callers get -2 "busy" instead of corrupting each other's state.
+static std::mutex sOperationMutex;
 
 extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved) {
     gVm = vm;
@@ -56,6 +62,64 @@ static void sendProgressToJava(int percent, const char* text) {
             gVm->DetachCurrentThread();
         }
     }
+}
+
+// Fetches and reports the pending Python exception, then clears it.
+static void reportPythonException() {
+    PyObject *ptype = nullptr, *pvalue = nullptr, *ptraceback = nullptr;
+    PyErr_Fetch(&ptype, &pvalue, &ptraceback);
+    if (pvalue) {
+        PyObject* pStr = PyObject_Str(pvalue);
+        if (pStr) {
+            const char* errText = PyUnicode_AsUTF8(pStr);
+            if (errText) {
+                sendLogToJava(("[Python Error] " + std::string(errText)).c_str());
+            }
+            Py_DECREF(pStr);
+        }
+    }
+    Py_XDECREF(ptype);
+    Py_XDECREF(pvalue);
+    Py_XDECREF(ptraceback);
+    PyErr_Clear();
+}
+
+// Resolves the Java callback methods, clearing any pending exception a failed
+// lookup leaves behind: a live exception turns every later JNI call on this
+// thread into a no-op.  Returns false when the callback cannot be used.
+static bool bindCallbackMethods(JNIEnv* env, jobject callback) {
+    jclass cbClass = env->GetObjectClass(callback);
+    gOnLogMethod = env->GetMethodID(cbClass, "onLog", "(Ljava/lang/String;)V");
+    gOnProgressMethod = env->GetMethodID(cbClass, "onProgress", "(ILjava/lang/String;)V");
+    env->DeleteLocalRef(cbClass);
+    if (!gOnLogMethod || !gOnProgressMethod) {
+        env->ExceptionClear();
+        LOGE("callback object is missing onLog/onProgress");
+        return false;
+    }
+    return true;
+}
+
+// Publishes the working paths to the interpreter as ordinary objects.  The
+// conversion script reads these instead of having the raw strings spliced into
+// it, so a quote or newline in a path can no longer change the program.
+static bool setPythonGlobals(const char* scriptsDir, const char* inputDir, const char* outputDir, bool withMovies) {
+    PyObject* mainMod = PyImport_AddModule("__main__");
+    if (!mainMod) return false;
+    PyObject* globals = PyModule_GetDict(mainMod);
+    if (!globals) return false;
+
+    auto setStr = [&](const char* name, const char* value) -> bool {
+        PyObject* v = PyUnicode_FromString(value ? value : "");
+        if (!v) return false;
+        int rc = PyDict_SetItemString(globals, name, v);
+        Py_DECREF(v);
+        return rc == 0;
+    };
+
+    return setStr("_port_scripts", scriptsDir) && setStr("_port_input", inputDir) &&
+           setStr("_port_output", outputDir) &&
+           PyDict_SetItemString(globals, "_port_with_movies", withMovies ? Py_True : Py_False) == 0;
 }
 
 static PyObject* py_log_wrapper(PyObject* self, PyObject* args) {
@@ -135,6 +199,7 @@ Java_com_galaxy_installer_CookerEngine_isWiiDisc(
         JNIEnv *env, jclass clazz, jstring jFilePath) {
     if (!jFilePath) return JNI_FALSE;
     const char* filePath = env->GetStringUTFChars(jFilePath, nullptr);
+    if (!filePath) return JNI_FALSE;
     bool result = wii::isWiiDiscImage(filePath);
     env->ReleaseStringUTFChars(jFilePath, filePath);
     return result ? JNI_TRUE : JNI_FALSE;
@@ -149,14 +214,28 @@ Java_com_galaxy_installer_CookerEngine_extractDisc(
         jstring jImagePath, jstring jOutDir,
         jboolean jIncludeMovies, jobject jCallback) {
 
+    std::unique_lock<std::mutex> opLock(sOperationMutex, std::try_to_lock);
+    if (!opLock.owns_lock()) {
+        LOGE("extractDisc: another installer operation is already running");
+        return -2;
+    }
+
     const char* imagePath = env->GetStringUTFChars(jImagePath, nullptr);
     const char* outDir = env->GetStringUTFChars(jOutDir, nullptr);
+    if (!imagePath || !outDir) {
+        LOGE("extractDisc: a null path argument was passed in");
+        return -1;
+    }
     bool includeMovies = (bool)jIncludeMovies;
 
     gCallbackGlobal = env->NewGlobalRef(jCallback);
-    jclass cbClass = env->GetObjectClass(jCallback);
-    gOnLogMethod = env->GetMethodID(cbClass, "onLog", "(Ljava/lang/String;)V");
-    gOnProgressMethod = env->GetMethodID(cbClass, "onProgress", "(ILjava/lang/String;)V");
+    if (!bindCallbackMethods(env, jCallback)) {
+        env->DeleteGlobalRef(gCallbackGlobal);
+        gCallbackGlobal = nullptr;
+        env->ReleaseStringUTFChars(jImagePath, imagePath);
+        env->ReleaseStringUTFChars(jOutDir, outDir);
+        return -1;
+    }
 
     bool success = wii::extractWiiDisc(
         imagePath, outDir, includeMovies,
@@ -186,16 +265,32 @@ Java_com_galaxy_installer_CookerEngine_runCooker(
         jstring jInputDir, jstring jOutputDir,
         jboolean jWithMovies, jobject jCallback) {
 
+    std::unique_lock<std::mutex> opLock(sOperationMutex, std::try_to_lock);
+    if (!opLock.owns_lock()) {
+        LOGE("runCooker: another installer operation is already running");
+        return -2;
+    }
+
     const char* pythonHome = env->GetStringUTFChars(jPythonHome, nullptr);
     const char* scriptsDir = env->GetStringUTFChars(jScriptsDir, nullptr);
     const char* inputDir = env->GetStringUTFChars(jInputDir, nullptr);
     const char* outputDir = env->GetStringUTFChars(jOutputDir, nullptr);
+    if (!pythonHome || !scriptsDir || !inputDir || !outputDir) {
+        LOGE("runCooker: a null path argument was passed in");
+        return -1;
+    }
     bool withMovies = (bool)jWithMovies;
 
     gCallbackGlobal = env->NewGlobalRef(jCallback);
-    jclass cbClass = env->GetObjectClass(jCallback);
-    gOnLogMethod = env->GetMethodID(cbClass, "onLog", "(Ljava/lang/String;)V");
-    gOnProgressMethod = env->GetMethodID(cbClass, "onProgress", "(ILjava/lang/String;)V");
+    if (!bindCallbackMethods(env, jCallback)) {
+        env->DeleteGlobalRef(gCallbackGlobal);
+        gCallbackGlobal = nullptr;
+        env->ReleaseStringUTFChars(jPythonHome, pythonHome);
+        env->ReleaseStringUTFChars(jScriptsDir, scriptsDir);
+        env->ReleaseStringUTFChars(jInputDir, inputDir);
+        env->ReleaseStringUTFChars(jOutputDir, outputDir);
+        return -1;
+    }
 
     sendLogToJava("[Native] Initializing embedded Python engine...");
 
@@ -211,10 +306,16 @@ Java_com_galaxy_installer_CookerEngine_runCooker(
 
     sendLogToJava("[Native] Python engine initialized.");
 
+    // Hand the paths to the interpreter as data before any script runs.
+    if (!setPythonGlobals(scriptsDir, inputDir, outputDir, withMovies)) {
+        sendLogToJava("[Error] Could not pass the working paths to the embedded interpreter.");
+        reportPythonException();
+    }
+
     // Setup sys.path and log redirection in Python
     std::string setupScript =
         "import sys, os, android_bridge\n"
-        "sys.path.insert(0, '" + std::string(scriptsDir) + "')\n"
+        "sys.path.insert(0, _port_scripts)\n"
         "class OutputLogger:\n"
         "    def write(self, s):\n"
         "        for line in s.splitlines():\n"
@@ -225,7 +326,11 @@ Java_com_galaxy_installer_CookerEngine_runCooker(
         "sys.stdout = OutputLogger()\n"
         "sys.stderr = OutputLogger()\n";
 
-    PyRun_SimpleString(setupScript.c_str());
+    bool setupOk = PyRun_SimpleString(setupScript.c_str()) == 0;
+    if (!setupOk) {
+        sendLogToJava("[Error] Python setup failed; the conversion cannot run.");
+        reportPythonException();
+    }
 
     // Execute cook.py conversion
     std::string runScript =
@@ -239,9 +344,9 @@ Java_com_galaxy_installer_CookerEngine_runCooker(
         "try:\n"
         "    print('[Engine] Beginning conversion...')\n"
         "    ret = cook.convert(\n"
-        "        data_dir='" + std::string(inputDir) + "',\n"
-        "        out_dir='" + std::string(outputDir) + "',\n"
-        "        with_movies=" + (withMovies ? "True" : "False") + ",\n"
+        "        data_dir=_port_input,\n"
+        "        out_dir=_port_output,\n"
+        "        with_movies=_port_with_movies,\n"
         "        progress=on_progress\n"
         "    )\n"
         "    if ret != 0:\n"
@@ -254,7 +359,7 @@ Java_com_galaxy_installer_CookerEngine_runCooker(
         "    raise\n";
 
     sendLogToJava("[Native] Invoking cook.convert()...");
-    int result = PyRun_SimpleString(runScript.c_str());
+    int result = setupOk ? PyRun_SimpleString(runScript.c_str()) : -1;
     if (result != 0) {
         PyObject *ptype = nullptr, *pvalue = nullptr, *ptraceback = nullptr;
         PyErr_Fetch(&ptype, &pvalue, &ptraceback);

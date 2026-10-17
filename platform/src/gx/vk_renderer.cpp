@@ -3,8 +3,13 @@
 #include <android/log.h>
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cstdio>
 #include <cstring>
+
+#if defined(__ANDROID__)
+#include <sys/system_properties.h>
+#endif
 
 #define TAG "PetariVK"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
@@ -12,6 +17,22 @@
 #define LOGW(...) __android_log_print(ANDROID_LOG_WARN, TAG, __VA_ARGS__)
 
 namespace gpu {
+
+namespace {
+
+// A test hook has to be reachable on a phone, where a process cannot be given an
+// environment: PETARI_X=... on the desktop, `adb shell setprop debug.petari.x ...`
+// on Android.
+const char* debugValue(const char* envName, const char* propertyName) {
+    if (const char* v = debugEnv(envName)) return v;
+#if defined(__ANDROID__)
+    static char value[PROP_VALUE_MAX];
+    if (__system_property_get(propertyName, value) > 0 && value[0]) return value;
+#endif
+    return nullptr;
+}
+
+}  // namespace
 
 // ---------------------------------------------------------------------------
 // Deferred Vulkan deletes (texture images die on whichever thread drops them)
@@ -76,6 +97,10 @@ void VkRenderer::markFatal(const char* where, const char* what, int result) {
     mPresentFenceInFlight = false;
     LOGE("Vulkan fatal error at frame %llu - %s: %s failed (VkResult %d); renderer disabled",
          (unsigned long long)mFrameNumber, where, what, result);
+    // Also into the game's own log, which survives a device that has stopped
+    // rendering and is what a bug report carries.
+    port_log("vk: FATAL at frame %llu - %s: %s failed (VkResult %d); renderer disabled",
+             (unsigned long long)mFrameNumber, where, what, result);
 }
 
 bool VkRenderer::waitInFlightSubmissions(const char* where) {
@@ -127,6 +152,7 @@ bool VkRenderer::init(ANativeWindow* window) {
     mHeight = ANativeWindow_getHeight(window);
 
     LOGI("Initializing Vulkan 1.0 native renderer (%dx%d)...", mWidth, mHeight);
+    startShaderWorker();
 
     if (!createInstance()) {
         LOGE("Failed to create Vulkan 1.0 instance");
@@ -368,6 +394,10 @@ void VkRenderer::shutdown() {
     std::lock_guard<std::recursive_mutex> lock(mRenderMutex);
     mInitialized = false;
 
+    // The worker only generates and compiles shaders - it never touches the
+    // device - but it must be gone before the caches and the device below are.
+    stopShaderWorker();
+
     if (mDevice != VK_NULL_HANDLE) {
         vkDeviceWaitIdle(mDevice);
 
@@ -430,6 +460,12 @@ void VkRenderer::shutdown() {
             if (pair.second) vkDestroyPipeline(mDevice, pair.second, nullptr);
         }
         mPipelines.clear();
+
+        // These sets came from mDescriptorPool, which destroyUiPipeline() and the
+        // pool destruction below release.  The map itself must not survive into a
+        // later init(): trimFrameCaches() would otherwise free stale handles on
+        // the freshly created pool.
+        mSamplerDescSets.clear();
 
         savePipelineCache();
         if (mPipelineCache != VK_NULL_HANDLE) {
@@ -529,6 +565,13 @@ void VkRenderer::shutdown() {
     mSurface = VK_NULL_HANDLE;
     mSwapchain = VK_NULL_HANDLE;
     mInitialized = false;
+    // Per-session frame state: a fresh init() must start at frame 0 with no
+    // cached frame, or update()/trimFrameCaches() keep comparing against the
+    // numbers the previous session left behind.
+    mFrameNumber = 0;
+    mFrameIndex = 0;
+    mCurrentFrame.reset();
+    mPrepared.reset();
     LOGI("Vulkan 1.0 renderer shut down cleanly.");
 }
 
@@ -642,17 +685,25 @@ bool VkRenderer::createInstance() {
         VK_KHR_ANDROID_SURFACE_EXTENSION_NAME,
     };
 
-    // Check for Vulkan validation layers
+    // Check for Vulkan validation layers.  A debug build ships the Khronos
+    // layer, but it must never be enabled by default: it serialises every
+    // command and costs tens of milliseconds per frame on a phone, and the
+    // shipped layer has been seen to crash inside its own draw-time checks.
+    // Diagnostics opt in with PETARI_VK_VALIDATION=1 on the desktop or
+    // `adb shell setprop debug.petari.vkvalidation 1` on a device.
     std::vector<const char*> layers;
+    const char* validation = debugValue("PETARI_VK_VALIDATION", "debug.petari.vkvalidation");
+    bool wantValidation = validation && validation[0] == '1';
     uint32_t layerCount = 0;
     vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
-    if (layerCount > 0) {
+    if (wantValidation && layerCount > 0) {
         std::vector<VkLayerProperties> availableLayers(layerCount);
         vkEnumerateInstanceLayerProperties(&layerCount, availableLayers.data());
         for (const auto& layer : availableLayers) {
             if (strcmp(layer.layerName, "VK_LAYER_KHRONOS_validation") == 0) {
                 layers.push_back("VK_LAYER_KHRONOS_validation");
-                LOGI("Vulkan Validation Layer found: %s (spec %u)", layer.layerName, layer.specVersion);
+                LOGW("Enabling Vulkan Validation Layer %s (spec %u) - expect a large frame-time cost", layer.layerName,
+                     layer.specVersion);
                 break;
             }
         }
@@ -2477,37 +2528,178 @@ static VkBlendOp vkBlendOp(uint32_t glEq) {
     }
 }
 
-VkPipeline VkRenderer::getPipeline(const Item& it, const ShaderUid& uid) {
-    // Blending is live when GX colour blending is on or the destination alpha
-    // blend mode is on.  While colour blending is off the GL backend feeds
-    // ONE/ZERO for the colour factors; mirror that so both backends agree.
-    const bool blendOn = (it.blend != 0) || (it.dstAlpha != 0);
-    const VkBlendFactor srcColor = it.blend ? vkBlendFactor(it.srcRGB) : VK_BLEND_FACTOR_ONE;
-    const VkBlendFactor dstColor = it.blend ? vkBlendFactor(it.dstRGB) : VK_BLEND_FACTOR_ZERO;
-    const VkBlendFactor srcAlphaFactor = it.dstAlpha ? VK_BLEND_FACTOR_CONSTANT_ALPHA : vkBlendFactor(it.srcRGB);
-    const VkBlendFactor dstAlphaFactor = it.dstAlpha ? VK_BLEND_FACTOR_ZERO : vkBlendFactor(it.dstRGB);
-    const VkBlendOp colorOp = it.blend ? vkBlendOp(it.eq) : VK_BLEND_OP_ADD;
-    const VkBlendOp alphaOp = it.dstAlpha ? VK_BLEND_OP_ADD : vkBlendOp(it.eq);
-    const uint32_t constantAlpha = (uint32_t)lroundf(it.dstAlphaValue * 255.0f) & 0xFF;
+// The blend state a draw asks for.  Blending is live when GX colour blending is
+// on or the destination alpha blend mode is on; while colour blending is off the
+// GL backend feeds ONE/ZERO for the colour factors, so mirror that here and both
+// backends agree.
+struct DrawBlendState {
+    bool on = false;
+    VkBlendFactor srcColor = VK_BLEND_FACTOR_ONE;
+    VkBlendFactor dstColor = VK_BLEND_FACTOR_ZERO;
+    VkBlendFactor srcAlpha = VK_BLEND_FACTOR_ONE;
+    VkBlendFactor dstAlpha = VK_BLEND_FACTOR_ZERO;
+    VkBlendOp colorOp = VK_BLEND_OP_ADD;
+    VkBlendOp alphaOp = VK_BLEND_OP_ADD;
+    uint32_t constantAlpha = 0;
+};
 
+static DrawBlendState blendStateFor(const Item& it) {
+    DrawBlendState b;
+    b.on = (it.blend != 0) || (it.dstAlpha != 0);
+    b.srcColor = it.blend ? vkBlendFactor(it.srcRGB) : VK_BLEND_FACTOR_ONE;
+    b.dstColor = it.blend ? vkBlendFactor(it.dstRGB) : VK_BLEND_FACTOR_ZERO;
+    b.srcAlpha = it.dstAlpha ? VK_BLEND_FACTOR_CONSTANT_ALPHA : vkBlendFactor(it.srcRGB);
+    b.dstAlpha = it.dstAlpha ? VK_BLEND_FACTOR_ZERO : vkBlendFactor(it.dstRGB);
+    b.colorOp = it.blend ? vkBlendOp(it.eq) : VK_BLEND_OP_ADD;
+    b.alphaOp = it.dstAlpha ? VK_BLEND_OP_ADD : vkBlendOp(it.eq);
+    b.constantAlpha = (uint32_t)lroundf(it.dstAlphaValue * 255.0f) & 0xFF;
+    return b;
+}
+
+static PipelineKey pipelineKeyFor(const Item& it, const ShaderUid& uid) {
+    const DrawBlendState blend = blendStateFor(it);
     PipelineKey key{};
     key.uid = uid;
     key.flags = it.flags;
     key.depthState = (it.depthTest ? 1 : 0) | ((it.depthTest && it.depthWrite ? 1 : 0) << 1) | ((it.depthFunc & 15) << 4);
-    key.blendState = (blendOn ? 1u : 0u) | ((uint32_t)srcColor << 1) | ((uint32_t)dstColor << 6) |
-                     ((uint32_t)srcAlphaFactor << 11) | ((uint32_t)dstAlphaFactor << 16);
-    key.blendState2 = (uint32_t)colorOp | ((uint32_t)alphaOp << 2) | ((it.colorMask & 15) << 4) |
-                      (constantAlpha << 8);
+    key.blendState = (blend.on ? 1u : 0u) | ((uint32_t)blend.srcColor << 1) | ((uint32_t)blend.dstColor << 6) |
+                     ((uint32_t)blend.srcAlpha << 11) | ((uint32_t)blend.dstAlpha << 16);
+    key.blendState2 = (uint32_t)blend.colorOp | ((uint32_t)blend.alphaOp << 2) | ((it.colorMask & 15) << 4) |
+                      (blend.constantAlpha << 8);
     key.rasterState = (it.cull ? 1 : 0) | ((it.cullFace & 3) << 1) | ((it.prim & 7) << 4);
+    return key;
+}
 
+VkPipeline VkRenderer::getPipeline(const Item& it, const ShaderUid& uid) {
+    const PipelineKey key = pipelineKeyFor(it, uid);
+    auto pit = mPipelines.find(key);
+    if (pit != mPipelines.end()) return pit->second;
+
+    // A program is compiled once per install (the SPIR-V cache on disk) and once
+    // per session (the worker thread), never on this thread: shaderc costs about
+    // a quarter of a second per program and the game thread waits on this one, so
+    // a level that introduces thirty programs used to freeze for seconds.
+    std::vector<uint32_t> vsSpirv, fsSpirv;
+    if (!lookupVulkanShader(uid, vsSpirv, fsSpirv)) {
+        if (mShaderFailed.count(uid)) return VK_NULL_HANDLE;
+        requestShader(uid, it);
+        return placeholderPipeline(it);
+    }
+    return createPipeline(it, key, uid, vsSpirv, fsSpirv);
+}
+
+VkPipeline VkRenderer::placeholderPipeline(const Item& it) {
+    // Same render state as the draw it replaces, but the smallest program the
+    // generators produce: geometry, depth and blending stay correct and only the
+    // shading of this one draw is wrong until the real program arrives.
+    static const ShaderUid kStub = ShaderUid{};
+    const PipelineKey key = pipelineKeyFor(it, kStub);
     auto pit = mPipelines.find(key);
     if (pit != mPipelines.end()) return pit->second;
 
     std::vector<uint32_t> vsSpirv, fsSpirv;
-    if (!compileVulkanShader(uid, vsSpirv, fsSpirv)) {
-        LOGE("Failed to generate and compile Vulkan SPIR-V for shader uid %u", it.uid);
+    if (!lookupVulkanShader(kStub, vsSpirv, fsSpirv) &&
+        !compileVulkanShader(kStub, vsSpirv, fsSpirv)) {
         return VK_NULL_HANDLE;
     }
+    return createPipeline(it, key, kStub, vsSpirv, fsSpirv);
+}
+
+void VkRenderer::requestShader(const ShaderUid& uid, const Item& it) {
+    mShaderPendingItems[uid] = it;
+    {
+        std::lock_guard<std::mutex> lock(mShaderMutex);
+        if (mShaderStop || mShaderQueued.count(uid)) return;
+        mShaderQueued.insert(uid);
+        mShaderQueue.push_back(uid);
+    }
+    mShaderCv.notify_one();
+}
+
+void VkRenderer::startShaderWorker() {
+    if (mShaderThread.joinable()) return;
+    mShaderStop = false;
+    mShaderThread = std::thread([this]() {
+        for (;;) {
+            ShaderUid uid;
+            {
+                std::unique_lock<std::mutex> lock(mShaderMutex);
+                mShaderCv.wait(lock, [this]() { return mShaderStop || !mShaderQueue.empty(); });
+                if (mShaderQueue.empty()) return;  // stop requested
+                uid = mShaderQueue.front();
+                mShaderQueue.pop_front();
+            }
+
+            CompiledShader result;
+            result.uid = uid;
+            auto start = std::chrono::steady_clock::now();
+            result.ok = compileVulkanShader(uid, result.vsSpirv, result.fsSpirv);
+            result.ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+
+            std::lock_guard<std::mutex> lock(mShaderMutex);
+            mShaderQueued.erase(uid);
+            mShaderDone.push_back(std::move(result));
+        }
+    });
+}
+
+void VkRenderer::stopShaderWorker() {
+    {
+        std::lock_guard<std::mutex> lock(mShaderMutex);
+        mShaderStop = true;
+        mShaderQueue.clear();
+        mShaderQueued.clear();
+        mShaderDone.clear();
+    }
+    mShaderCv.notify_all();
+    if (mShaderThread.joinable()) mShaderThread.join();  // finishes a compile in flight first
+    mShaderPendingItems.clear();
+    mShaderFailed.clear();
+}
+
+void VkRenderer::drainCompiledShaders() {
+    CompiledShader shader;
+    for (;;) {
+        {
+            std::lock_guard<std::mutex> lock(mShaderMutex);
+            if (mShaderDone.empty()) return;
+            shader = std::move(mShaderDone.front());
+            mShaderDone.erase(mShaderDone.begin());
+        }
+
+        auto pending = mShaderPendingItems.find(shader.uid);
+        if (!shader.ok) {
+            mShaderFailed.insert(shader.uid);
+            LOGE("VkRenderer: shader program for draw %u could not be compiled; its draws stay hidden",
+                 pending != mShaderPendingItems.end() ? pending->second.uid : 0u);
+            if (pending != mShaderPendingItems.end()) mShaderPendingItems.erase(pending);
+            continue;
+        }
+
+        mShaderCompiles++;
+        if (pending == mShaderPendingItems.end()) continue;  // nobody is waiting for it any more
+        const Item it = pending->second;
+        mShaderPendingItems.erase(pending);
+        LOGI("VkRenderer: compiled program for draw %u off the render thread in %.0f ms", it.uid, shader.ms);
+        createPipeline(it, pipelineKeyFor(it, shader.uid), shader.uid, shader.vsSpirv, shader.fsSpirv);
+        // One new pipeline per frame.  The driver compiles the SPIR-V into the
+        // GPU's own code here - tens of milliseconds on the phone that reported
+        // #37 - so a whole scene's worth (thirty programs) has to spend itself
+        // over thirty frames instead of inside one.  The rest wait for the next
+        // frames; their draws keep using the placeholder until then.
+        return;
+    }
+}
+
+VkPipeline VkRenderer::createPipeline(const Item& it, const PipelineKey& key, const ShaderUid& uid,
+                                      const std::vector<uint32_t>& vsSpirv, const std::vector<uint32_t>& fsSpirv) {
+    const DrawBlendState blend = blendStateFor(it);
+
+    // Creating the pipeline is the driver's part of the work: a few milliseconds,
+    // measured because a driver that compiles in software (rather than reading the
+    // SPIR-V back from the pipeline cache) is what shows up as a hitch.
+    auto buildStart = std::chrono::steady_clock::now();
+    auto spirvDone = buildStart;
 
     VkShaderModule vsMod = createShaderModule(vsSpirv.data(), vsSpirv.size() * 4);
     VkShaderModule fsMod = createShaderModule(fsSpirv.data(), fsSpirv.size() * 4);
@@ -2610,13 +2802,13 @@ VkPipeline VkRenderer::getPipeline(const Item& it, const ShaderUid& uid) {
                                   (it.colorMask & 2 ? VK_COLOR_COMPONENT_G_BIT : 0) |
                                   (it.colorMask & 4 ? VK_COLOR_COMPONENT_B_BIT : 0) |
                                   (it.colorMask & 8 ? VK_COLOR_COMPONENT_A_BIT : 0);
-    cbAttachment.blendEnable = blendOn ? VK_TRUE : VK_FALSE;
-    cbAttachment.srcColorBlendFactor = srcColor;
-    cbAttachment.dstColorBlendFactor = dstColor;
-    cbAttachment.colorBlendOp = colorOp;
-    cbAttachment.srcAlphaBlendFactor = srcAlphaFactor;
-    cbAttachment.dstAlphaBlendFactor = dstAlphaFactor;
-    cbAttachment.alphaBlendOp = alphaOp;
+    cbAttachment.blendEnable = blend.on ? VK_TRUE : VK_FALSE;
+    cbAttachment.srcColorBlendFactor = blend.srcColor;
+    cbAttachment.dstColorBlendFactor = blend.dstColor;
+    cbAttachment.colorBlendOp = blend.colorOp;
+    cbAttachment.srcAlphaBlendFactor = blend.srcAlpha;
+    cbAttachment.dstAlphaBlendFactor = blend.dstAlpha;
+    cbAttachment.alphaBlendOp = blend.alphaOp;
 
     VkPipelineColorBlendStateCreateInfo cbci{};
     cbci.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
@@ -2664,6 +2856,13 @@ VkPipeline VkRenderer::getPipeline(const Item& it, const ShaderUid& uid) {
     }
 
     mPipelines.emplace(key, pipeline);
+    auto built = std::chrono::steady_clock::now();
+    const double totalMs = std::chrono::duration<double, std::milli>(built - buildStart).count();
+    if (totalMs >= 10.0) {
+        LOGI("VkRenderer: pipeline uid=%u built in %.1f ms (GLSL->SPIR-V %.1f ms, driver %.1f ms)", it.uid, totalMs,
+             std::chrono::duration<double, std::milli>(spirvDone - buildStart).count(),
+             std::chrono::duration<double, std::milli>(built - spirvDone).count());
+    }
     return pipeline;
 }
 
@@ -2733,7 +2932,7 @@ bool VkRenderer::render(VkTarget& target, const EyeView* eye, VkTarget* hud, Hud
 
     // PETARI_VKFAILAFTER=<frame>: drive the fatal-error path (as a real device
     // loss would) so the recovery/fallback can be exercised on hardware.
-    static const char* failAfterEnv = debugEnv("PETARI_VKFAILAFTER");
+    static const char* failAfterEnv = debugValue("PETARI_VKFAILAFTER", "debug.petari.vkfailafter");
     if (failAfterEnv && mFrameNumber >= (uint64_t)atoll(failAfterEnv)) {
         markFatal("render", "PETARI_VKFAILAFTER (test hook)", 0);
         return false;
@@ -2764,6 +2963,11 @@ bool VkRenderer::render(VkTarget& target, const EyeView* eye, VkTarget* hud, Hud
     // the recent frames no longer use back to the pool.
     flushDeferredDeletes();
     trimFrameCaches(mFrameNumber);
+
+    // Programs the worker compiled since the last frame become pipelines here:
+    // the SPIR-V is ready, so only the driver's part is left (a few ms), and it
+    // happens at a point where nothing is in flight.
+    drainCompiledShaders();
 
     // Rotate frame resources
     mFrameIndex = (mFrameIndex + 1) % 2;

@@ -17,4 +17,13 @@ bool compileShaderToSPIRV(const std::string& src, bool isVertex, std::vector<uin
 // High-level: generates and compiles both vertex and fragment shaders for a ShaderUid
 bool compileVulkanShader(const ShaderUid& uid, std::vector<uint32_t>& outVsSpirv, std::vector<uint32_t>& outFsSpirv);
 
+// The already compiled SPIR-V for *uid*, if the cache has it, without running
+// shaderc.  A render thread takes this path on every program it has not built
+// yet; only a miss is worth handing to a worker thread.
+bool lookupVulkanShader(const ShaderUid& uid, std::vector<uint32_t>& outVsSpirv, std::vector<uint32_t>& outFsSpirv);
+
+// Where the compiled SPIR-V is reused from (see vk_shadergen.cpp).  Empty path
+// means every program is compiled from source.
+void setVulkanShaderCachePath(const char* path);
+
 }  // namespace gpu

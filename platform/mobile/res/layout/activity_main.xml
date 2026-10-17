@@ -9,192 +9,490 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="20dp">
+        android:padding="16dp">
 
-        <!-- App Header -->
-        <TextView
-            android:id="@+id/txtHeaderTitle"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/header_title"
-            android:textColor="@color/primary_accent"
-            android:textSize="26sp"
-            android:textStyle="bold" />
-
-        <TextView
-            android:id="@+id/txtHeaderSubtitle"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:text="@string/header_subtitle"
-            android:textColor="@color/text_secondary"
-            android:textSize="14sp" />
-
-        <View
-            android:layout_width="match_parent"
-            android:layout_height="1dp"
-            android:layout_marginTop="16dp"
-            android:layout_marginBottom="16dp"
-            android:background="@color/surface_border" />
-
-        <!-- Step 1: Game Disc Source -->
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/section_source"
-            android:textColor="@color/text_primary"
-            android:textSize="16sp"
-            android:textStyle="bold" />
-
+        <!-- Top Header Bar -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:layout_marginTop="8dp">
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingBottom="12dp">
 
-            <Button
-                android:id="@+id/btnSelectDisc"
-                android:layout_width="match_parent"
-                android:layout_height="48dp"
-                android:text="@string/btn_select_disc"
-                android:backgroundTint="@color/surface_card"
-                android:textColor="@color/primary_accent" />
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical">
 
-            <Button
-                android:id="@+id/btnAutoDetect"
-                android:layout_width="match_parent"
-                android:layout_height="44dp"
-                android:layout_marginTop="6dp"
-                android:text="@string/btn_auto_detect"
-                android:backgroundTint="@color/surface_card"
-                android:textColor="@color/text_primary"
-                android:textSize="12sp" />
+                <TextView
+                    android:id="@+id/txtHeaderTitle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/header_title"
+                    android:textColor="@color/primary_accent"
+                    android:textSize="22sp"
+                    android:fontFamily="sans-serif-medium"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/txtHeaderSubtitle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:text="@string/header_subtitle"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="12sp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:background="@drawable/badge_bg_blue"
+                    android:paddingLeft="10dp"
+                    android:paddingRight="10dp"
+                    android:paddingTop="4dp"
+                    android:paddingBottom="4dp"
+                    android:text="Vulkan 1.0"
+                    android:textColor="@color/primary_accent"
+                    android:textSize="11sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginLeft="6dp"
+                    android:background="@drawable/badge_bg_purple"
+                    android:paddingLeft="10dp"
+                    android:paddingRight="10dp"
+                    android:paddingTop="4dp"
+                    android:paddingBottom="4dp"
+                    android:text="ARM64"
+                    android:textColor="@color/purple_accent"
+                    android:textSize="11sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginLeft="6dp"
+                    android:background="@drawable/badge_bg_green"
+                    android:paddingLeft="10dp"
+                    android:paddingRight="10dp"
+                    android:paddingTop="4dp"
+                    android:paddingBottom="4dp"
+                    android:text="v0.0.1d"
+                    android:textColor="@color/success_green"
+                    android:textSize="11sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
         </LinearLayout>
 
-        <TextView
-            android:id="@+id/txtSourcePath"
+        <!-- Main Responsive Two-Column Body -->
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:text="@string/no_source_selected"
-            android:textColor="@color/text_secondary"
-            android:textSize="12sp" />
+            android:orientation="horizontal"
+            android:baselineAligned="false">
 
-        <View
-            android:layout_width="match_parent"
-            android:layout_height="1dp"
-            android:layout_marginTop="16dp"
-            android:layout_marginBottom="16dp"
-            android:background="@color/surface_border" />
+            <!-- Left Column: Game Launch & Disc Installer -->
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:layout_marginRight="8dp">
 
-        <!-- Step 2: Conversion Options -->
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/section_options"
-            android:textColor="@color/text_primary"
-            android:textSize="16sp"
-            android:textStyle="bold" />
+                <!-- Card 1: Game Status & Hero Launch -->
+                <LinearLayout
+                    android:id="@+id/cardGameStatus"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:background="@drawable/card_bg_accent"
+                    android:padding="14dp">
 
-        <CheckBox
-            android:id="@+id/chkIncludeMovies"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:checked="false"
-            android:text="@string/include_movies"
-            android:textColor="@color/text_primary" />
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical">
 
-        <View
-            android:layout_width="match_parent"
-            android:layout_height="1dp"
-            android:layout_marginTop="16dp"
-            android:layout_marginBottom="16dp"
-            android:background="@color/surface_border" />
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="Game State"
+                            android:textColor="@color/text_primary"
+                            android:textSize="14sp"
+                            android:textStyle="bold" />
 
-        <!-- Step 3: Action & Progress -->
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/section_cook"
-            android:textColor="@color/text_primary"
-            android:textSize="16sp"
-            android:textStyle="bold" />
+                        <TextView
+                            android:id="@+id/txtGameStatusBadge"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:background="@drawable/badge_bg_amber"
+                            android:paddingLeft="10dp"
+                            android:paddingRight="10dp"
+                            android:paddingTop="3dp"
+                            android:paddingBottom="3dp"
+                            android:text="INSTALLATION NEEDED"
+                            android:textColor="@color/warning_amber"
+                            android:textSize="11sp"
+                            android:textStyle="bold" />
+                    </LinearLayout>
 
-        <Button
-            android:id="@+id/btnStartCooking"
-            android:layout_width="match_parent"
-            android:layout_height="52dp"
-            android:layout_marginTop="10dp"
-            android:text="@string/btn_start_cook"
-            android:backgroundTint="@color/primary_accent"
-            android:textColor="#000000"
-            android:textStyle="bold"
-            android:textSize="15sp" />
+                    <TextView
+                        android:id="@+id/txtGameStatusDetail"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:text="Game data not detected in /sdcard/GalaxyData. Choose a disc below to install."
+                        android:textColor="@color/text_secondary"
+                        android:textSize="12sp" />
 
-        <Button
-            android:id="@+id/btnLaunchGame"
-            android:layout_width="match_parent"
-            android:layout_height="52dp"
-            android:layout_marginTop="10dp"
-            android:text="@string/btn_launch_game"
-            android:backgroundTint="@color/success_green"
-            android:textColor="#FFFFFF"
-            android:textStyle="bold"
-            android:textSize="15sp"
-            android:visibility="gone" />
+                    <Button
+                        android:id="@+id/btnLaunchGame"
+                        android:layout_width="match_parent"
+                        android:layout_height="48dp"
+                        android:layout_marginTop="10dp"
+                        android:background="@drawable/btn_success"
+                        android:text="LAUNCH GAME"
+                        android:textColor="#FFFFFF"
+                        android:textSize="14sp"
+                        android:textStyle="bold"
+                        android:visibility="gone" />
 
-        <Button
-            android:id="@+id/btnResetData"
-            android:layout_width="match_parent"
-            android:layout_height="44dp"
-            android:layout_marginTop="8dp"
-            android:text="Clean / Reset Game Data"
-            android:backgroundTint="@color/surface_card"
-            android:textColor="#FF6B6B"
-            android:textSize="13sp" />
+                    <!-- Resolution & Performance Preset -->
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="10dp"
+                        android:text="Performance &amp; Resolution Preset"
+                        android:textColor="@color/text_muted"
+                        android:textSize="11sp" />
 
-        <!-- Progress Status -->
-        <TextView
-            android:id="@+id/txtProgressStatus"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="14dp"
-            android:text="@string/status_ready"
-            android:textColor="@color/text_secondary"
-            android:textSize="13sp" />
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:orientation="horizontal">
 
-        <ProgressBar
-            android:id="@+id/progressBar"
-            style="?android:attr/progressBarStyleHorizontal"
-            android:layout_width="match_parent"
-            android:layout_height="8dp"
-            android:layout_marginTop="8dp"
-            android:max="100"
-            android:progress="0"
-            android:visibility="gone" />
+                        <Button
+                            android:id="@+id/btnRes480"
+                            android:layout_width="0dp"
+                            android:layout_height="34dp"
+                            android:layout_weight="1"
+                            android:background="@drawable/btn_secondary"
+                            android:text="480p (Native Wii)"
+                            android:textColor="@color/text_secondary"
+                            android:textSize="10sp" />
 
-        <!-- Console Log Output -->
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:text="Console Activity"
-            android:textColor="@color/text_primary"
-            android:textSize="13sp"
-            android:textStyle="bold" />
+                        <Button
+                            android:id="@+id/btnRes720"
+                            android:layout_width="0dp"
+                            android:layout_height="34dp"
+                            android:layout_weight="1"
+                            android:layout_marginLeft="4dp"
+                            android:background="@drawable/btn_secondary"
+                            android:text="720p (Balanced)"
+                            android:textColor="@color/text_secondary"
+                            android:textSize="10sp" />
 
-        <TextView
-            android:id="@+id/txtLogOutput"
-            android:layout_width="match_parent"
-            android:layout_height="140dp"
-            android:layout_marginTop="6dp"
-            android:background="@color/log_bg"
-            android:padding="8dp"
-            android:fontFamily="monospace"
-            android:scrollbars="vertical"
-            android:textColor="#86EFAC"
-            android:textSize="11sp" />
+                        <Button
+                            android:id="@+id/btnRes1080"
+                            android:layout_width="0dp"
+                            android:layout_height="34dp"
+                            android:layout_weight="1"
+                            android:layout_marginLeft="4dp"
+                            android:background="@drawable/btn_secondary"
+                            android:text="1080p (Full HD)"
+                            android:textColor="@color/text_secondary"
+                            android:textSize="10sp" />
+                    </LinearLayout>
 
+                    <Button
+                        android:id="@+id/btnResetData"
+                        android:layout_width="match_parent"
+                        android:layout_height="36dp"
+                        android:layout_marginTop="10dp"
+                        android:background="@drawable/btn_danger"
+                        android:text="Clean / Reset Game Data"
+                        android:textColor="@color/error_red"
+                        android:textSize="11sp" />
+                </LinearLayout>
+
+                <!-- Card 2: Game Disc Installer -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:orientation="vertical"
+                    android:background="@drawable/card_bg"
+                    android:padding="14dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/section_source"
+                        android:textColor="@color/text_primary"
+                        android:textSize="14sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:text="Choose your dumped Wii game disc (.rvz / .iso / .wbfs)"
+                        android:textColor="@color/text_muted"
+                        android:textSize="11sp" />
+
+                    <TextView
+                        android:id="@+id/txtSourcePath"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:background="@drawable/console_bg"
+                        android:padding="8dp"
+                        android:singleLine="true"
+                        android:ellipsize="middle"
+                        android:text="@string/no_source_selected"
+                        android:fontFamily="monospace"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="11sp" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:orientation="horizontal">
+
+                        <Button
+                            android:id="@+id/btnSelectDisc"
+                            android:layout_width="0dp"
+                            android:layout_height="40dp"
+                            android:layout_weight="1"
+                            android:background="@drawable/btn_primary"
+                            android:text="Select Disc File"
+                            android:textColor="#FFFFFF"
+                            android:textSize="12sp"
+                            android:textStyle="bold" />
+
+                        <Button
+                            android:id="@+id/btnAutoDetect"
+                            android:layout_width="0dp"
+                            android:layout_height="40dp"
+                            android:layout_weight="1"
+                            android:layout_marginLeft="6dp"
+                            android:background="@drawable/btn_secondary"
+                            android:text="Scan Downloads"
+                            android:textColor="@color/text_primary"
+                            android:textSize="12sp" />
+                    </LinearLayout>
+
+                    <CheckBox
+                        android:id="@+id/chkIncludeMovies"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:checked="false"
+                        android:text="@string/include_movies"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="12sp" />
+
+                    <Button
+                        android:id="@+id/btnStartCooking"
+                        android:layout_width="match_parent"
+                        android:layout_height="44dp"
+                        android:layout_marginTop="8dp"
+                        android:background="@drawable/btn_primary"
+                        android:text="Start Installation"
+                        android:textColor="#FFFFFF"
+                        android:textSize="13sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- Right Column: GPU Driver Manager & Console Output -->
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:layout_marginLeft="8dp">
+
+                <!-- Card 3: GPU Driver Manager -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:background="@drawable/card_bg"
+                    android:padding="14dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical">
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="@string/title_gpu_driver"
+                            android:textColor="@color/text_primary"
+                            android:textSize="14sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/txtDriverStatusBadge"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:background="@drawable/badge_bg_blue"
+                            android:paddingLeft="10dp"
+                            android:paddingRight="10dp"
+                            android:paddingTop="3dp"
+                            android:paddingBottom="3dp"
+                            android:text="SYSTEM DRIVER"
+                            android:textColor="@color/primary_accent"
+                            android:textSize="11sp"
+                            android:textStyle="bold" />
+                    </LinearLayout>
+
+                    <TextView
+                        android:id="@+id/txtGpuHardwareInfo"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:text="Hardware: Detecting GPU..."
+                        android:textColor="@color/text_muted"
+                        android:textSize="11sp" />
+
+                    <TextView
+                        android:id="@+id/txtDriverDetail"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:background="@drawable/console_bg"
+                        android:padding="8dp"
+                        android:fontFamily="monospace"
+                        android:text="Active: System Default Vulkan Driver (OEM)"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="11sp" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:orientation="horizontal">
+
+                        <Button
+                            android:id="@+id/btnInstallDriver"
+                            android:layout_width="0dp"
+                            android:layout_height="38dp"
+                            android:layout_weight="1"
+                            android:background="@drawable/btn_secondary"
+                            android:text="Install Driver (.zip)"
+                            android:textColor="@color/primary_accent"
+                            android:textSize="12sp"
+                            android:textStyle="bold" />
+
+                        <Button
+                            android:id="@+id/btnResetDriver"
+                            android:layout_width="0dp"
+                            android:layout_height="38dp"
+                            android:layout_weight="1"
+                            android:layout_marginLeft="6dp"
+                            android:background="@drawable/btn_secondary"
+                            android:text="Reset to System"
+                            android:textColor="@color/text_muted"
+                            android:textSize="12sp" />
+                    </LinearLayout>
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:text="@string/driver_help_text"
+                        android:textColor="@color/text_muted"
+                        android:textSize="10sp" />
+                </LinearLayout>
+
+                <!-- Card 4: Console Output & Status -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:orientation="vertical"
+                    android:background="@drawable/card_bg"
+                    android:padding="14dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical">
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="Console Activity"
+                            android:textColor="@color/text_primary"
+                            android:textSize="13sp"
+                            android:textStyle="bold" />
+
+                        <Button
+                            android:id="@+id/btnClearLog"
+                            android:layout_width="wrap_content"
+                            android:layout_height="28dp"
+                            android:background="@drawable/btn_secondary"
+                            android:paddingLeft="8dp"
+                            android:paddingRight="8dp"
+                            android:text="Clear Log"
+                            android:textColor="@color/text_muted"
+                            android:textSize="10sp" />
+                    </LinearLayout>
+
+                    <TextView
+                        android:id="@+id/txtProgressStatus"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:text="@string/status_ready"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="12sp" />
+
+                    <ProgressBar
+                        android:id="@+id/progressBar"
+                        style="?android:attr/progressBarStyleHorizontal"
+                        android:layout_width="match_parent"
+                        android:layout_height="6dp"
+                        android:layout_marginTop="6dp"
+                        android:progressDrawable="@drawable/progress_bar_custom"
+                        android:max="100"
+                        android:progress="0"
+                        android:visibility="gone" />
+
+                    <TextView
+                        android:id="@+id/txtLogOutput"
+                        android:layout_width="match_parent"
+                        android:layout_height="110dp"
+                        android:layout_marginTop="8dp"
+                        android:background="@drawable/console_bg"
+                        android:padding="8dp"
+                        android:fontFamily="monospace"
+                        android:scrollbars="vertical"
+                        android:textColor="@color/log_text"
+                        android:textSize="11sp" />
+                </LinearLayout>
+            </LinearLayout>
+        </LinearLayout>
     </LinearLayout>
 </ScrollView>

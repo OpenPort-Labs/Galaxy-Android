@@ -11,11 +11,11 @@
 
 namespace {
     static const s32 sStepTalk = 150;
-    static const s32 sStepToSuccess = 90;
+    static const s32 sStepToSuccess = 30;
     static const s32 sStepToOK = 10;
     static const f32 sPadAccelStraightMinX = 0.25f;
     static const f32 sPadAccelStraightMinY = 0.45f;
-    static const f32 sPadAccelTurnMinX = 0.65f;
+    static const f32 sPadAccelTurnMinX = 0.35f;
     // static const f32 sPadAccelTurnLimitZ = _;
     static const f32 sPadAccelTurnLimitY = 0.5f;
 };  // namespace

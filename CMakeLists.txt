@@ -59,6 +59,10 @@ if(ANDROID)
 endif()
 
 set(PORT_COMMON_FLAGS
+  -O3
+  -fno-math-errno
+  -fno-trapping-math
+  -fomit-frame-pointer
   -fshort-wchar
   -fsigned-char
   -fno-strict-aliasing
@@ -136,7 +140,7 @@ target_link_options(game PRIVATE -Wl,--no-undefined -Wl,--error-limit=0)
 if(ANDROID)
   # -Bsymbolic: game code must bind to the port's operator new/delete, not the
   # system C++ runtime's.
-  target_link_options(game PRIVATE -Wl,-Bsymbolic -Wl,--gc-sections)
+  target_link_options(game PRIVATE -Wl,-Bsymbolic -Wl,--gc-sections -Wl,-O3)
   target_link_libraries(game PRIVATE log android)
 endif()
 
@@ -187,7 +191,7 @@ if(ANDROID)
   # Preloaded into the app process by wrap.sh: reserves the game window before
   # ART lays out its heap.
   add_library(reserve SHARED platform/android/reserve.c)
-  target_link_libraries(reserve PRIVATE log)
+  target_link_libraries(reserve PRIVATE log dl)
 
   # Bring-up tool: boots libgame.so from an adb shell without VR.
   add_executable(petari_headless platform/android/headless.c)

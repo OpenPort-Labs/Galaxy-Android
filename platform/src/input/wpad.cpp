@@ -85,7 +85,7 @@ static float sFilteredTiltY = 0.0f;
 // is held level, and aiming the laser never moves it.
 static Vec remoteGravity(const PortPadState& s) {
     Vec g = {0.0f, -1.0f, 0.0f};
-    if (port_host_time_ns() - sTiltUsedAt.load() >= 500000000) {  // 0.5 s
+    if (port_host_time_ns() - sTiltUsedAt.load() >= 2000000000LL) {  // 2.0 s
         sFilteredTiltX = 0.0f;
         sFilteredTiltY = 0.0f;
         return g;
@@ -94,10 +94,8 @@ static Vec remoteGravity(const PortPadState& s) {
     Vec down = s.tilted ? Vec{s.downX, s.downY, s.downZ} : Vec{0.0f, -1.0f, 0.0f};
     if (!s.tilted) {
         // Fallback for mobile touchscreen and gamepads: steer ball and surfing ray using analog stick.
-        // Derived from official NVIDIA Shield smg_controller.ini:
-        // - RaySurfing: MaxAccelVelocityDelta=0.025 (prevents manta jumping when pushing LS quickly)
-        // - BallRolling: MaxAccelVelocityDelta=0.015 (smooth ball rolling inertia)
-        float maxDelta = (sTiltNeutralPitch.load() == 0.0f) ? 0.025f : 0.015f;
+        // Responsive stick-to-tilt mapping:
+        float maxDelta = (sTiltNeutralPitch.load() == 0.0f) ? 0.12f : 0.06f;
         float targetX = s.stickX;
         float targetY = s.stickY;
         float dx = targetX - sFilteredTiltX;
@@ -110,7 +108,7 @@ static Vec remoteGravity(const PortPadState& s) {
         else if (dy < -maxDelta) sFilteredTiltY -= maxDelta;
         else sFilteredTiltY = targetY;
 
-        float maxTiltAngle = 1.05f; // ~60 degrees for full deflection in SurfRay and Tamakoro
+        float maxTiltAngle = 1.35f; // ~77 degrees for responsive full deflection in SurfRay and Tamakoro
         float tiltPitch = sFilteredTiltY * maxTiltAngle;
         float tiltRoll = sFilteredTiltX * maxTiltAngle;
         // In Galaxy: accel.x = -pStatus->acc.x = -g.x = down.x.

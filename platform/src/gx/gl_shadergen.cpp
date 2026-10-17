@@ -520,7 +520,7 @@ std::string genFragmentShader(const ShaderUid& u) {
     o.w("  }\n");
     }
     o.w("  vec4 tevReg[4] = vec4[4](fetch_st(v_pix), fetch_st(v_pix + 1u), fetch_st(v_pix + 2u), fetch_st(v_pix + 3u));\n");
-    o.w("  ivec4 konst[4];\n  for (int i = 0; i < 4; i++) konst[i] = ivec4(round(fetch_st(v_pix + 4u + uint(i)) * 255.0));\n");
+    o.w("  ivec4 konst[4];\n  for (int i = 0; i < 4; i++) konst[i] = ivec4(round(clamp(fetch_st(v_pix + 4u + uint(i)), 0.0, 1.0) * 255.0));\n");
     o.w("  vec4 alphaRef = fetch_st(v_pix + 8u);\n  vec4 fogColor = fetch_st(v_pix + 9u);\n  vec4 fogParams = fetch_st(v_pix + 10u);\n");
     o.w("  vec4 fogRange = fetch_st(v_pix + 11u);\n");
     o.w("  vec4 texSize[8];\n  for (int i = 0; i < 8; i++) texSize[i] = fetch_st(v_pix + 12u + uint(i));\n");
@@ -593,18 +593,17 @@ std::string genFragmentShader(const ShaderUid& u) {
         o.w("  vec4 safeRas%u = (any(isnan(%s)) || any(isinf(%s))) ? vec4(0.0) : clamp(%s, 0.0, 1.0);\n", s, rasSrc, rasSrc, rasSrc);
         o.w("  ras = ivec4(round(safeRas%u%s * 255.0));\n", s, swapString(u, rswap).c_str());
         o.w("  kc = %s;\n  ka = %s;\n", konstColor(kcsel).c_str(), konstAlpha(kasel).c_str());
-        // Inputs A, B and C are the low 8 bits of their source (a register's
-        // sign and overflow bits are dropped); D keeps all 11 bits.
+        // Inputs A, B and C are clamped to [0, 255]; D keeps all 11 bits [-1024, 1023].
         {
             uint32_t ca = (cc >> 12) & 15, cb = (cc >> 8) & 15, cc2 = (cc >> 4) & 15, cd = cc & 15;
             uint32_t aa = (ac >> 13) & 7, ab = (ac >> 10) & 7, ac2 = (ac >> 7) & 7, ad = (ac >> 4) & 7;
-            // Mask each operand before it becomes a component of the vector: some
-            // Mali drivers mishandle a bitwise AND applied to a whole ivec4, which
-            // corrupts the TEV inputs (white or black character materials).
-            o.w("  tevin_a = ivec4((%s) & 255, (%s) & 255);\n", kColorIn[ca], kAlphaIn[aa]);
-            o.w("  tevin_b = ivec4((%s) & 255, (%s) & 255);\n", kColorIn[cb], kAlphaIn[ab]);
-            o.w("  tevin_c = ivec4((%s) & 255, (%s) & 255);\n", kColorIn[cc2], kAlphaIn[ac2]);
-            o.w("  tevin_d = ivec4(%s, %s);\n", kColorIn[cd], kAlphaIn[ad]);
+            // GX hardware clamps 8-bit TEV inputs A, B, C to [0, 255] and 11-bit D to [-1024, 1023].
+            // Applying bitwise AND (& 255) previously converted negative intermediate register values
+            // (e.g. -20 from lighting subtraction) into ~236 (blinding white glow on Mali GPUs).
+            o.w("  tevin_a = ivec4(clamp(%s, ivec3(0), ivec3(255)), clamp(%s, 0, 255));\n", kColorIn[ca], kAlphaIn[aa]);
+            o.w("  tevin_b = ivec4(clamp(%s, ivec3(0), ivec3(255)), clamp(%s, 0, 255));\n", kColorIn[cb], kAlphaIn[ab]);
+            o.w("  tevin_c = ivec4(clamp(%s, ivec3(0), ivec3(255)), clamp(%s, 0, 255));\n", kColorIn[cc2], kAlphaIn[ac2]);
+            o.w("  tevin_d = ivec4(clamp(%s, ivec3(-1024), ivec3(1023)), clamp(%s, -1024, 1023));\n", kColorIn[cd], kAlphaIn[ad]);
         }
 
         // Color combiner.

@@ -2798,6 +2798,8 @@ void VkRenderer::stopShaderWorker() {
 
 void VkRenderer::drainCompiledShaders() {
     CompiledShader shader;
+    auto drainStart = std::chrono::steady_clock::now();
+    int createdCount = 0;
     for (;;) {
         {
             std::lock_guard<std::mutex> lock(mShaderMutex);
@@ -2821,12 +2823,12 @@ void VkRenderer::drainCompiledShaders() {
         mShaderPendingItems.erase(pending);
         LOGI("VkRenderer: compiled program for draw %u off the render thread in %.0f ms", it.uid, shader.ms);
         createPipeline(it, pipelineKeyFor(it, shader.uid), shader.uid, shader.vsSpirv, shader.fsSpirv);
-        // One new pipeline per frame.  The driver compiles the SPIR-V into the
-        // GPU's own code here - tens of milliseconds on the phone that reported
-        // #37 - so a whole scene's worth (thirty programs) has to spend itself
-        // over thirty frames instead of inside one.  The rest wait for the next
-        // frames; their draws keep using the placeholder until then.
-        return;
+        createdCount++;
+        // Allow up to 4 pipelines per frame or 5ms budget so that models/skybox do not disappear for seconds (Issue #48)
+        auto elapsed = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - drainStart).count();
+        if (createdCount >= 4 || elapsed >= 5.0) {
+            return;
+        }
     }
 }
 

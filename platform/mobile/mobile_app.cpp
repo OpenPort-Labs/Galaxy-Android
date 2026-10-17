@@ -103,11 +103,12 @@ static void updateSensorsState(bool enable) {
         if (sGyroSensor) {
             ASensorEventQueue_enableSensor(sSensorQueue, sGyroSensor);
             ASensorEventQueue_setEventRate(sSensorQueue, sGyroSensor, 16666);
-            LOGI("Sensors: Activated gyroscope for star pointer motion");
-        } else if (sAccelSensor) {
+            LOGI("Sensors: Activated gyroscope");
+        }
+        if (sAccelSensor) {
             ASensorEventQueue_enableSensor(sSensorQueue, sAccelSensor);
             ASensorEventQueue_setEventRate(sSensorQueue, sAccelSensor, 16666);
-            LOGI("Sensors: Activated accelerometer for star pointer motion");
+            LOGI("Sensors: Activated accelerometer");
         }
         sSensorsActive = true;
     } else if (!enable && sSensorsActive) {
@@ -118,7 +119,7 @@ static void updateSensorsState(bool enable) {
             ASensorEventQueue_disableSensor(sSensorQueue, sAccelSensor);
         }
         sSensorsActive = false;
-        LOGI("Sensors: Deactivated sensors (gyro aiming off)");
+        LOGI("Sensors: Deactivated sensors");
     }
 }
 
@@ -139,44 +140,65 @@ static void initSensors(android_app* app) {
 
 static void pollSensors(MobileApp& a) {
     if (!sSensorQueue) return;
-    bool wantGyro = mobile_ui::UIOverlay::get().settings().gyroAiming;
-    if (wantGyro != sSensorsActive) {
-        updateSensorsState(wantGyro);
+    if (!sSensorsActive) {
+        updateSensorsState(true);
     }
 
     ASensorEvent event;
     while (ASensorEventQueue_getEvents(sSensorQueue, &event, 1) > 0) {
         if (!sSensorsActive) continue;
         if (event.type == ASENSOR_TYPE_GYROSCOPE) {
-            // Android Landscape (ROTATION_90) coordinate conversion:
-            // - Horizontal movement (turning phone left/right): rotates around device X and Z axes
-            // - Vertical movement (tilting phone up/down): rotates around device Y axis
-            float rotH = event.vector.x - event.vector.z * 0.35f;
-            float rotV = event.vector.y;
+            if (mobile_ui::UIOverlay::get().settings().gyroAiming) {
+                // Android Landscape coordinate conversion:
+                float rotH = event.vector.x - event.vector.z * 0.35f;
+                float rotV = event.vector.y;
 
-            const auto& settings = mobile_ui::UIOverlay::get().settings();
-            if (settings.gyroInvertX) rotH = -rotH;
-            if (settings.gyroInvertY) rotV = -rotV;
+                const auto& settings = mobile_ui::UIOverlay::get().settings();
+                if (settings.gyroInvertX) rotH = -rotH;
+                if (settings.gyroInvertY) rotV = -rotV;
 
-            float sens = 0.035f;
-            a.pad.pointerX += rotH * sens;
-            a.pad.pointerY -= rotV * sens;
-            a.pad.pointerX = std::max(-1.0f, std::min(1.0f, a.pad.pointerX));
-            a.pad.pointerY = std::max(-1.0f, std::min(1.0f, a.pad.pointerY));
-            a.pad.pointerValid = 1;
-            mobile_ui::UIOverlay::get().setPointerPos(a.pad.pointerX, a.pad.pointerY);
-            port_input_set(0, &a.pad);
+                float sens = 0.035f;
+                a.pad.pointerX += rotH * sens;
+                a.pad.pointerY -= rotV * sens;
+                a.pad.pointerX = std::max(-1.0f, std::min(1.0f, a.pad.pointerX));
+                a.pad.pointerY = std::max(-1.0f, std::min(1.0f, a.pad.pointerY));
+                a.pad.pointerValid = 1;
+                mobile_ui::UIOverlay::get().setPointerPos(a.pad.pointerX, a.pad.pointerY);
+                port_input_set(0, &a.pad);
+            }
         } else if (event.type == ASENSOR_TYPE_ACCELEROMETER) {
-            // Accelerometer fallback for devices without gyroscope
-            float tiltX = -event.acceleration.y * 0.15f;
-            float tiltY = event.acceleration.x * 0.15f;
-            const auto& settings = mobile_ui::UIOverlay::get().settings();
-            if (settings.gyroInvertX) tiltX = -tiltX;
-            if (settings.gyroInvertY) tiltY = -tiltY;
-            a.pad.pointerX = std::max(-1.0f, std::min(1.0f, tiltX));
-            a.pad.pointerY = std::max(-1.0f, std::min(1.0f, tiltY));
-            a.pad.pointerValid = 1;
-            mobile_ui::UIOverlay::get().setPointerPos(a.pad.pointerX, a.pad.pointerY);
+            // Compute phone tilt/roll for motion steering (Ray Surfing, Star Ball)
+            float rawRoll = event.acceleration.x / 9.81f;
+            float rawPitch = (event.acceleration.y - 4.9f) / 9.81f;
+            rawRoll = std::max(-1.0f, std::min(1.0f, rawRoll));
+            rawPitch = std::max(-1.0f, std::min(1.0f, rawPitch));
+
+            // Apply physical tilt if virtual touch stick is not being actively dragged
+            if (!mobile_ui::get().isStickActive()) {
+                if (fabsf(rawRoll) > 0.08f || fabsf(rawPitch) > 0.08f) {
+                    a.pad.tilted = 1;
+                    a.pad.downX = rawRoll;
+                    a.pad.downZ = rawPitch;
+                    float rem = 1.0f - (a.pad.downX * a.pad.downX + a.pad.downZ * a.pad.downZ);
+                    a.pad.downY = -(rem > 0.0f ? sqrtf(rem) : 0.0f);
+                } else {
+                    a.pad.tilted = 0;
+                }
+            } else {
+                a.pad.tilted = 0;
+            }
+
+            if (mobile_ui::UIOverlay::get().settings().gyroAiming && !sGyroSensor) {
+                float tiltX = -event.acceleration.y * 0.15f;
+                float tiltY = event.acceleration.x * 0.15f;
+                const auto& settings = mobile_ui::UIOverlay::get().settings();
+                if (settings.gyroInvertX) tiltX = -tiltX;
+                if (settings.gyroInvertY) tiltY = -tiltY;
+                a.pad.pointerX = std::max(-1.0f, std::min(1.0f, tiltX));
+                a.pad.pointerY = std::max(-1.0f, std::min(1.0f, tiltY));
+                a.pad.pointerValid = 1;
+                mobile_ui::UIOverlay::get().setPointerPos(a.pad.pointerX, a.pad.pointerY);
+            }
             port_input_set(0, &a.pad);
         }
     }

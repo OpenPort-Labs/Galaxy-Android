@@ -79,7 +79,12 @@ struct MobileApp {
     float stickOriginY = 0.0f;
     int spinFrames = 0;
     bool gamepadDetected = false;
+    // Digital buttons and analog-trigger/hat buttons are tracked separately: a
+    // pad streams axis updates continuously, and clearing the shared mask there
+    // used to drop a button a key event had just pressed (and vice versa).
     uint32_t physicalButtons = 0;
+    uint32_t physicalAxisButtons = 0;
+    bool touchscreenDown = false;
     float physicalStickX = 0.0f;
     float physicalStickY = 0.0f;
 };
@@ -584,13 +589,13 @@ int32_t onInput(android_app* app, AInputEvent* event) {
             // D-Pad Hat axes (Standard on Xbox, PlayStation, 8BitDo, and HID pads)
             float hatX = AMotionEvent_getAxisValue(event, AMOTION_EVENT_AXIS_HAT_X, 0);
             float hatY = AMotionEvent_getAxisValue(event, AMOTION_EVENT_AXIS_HAT_Y, 0);
-            if (hatX < -0.5f) { a->physicalButtons |= 0x0001; a->physicalButtons &= ~0x0002; }
-            else if (hatX > 0.5f) { a->physicalButtons |= 0x0002; a->physicalButtons &= ~0x0001; }
-            else { a->physicalButtons &= ~0x0003; }
+            if (hatX < -0.5f) { a->physicalAxisButtons |= 0x0001; a->physicalAxisButtons &= ~0x0002; }
+            else if (hatX > 0.5f) { a->physicalAxisButtons |= 0x0002; a->physicalAxisButtons &= ~0x0001; }
+            else { a->physicalAxisButtons &= ~0x0003; }
 
-            if (hatY < -0.5f) { a->physicalButtons |= 0x0008; a->physicalButtons &= ~0x0004; }
-            else if (hatY > 0.5f) { a->physicalButtons |= 0x0004; a->physicalButtons &= ~0x0008; }
-            else { a->physicalButtons &= ~0x000C; }
+            if (hatY < -0.5f) { a->physicalAxisButtons |= 0x0008; a->physicalAxisButtons &= ~0x0004; }
+            else if (hatY > 0.5f) { a->physicalAxisButtons |= 0x0004; a->physicalAxisButtons &= ~0x0008; }
+            else { a->physicalAxisButtons &= ~0x000C; }
 
             // Analog Triggers (L2 / R2)
             float rawL = std::max(0.0f, AMotionEvent_getAxisValue(event, AMOTION_EVENT_AXIS_LTRIGGER, 0));
@@ -601,8 +606,8 @@ int32_t onInput(android_app* app, AInputEvent* event) {
             float rawGas = std::max(0.0f, AMotionEvent_getAxisValue(event, AMOTION_EVENT_AXIS_GAS, 0));
             float rTrig = std::max(rawR, rawGas);
 
-            if (lTrig > 0.4f) a->physicalButtons |= 0x2000; // Z button (Crouch / Ground Pound)
-            else a->physicalButtons &= ~0x2000;
+            if (lTrig > 0.4f) a->physicalAxisButtons |= 0x2000; // Z button (Crouch / Ground Pound)
+            else a->physicalAxisButtons &= ~0x2000;
 
             if (rTrig > 0.4f) a->spinFrames = 6; // Spin shake
 
@@ -613,17 +618,23 @@ int32_t onInput(android_app* app, AInputEvent* event) {
                 rightX = AMotionEvent_getAxisValue(event, AMOTION_EVENT_AXIS_RX, 0);
                 rightY = AMotionEvent_getAxisValue(event, AMOTION_EVENT_AXIS_RY, 0);
             }
-            if (fabsf(rightX) > 0.18f || fabsf(rightY) > 0.18f) {
+            // A finger on the screen keeps the pointer: the stick must not steal
+            // it back while the player is aiming by touch.
+            if ((fabsf(rightX) > 0.18f || fabsf(rightY) > 0.18f) && !a->touchscreenDown) {
                 a->pad.pointerValid = 1;
                 a->pad.pointerX = rightX;
                 a->pad.pointerY = -rightY;
                 a->pad.pointerDist = 2.0f;
             }
 
-            a->pad.buttons = a->physicalButtons | mobile_ui::get().getTouchButtons();
+            a->pad.buttons = a->physicalButtons | a->physicalAxisButtons | mobile_ui::get().getTouchButtons();
             port_input_set(0, &a->pad);
             return 1;
         }
+
+        int32_t touchAction = AMotionEvent_getAction(event) & AMOTION_EVENT_ACTION_MASK;
+        if (touchAction == AMOTION_EVENT_ACTION_DOWN) a->touchscreenDown = true;
+        if (touchAction == AMOTION_EVENT_ACTION_UP || touchAction == AMOTION_EVENT_ACTION_CANCEL) a->touchscreenDown = false;
 
         updateViewport(*a);
         int ptrX = a->vpX, ptrY = a->vpY, ptrW = a->vpW, ptrH = a->vpH;
@@ -644,7 +655,7 @@ int32_t onInput(android_app* app, AInputEvent* event) {
                 a->pad.stickX = 0.0f;
                 a->pad.stickY = 0.0f;
             }
-            a->pad.buttons = a->physicalButtons | mobile_ui::get().getTouchButtons();
+            a->pad.buttons = a->physicalButtons | a->physicalAxisButtons | mobile_ui::get().getTouchButtons();
             port_input_set(0, &a->pad);
             return 1;
         }
@@ -768,7 +779,7 @@ int32_t onInput(android_app* app, AInputEvent* event) {
             a->pad.stickX = 0.0f;
             a->pad.stickY = 0.0f;
         }
-        a->pad.buttons = a->physicalButtons | mobile_ui::get().getTouchButtons();
+        a->pad.buttons = a->physicalButtons | a->physicalAxisButtons | mobile_ui::get().getTouchButtons();
         port_input_set(0, &a->pad);
         return 1;
     }
@@ -875,6 +886,14 @@ void onAppCmd(android_app* app, int32_t cmd) {
         break;
     case APP_CMD_PAUSE:
         LOGI("APP_CMD_PAUSE");
+        // Key-up events are lost while the activity is paused, so drop every held
+        // button instead of resuming with a stuck pad.
+        a->physicalButtons = 0;
+        a->physicalAxisButtons = 0;
+        a->spinFrames = 0;
+        a->touchscreenDown = false;
+        a->pad.buttons = mobile_ui::get().getTouchButtons();
+        port_input_set(0, &a->pad);
         port_audio_pause();
         port_set_paused(1);
         break;
@@ -1163,7 +1182,7 @@ extern "C" __attribute__((visibility("default"))) void port_android_main(struct 
             a.pad.stickX = 0.0f;
             a.pad.stickY = 0.0f;
         }
-        a.pad.buttons = a.physicalButtons | mobile_ui::get().getTouchButtons();
+        a.pad.buttons = a.physicalButtons | a.physicalAxisButtons | mobile_ui::get().getTouchButtons();
         port_input_set(0, &a.pad);
 
 
@@ -1171,9 +1190,18 @@ extern "C" __attribute__((visibility("default"))) void port_android_main(struct 
         // Vulkan expects the application to create a new device and carry on, so
         // that is what is tried first: dropping the rest of the session onto
         // OpenGL ES changes both the picture and the frame rate, and the player
-        // notices.  Only a Vulkan that cannot be recreated falls back.
+        // notices.  Only a Vulkan that cannot be recreated falls back - or one
+        // that is lost again straight away, since recreating it in a loop tears
+        // the swapchain down over and over, which the player sees as the screen
+        // flickering, and never reaches a playable state.
         if (a.vkReady && gpu::VkRenderer::get().hasFailed()) {
-            LOGW("Vulkan renderer failed at runtime; recreating the Vulkan device");
+            static int64_t sLastRecreateNs = 0;
+            static int sQuickRecreates = 0;
+            int64_t nowNs = port_host_time_ns();
+            sQuickRecreates = (sLastRecreateNs && nowNs - sLastRecreateNs < 15000000000ll) ? (sQuickRecreates + 1) : 0;
+            sLastRecreateNs = nowNs;
+
+            LOGW("Vulkan renderer failed at runtime; recreating the Vulkan device (attempt %d)", sQuickRecreates + 1);
             if (a.vkTarget.framebuffer) {
                 gpu::VkRenderer::get().destroyTarget(a.vkTarget);
             }
@@ -1183,11 +1211,12 @@ extern "C" __attribute__((visibility("default"))) void port_android_main(struct 
             a.vkReady = false;
             // The shader and pipeline caches on disk mean the recreation below does
             // not pay for the programs again.
-            if (bringUpVulkan(a, a.android ? a.android->window : nullptr)) {
+            if (sQuickRecreates < 2 && bringUpVulkan(a, a.android ? a.android->window : nullptr)) {
                 LOGI("Vulkan device recreated; the session continues on Vulkan");
                 continue;
             }
-            LOGE("Vulkan could not be recreated; falling back to OpenGL ES 3.2");
+            LOGE("Vulkan was lost again immediately (or could not be recreated); falling back to OpenGL ES 3.2");
+            sQuickRecreates = 0;
             if (initEgl(a) && createSurface(a)) {
                 mobile_ui::get().setActiveBackend(0);
                 LOGI("OpenGL ES 3.2 fallback renderer active");

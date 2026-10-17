@@ -606,9 +606,12 @@ std::string genFragmentShader(const ShaderUid& u) {
         {
             uint32_t ca = (cc >> 12) & 15, cb = (cc >> 8) & 15, cc2 = (cc >> 4) & 15, cd = cc & 15;
             uint32_t aa = (ac >> 13) & 7, ab = (ac >> 10) & 7, ac2 = (ac >> 7) & 7, ad = (ac >> 4) & 7;
-            o.w("  tevin_a = ivec4(%s, %s) & 255;\n", kColorIn[ca], kAlphaIn[aa]);
-            o.w("  tevin_b = ivec4(%s, %s) & 255;\n", kColorIn[cb], kAlphaIn[ab]);
-            o.w("  tevin_c = ivec4(%s, %s) & 255;\n", kColorIn[cc2], kAlphaIn[ac2]);
+            // Mask each operand before it becomes a component of the vector: some
+            // Mali drivers mishandle a bitwise AND applied to a whole ivec4, which
+            // corrupts the TEV inputs (white or black character materials).
+            o.w("  tevin_a = ivec4((%s) & 255, (%s) & 255);\n", kColorIn[ca], kAlphaIn[aa]);
+            o.w("  tevin_b = ivec4((%s) & 255, (%s) & 255);\n", kColorIn[cb], kAlphaIn[ab]);
+            o.w("  tevin_c = ivec4((%s) & 255, (%s) & 255);\n", kColorIn[cc2], kAlphaIn[ac2]);
             o.w("  tevin_d = ivec4(%s, %s);\n", kColorIn[cd], kAlphaIn[ad]);
         }
 

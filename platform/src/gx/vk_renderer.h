@@ -213,6 +213,10 @@ private:
     bool waitInFlightSubmissions(const char* where);
     // Records a fatal Vulkan error (once) and stops rendering.
     void markFatal(const char* where, const char* what, int result);
+    // Ask the driver why the device was lost (VK_EXT_device_fault, if present).
+    void logDeviceFault(const char* where);
+    // Forget the driver pipeline cache after a device loss (see markFatal).
+    void discardPipelineCacheAfterFault();
 
     bool createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties,
                       VkBuffer& buffer, VkDeviceMemory& bufferMemory);
@@ -280,7 +284,13 @@ private:
     VkCommandBuffer mCommandBuffer = VK_NULL_HANDLE;
 
     VkSemaphore mImageAvailableSem = VK_NULL_HANDLE;
-    VkSemaphore mRenderFinishedSem = VK_NULL_HANDLE;
+    // One "render finished" semaphore per swapchain image.  The presentation of
+    // an image consumes it, and that outlives the submit's fence, so a single
+    // shared semaphore would be signalled again while still in use - the spec
+    // forbids that (VUID-vkQueueSubmit-pSignalSemaphores-00067) and Mali answers
+    // with a lost device.  An image can only be acquired again once its present
+    // has finished, which is exactly when its semaphore is free again.
+    std::vector<VkSemaphore> mRenderFinishedSems;
     VkFence mRenderFence = VK_NULL_HANDLE;
     VkFence mPresentFence = VK_NULL_HANDLE;
     bool mRenderFenceInFlight = false;

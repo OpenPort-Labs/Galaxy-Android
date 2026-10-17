@@ -971,7 +971,12 @@ namespace MR {
 };  // namespace MR
 
 extern "C" int port_is_title_screen(void) {
-    StarPointerOnOffController* ctrl = ::getStarPointerOnOffController();
+    // The overlay polls this every frame, including before port_boot has created
+    // the game system, so walk the chain defensively instead of dereferencing a
+    // half-built singleton.
+    GameSystem* system = SingletonHolder< GameSystem >::get();
+    if (!system || !system->mSequenceDirector || !system->mSequenceDirector->mGameSequenceProgress) return 1;
+    StarPointerOnOffController* ctrl = system->mSequenceDirector->mGameSequenceProgress->mStarPointerOnOffController;
     if (!ctrl) return 1;
     s32 mode = ctrl->mMode;
     return (mode == StarPointerMode_Title || mode == StarPointerMode_Logo);

@@ -50,6 +50,10 @@ static std::vector<VkPendingDelete> sVkPendingDeletes;
 // device must never be destroyed on the current one.
 static uint64_t sVkDeviceGeneration = 0;
 
+uint64_t vkDeviceGeneration() {
+    return sVkDeviceGeneration;
+}
+
 void queueVkTextureDelete(uint64_t image, uint64_t memory, uint64_t view) {
     if (!image && !memory && !view) return;
     std::lock_guard<std::mutex> lock(sVkDeleteLock);
@@ -88,9 +92,52 @@ void VkRenderer::trimFrameCaches(uint64_t frame) {
     }
 }
 
+// The driver's own account of a lost device (VK_EXT_device_fault).  It is read
+// before anything else touches the device, because the fault info is only valid
+// while the device still exists.
+void VkRenderer::logDeviceFault(const char* where) {
+    static PFN_vkGetDeviceFaultInfoEXT getFaultInfo = nullptr;
+    static bool resolved = false;
+    if (!resolved) {
+        resolved = true;
+        if (mDevice != VK_NULL_HANDLE) {
+            getFaultInfo = (PFN_vkGetDeviceFaultInfoEXT)vkGetDeviceProcAddr(mDevice, "vkGetDeviceFaultInfoEXT");
+        }
+    }
+    if (!getFaultInfo || mDevice == VK_NULL_HANDLE) return;
+
+    VkDeviceFaultCountsEXT counts{};
+    counts.sType = VK_STRUCTURE_TYPE_DEVICE_FAULT_COUNTS_EXT;
+    if (getFaultInfo(mDevice, &counts, nullptr) != VK_SUCCESS) return;
+
+    VkDeviceFaultInfoEXT info{};
+    info.sType = VK_STRUCTURE_TYPE_DEVICE_FAULT_INFO_EXT;
+    std::vector<VkDeviceFaultAddressInfoEXT> addrInfo(counts.addressInfoCount);
+    std::vector<VkDeviceFaultVendorInfoEXT> vendorInfo(counts.vendorInfoCount);
+    // The vendor binary blob is driver-specific and would only be useful to the
+    // driver vendor's tools, so the description and the addresses are enough.
+    info.pAddressInfos = addrInfo.empty() ? nullptr : addrInfo.data();
+    info.pVendorInfos = vendorInfo.empty() ? nullptr : vendorInfo.data();
+    if (getFaultInfo(mDevice, &counts, &info) != VK_SUCCESS) return;
+
+    port_log("vk: device fault during %s: %s", where, info.description);
+    for (uint32_t i = 0; i < counts.addressInfoCount; i++) {
+        port_log("vk:   fault address info %u: type %d, address 0x%llx, precision 0x%llx", i, (int)addrInfo[i].addressType,
+                 (unsigned long long)addrInfo[i].reportedAddress, (unsigned long long)addrInfo[i].addressPrecision);
+    }
+    for (uint32_t i = 0; i < counts.vendorInfoCount; i++) {
+        port_log("vk:   vendor fault %u: %s (code %llu, data 0x%llx)", i, vendorInfo[i].description,
+                 (unsigned long long)vendorInfo[i].vendorFaultCode, (unsigned long long)vendorInfo[i].vendorFaultData);
+    }
+}
+
 void VkRenderer::markFatal(const char* where, const char* what, int result) {
     if (mFatal) return;
     mFatal = true;
+    if (result == VK_ERROR_DEVICE_LOST) {
+        logDeviceFault(where);
+        discardPipelineCacheAfterFault();
+    }
     // The device is unusable from here on: nothing may be waited for or
     // destroyed piecemeal any more, and the caller has to switch backends.
     mRenderFenceInFlight = false;
@@ -416,10 +463,10 @@ void VkRenderer::shutdown() {
             vkDestroySemaphore(mDevice, mImageAvailableSem, nullptr);
             mImageAvailableSem = VK_NULL_HANDLE;
         }
-        if (mRenderFinishedSem != VK_NULL_HANDLE) {
-            vkDestroySemaphore(mDevice, mRenderFinishedSem, nullptr);
-            mRenderFinishedSem = VK_NULL_HANDLE;
+        for (VkSemaphore s : mRenderFinishedSems) {
+            if (s != VK_NULL_HANDLE) vkDestroySemaphore(mDevice, s, nullptr);
         }
+        mRenderFinishedSems.clear();
 
         if (mDummySampler != VK_NULL_HANDLE) {
             vkDestroySampler(mDevice, mDummySampler, nullptr);
@@ -662,13 +709,36 @@ void VkRenderer::savePipelineCache() {
 
     std::vector<char> data(dataSize);
     if (vkGetPipelineCacheData(mDevice, mPipelineCache, &dataSize, data.data()) == VK_SUCCESS) {
-        FILE* f = fopen(getPipelineCachePath(), "wb");
+        // Written beside the real file and renamed into place: a session that is
+        // killed part way through the write must not leave a truncated cache
+        // behind, because the driver only validates the header and would then
+        // read the rest as garbage (which is a GPU fault, not an error it
+        // reports).
+        const std::string tmpPath = std::string(getPipelineCachePath()) + ".tmp";
+        FILE* f = fopen(tmpPath.c_str(), "wb");
         if (f) {
-            fwrite(data.data(), 1, dataSize, f);
-            fclose(f);
-            LOGI("Saved Vulkan pipeline cache (%zu bytes)", dataSize);
+            bool ok = fwrite(data.data(), 1, dataSize, f) == dataSize;
+            if (fclose(f) != 0) ok = false;
+            if (ok && rename(tmpPath.c_str(), getPipelineCachePath()) == 0) {
+                LOGI("Saved Vulkan pipeline cache (%zu bytes)", dataSize);
+            } else {
+                remove(tmpPath.c_str());
+                LOGW("Could not store the Vulkan pipeline cache; continuing without it");
+            }
         }
     }
+}
+
+void VkRenderer::discardPipelineCacheAfterFault() {
+    // A driver cache that preceded a lost device cannot be trusted: loading it
+    // again is how a recreation ends up losing the new device immediately.  The
+    // SPIR-V cache is ours and checksummed, so only the driver's cache goes.
+    const char* path = getPipelineCachePath();
+    if (remove(path) == 0) {
+        port_log("vk: dropped the driver pipeline cache after a device loss (%s)", path);
+    }
+    const std::string tmpPath = std::string(path) + ".tmp";
+    remove(tmpPath.c_str());
 }
 
 bool VkRenderer::createInstance() {
@@ -778,16 +848,33 @@ bool VkRenderer::createLogicalDevice() {
     queueCreateInfo.queueCount = 1;
     queueCreateInfo.pQueuePriorities = &queuePriority;
 
-    const char* deviceExtensions[] = {
+    // VK_EXT_device_fault is what turns "the device was lost" into a reason: the
+    // driver reports the faulting address and the vendor's own description, which
+    // is the only way to find a GPU fault that validation cannot see (an index
+    // computed in a shader that runs off the end of a storage buffer, say).
+    std::vector<const char*> deviceExtensions = {
         VK_KHR_SWAPCHAIN_EXTENSION_NAME,
     };
+    uint32_t availExtCount = 0;
+    vkEnumerateDeviceExtensionProperties(mPhysicalDevice, nullptr, &availExtCount, nullptr);
+    if (availExtCount > 0) {
+        std::vector<VkExtensionProperties> avail(availExtCount);
+        vkEnumerateDeviceExtensionProperties(mPhysicalDevice, nullptr, &availExtCount, avail.data());
+        for (const VkExtensionProperties& ext : avail) {
+            if (strcmp(ext.extensionName, "VK_EXT_device_fault") == 0) {
+                deviceExtensions.push_back("VK_EXT_device_fault");
+                LOGI("VK_EXT_device_fault available; device losses will report a reason");
+                break;
+            }
+        }
+    }
 
     VkDeviceCreateInfo createInfo{};
     createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
     createInfo.queueCreateInfoCount = 1;
     createInfo.pQueueCreateInfos = &queueCreateInfo;
-    createInfo.enabledExtensionCount = 1;
-    createInfo.ppEnabledExtensionNames = deviceExtensions;
+    createInfo.enabledExtensionCount = (uint32_t)deviceExtensions.size();
+    createInfo.ppEnabledExtensionNames = deviceExtensions.data();
 
     VkPhysicalDeviceFeatures deviceFeatures{};
     deviceFeatures.samplerAnisotropy = mDeviceFeatures.samplerAnisotropy;
@@ -904,13 +991,30 @@ bool VkRenderer::createSwapchain() {
     }
 
     sci.preTransform = preTransform;
+    // Android surfaces do not always support OPAQUE: asking for it regardless
+    // fails validation and makes the driver composite the (undefined) alpha
+    // channel, which the player sees as flicker.  Take the first supported mode
+    // instead of assuming.
+    static const VkCompositeAlphaFlagBitsKHR kAlphaModes[] = {
+        VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
+        VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR,
+        VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR,
+        VK_COMPOSITE_ALPHA_POST_MULTIPLIED_BIT_KHR,
+    };
     sci.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+    for (VkCompositeAlphaFlagBitsKHR mode : kAlphaModes) {
+        if (caps.supportedCompositeAlpha & mode) {
+            sci.compositeAlpha = mode;
+            break;
+        }
+    }
     sci.presentMode = chosenPresentMode;
     sci.clipped = VK_TRUE;
 
-    LOGI("Creating Vulkan swapchain: extent %ux%u (window %dx%d), transform=0x%x (current=0x%x), presentMode=%d (%s)",
+    LOGI("Creating Vulkan swapchain: extent %ux%u (window %dx%d), transform=0x%x (current=0x%x), presentMode=%d (%s), compositeAlpha=0x%x (supported=0x%x)",
          swapExtent.width, swapExtent.height, mWidth, mHeight, preTransform, caps.currentTransform,
-         (int)chosenPresentMode, chosenPresentMode == VK_PRESENT_MODE_MAILBOX_KHR ? "MAILBOX" : "FIFO");
+         (int)chosenPresentMode, chosenPresentMode == VK_PRESENT_MODE_MAILBOX_KHR ? "MAILBOX" : "FIFO",
+         (unsigned)sci.compositeAlpha, (unsigned)caps.supportedCompositeAlpha);
 
     if (vkCreateSwapchainKHR(mDevice, &sci, nullptr, &mSwapchain) != VK_SUCCESS) {
         return false;
@@ -938,6 +1042,24 @@ bool VkRenderer::createSwapchain() {
         ivci.subresourceRange.baseArrayLayer = 0;
         ivci.subresourceRange.layerCount = 1;
         if (vkCreateImageView(mDevice, &ivci, nullptr, &mSwapchainImageViews[i]) != VK_SUCCESS) {
+            return false;
+        }
+    }
+
+    // A "render finished" semaphore per image: the present that waits on it can
+    // still be running when the next frame is submitted, and re-signalling a
+    // semaphore that a pending present still owns is forbidden and makes Mali
+    // report a lost device.  Each image's semaphore is only reused once that
+    // image is acquired again, which means its previous present has finished.
+    for (VkSemaphore s : mRenderFinishedSems) {
+        if (s != VK_NULL_HANDLE) vkDestroySemaphore(mDevice, s, nullptr);
+    }
+    mRenderFinishedSems.clear();
+    VkSemaphoreCreateInfo semInfo{};
+    semInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+    mRenderFinishedSems.assign(actualImageCount, VK_NULL_HANDLE);
+    for (size_t i = 0; i < actualImageCount; i++) {
+        if (vkCreateSemaphore(mDevice, &semInfo, nullptr, &mRenderFinishedSems[i]) != VK_SUCCESS) {
             return false;
         }
     }
@@ -1135,7 +1257,8 @@ bool VkRenderer::createSyncObjects() {
     fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
 
     if (vkCreateSemaphore(mDevice, &semInfo, nullptr, &mImageAvailableSem) != VK_SUCCESS) return false;
-    if (vkCreateSemaphore(mDevice, &semInfo, nullptr, &mRenderFinishedSem) != VK_SUCCESS) return false;
+    // mRenderFinishedSems are created with the swapchain images (see
+    // createSwapchainImageViewsAndSync).
     if (vkCreateFence(mDevice, &fenceInfo, nullptr, &mRenderFence) != VK_SUCCESS) return false;
     if (vkCreateFence(mDevice, &fenceInfo, nullptr, &mPresentFence) != VK_SUCCESS) return false;
 
@@ -2274,9 +2397,12 @@ void VkRenderer::evictCopies(uint64_t currentFrame) {
     const uint64_t kKeepFrames = 16;
     for (auto it = mCopies.begin(); it != mCopies.end();) {
         if (it->first != kXfbCopyKey && it->second.frame + kKeepFrames < currentFrame) {
-            if (it->second.view != VK_NULL_HANDLE) vkDestroyImageView(mDevice, it->second.view, nullptr);
-            if (it->second.image != VK_NULL_HANDLE) vkDestroyImage(mDevice, it->second.image, nullptr);
-            if (it->second.memory != VK_NULL_HANDLE) vkFreeMemory(mDevice, it->second.memory, nullptr);
+            // Destroying an evicted copy here would free a view that the command
+            // buffer just submitted may still be reading (a copy texture can be
+            // bound in the frame that evicts it), which the driver reports as a
+            // lost device.  The deferred queue is only drained once nothing is
+            // in flight, so the objects go through it instead.
+            queueVkTextureDelete((uint64_t)it->second.image, (uint64_t)it->second.memory, (uint64_t)it->second.view);
             it = mCopies.erase(it);
         } else {
             ++it;
@@ -2353,14 +2479,22 @@ void VkRenderer::uploadTextures(const std::vector<std::shared_ptr<TexImage>>& te
         // The images live on the TexImage itself, so they are released on the
         // thread that drops the texture (see queueVkTextureDelete) instead of
         // piling up in a cache keyed by a pointer that will be reused.
-        if (img->vkImage != 0 && img->vkVersion == img->version) {
+        //
+        // A texture is only up to date when its handles were made on the device
+        // in use now: after a device loss the old handles are dangling, and
+        // reusing them is what kept killing the replacement device.
+        bool sameDevice = (img->vkGeneration == sVkDeviceGeneration);
+        if (img->vkImage != 0 && img->vkVersion == img->version && sameDevice) {
             continue;
         }
 
         if (img->vkView != 0 || img->vkImage != 0 || img->vkMemory != 0) {
-            if (img->vkView) vkDestroyImageView(mDevice, (VkImageView)img->vkView, nullptr);
-            if (img->vkImage) vkDestroyImage(mDevice, (VkImage)img->vkImage, nullptr);
-            if (img->vkMemory) vkFreeMemory(mDevice, (VkDeviceMemory)img->vkMemory, nullptr);
+            if (sameDevice) {
+                if (img->vkView) vkDestroyImageView(mDevice, (VkImageView)img->vkView, nullptr);
+                if (img->vkImage) vkDestroyImage(mDevice, (VkImage)img->vkImage, nullptr);
+                if (img->vkMemory) vkFreeMemory(mDevice, (VkDeviceMemory)img->vkMemory, nullptr);
+            }
+            // Otherwise the owning device is gone: the handles are just forgotten.
             img->vkView = img->vkImage = img->vkMemory = 0;
         }
 
@@ -2494,6 +2628,7 @@ void VkRenderer::uploadTextures(const std::vector<std::shared_ptr<TexImage>>& te
         img->vkMemory = (uint64_t)vt.memory;
         img->vkView = (uint64_t)vt.view;
         img->vkVersion = vt.version;
+        img->vkGeneration = sVkDeviceGeneration;
     }
 }
 
@@ -3568,7 +3703,14 @@ void VkRenderer::present(const VkTarget& target, int vpX, int vpY, int vpW, int 
     submitInfo.pWaitDstStageMask = waitStages;
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &mCommandBuffer;
-    VkSemaphore signalSemaphores[] = {mRenderFinishedSem};
+    VkSemaphore presentWaitSem = (imageIndex < mRenderFinishedSems.size()) ? mRenderFinishedSems[imageIndex] : VK_NULL_HANDLE;
+    VkSemaphore signalSemaphores[] = {presentWaitSem};
+    if (presentWaitSem == VK_NULL_HANDLE) {
+        // Without a semaphore for this image the present would have nothing to
+        // wait for, which would show a half-written image.
+        markFatal("present", "no render-finished semaphore for the acquired image", 0);
+        return;
+    }
     submitInfo.signalSemaphoreCount = 1;
     submitInfo.pSignalSemaphores = signalSemaphores;
 

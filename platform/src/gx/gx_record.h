@@ -78,6 +78,10 @@ struct TexImage {
     uint64_t vkMemory = 0;
     uint64_t vkView = 0;
     uint64_t vkVersion = 0;
+    // The Vulkan device these handles belong to.  After a device loss the
+    // renderer builds a new device, and handles from the old one are dangling:
+    // they have to be re-uploaded rather than reused or destroyed.
+    uint64_t vkGeneration = 0;
 
     ~TexImage();  // queues glTex / the Vulkan images for deletion on the render thread
 };
@@ -87,6 +91,8 @@ void queueGlTextureDelete(uint32_t tex);
 
 // Vulkan objects released by other threads, deleted by the render thread.
 void queueVkTextureDelete(uint64_t image, uint64_t memory, uint64_t view);
+// The device generation objects are created against (see TexImage::vkGeneration).
+uint64_t vkDeviceGeneration();
 
 enum Cmd : uint32_t {
     CMD_XF = 1,        // addr, count, values[count]

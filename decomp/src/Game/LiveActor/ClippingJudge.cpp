@@ -1,6 +1,6 @@
 #include "Game/LiveActor/ClippingJudge.hpp"
 #include "Game/LiveActor/ClippingDirector.hpp"
-#include "Game/Util.hpp"
+#include "Game/Util/CameraUtil.hpp"
 
 void ClippingJudge_FORCE_MATCH_SDATA2() {
     0.0f;

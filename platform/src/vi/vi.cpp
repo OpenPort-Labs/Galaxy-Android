@@ -3,15 +3,16 @@
 // game flips to here.  In the headset the display times the retraces
 // (port_vi_retrace, every second refresh at 120 Hz); otherwise, and as a
 // fallback, a free-running 59.94 Hz clock does.
-#include <string.h>
-
 #include <atomic>
 #include <thread>
 
 #include "port/heap_routing.h"
 #include "port/port.h"
-#include "revolution/os.h"
-#include "revolution/vi.h"
+#include "revolution/os/OSInterrupt.h"
+#include "revolution/os/OSThread.h"
+#include "revolution/vi/vi3in1types.h"
+#include "revolution/vi/vifuncs.h"
+#include "revolution/vi/vitypes.h"
 
 static VIRetraceCallback sPreCb;
 static VIRetraceCallback sPostCb;

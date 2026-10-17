@@ -56,6 +56,13 @@ struct ShaderUidHash {
 // vertex layout.
 ShaderUid makeShaderUid(const uint32_t* bp, const uint32_t* xfRegs, uint32_t vtxFlags, bool hud);
 
+// A channel control word (XF 0x100E/0x100F, written by GXSetChanCtrl) asks for
+// the light's attenuation to be folded into the diffuse sum.  Bit 9 is set for
+// GX_AF_SPOT, GX_AF_DIST and GX_AF_SPEC; bit 10 is clear for GX_AF_SPEC alone,
+// whose attenuation applies to the specular term, not the diffuse one (the SDK
+// also zeroes the diffuse function there, see GXLight.c: GXSetChanCtrl).
+inline bool gxDiffuseAttenuated(uint32_t chanCtrl) { return ((chanCtrl >> 9) & 1) && ((chanCtrl >> 10) & 1); }
+
 std::string genVertexShader(const ShaderUid& uid);
 std::string genFragmentShader(const ShaderUid& uid);
 

@@ -12,13 +12,13 @@ ClippingJudge::ClippingJudge(const char* pName) : NameObj(pName), mFrustum() {
     }
 
     mClipDistances[0] = 0.0f;
-    mClipDistances[1] = 60000.0f;
-    mClipDistances[2] = 50000.0f;
-    mClipDistances[3] = 40000.0f;
-    mClipDistances[4] = 30000.0f;
-    mClipDistances[5] = 20000.0f;
-    mClipDistances[6] = 10000.0f;
-    mClipDistances[7] = 5000.0f;
+    mClipDistances[1] = 90000.0f;
+    mClipDistances[2] = 75000.0f;
+    mClipDistances[3] = 60000.0f;
+    mClipDistances[4] = 45000.0f;
+    mClipDistances[5] = 30000.0f;
+    mClipDistances[6] = 20000.0f;
+    mClipDistances[7] = 12000.0f;
 }
 
 void ClippingJudge::init(const JMapInfoIter& rIter) {
@@ -52,6 +52,13 @@ void ClippingJudge::calcViewingVolume(THex3f* pVolume, f32 farClip) {
     cameraMtx.setPositionFromLookAt(MR::getCameraViewMtx());
     f32 height = nearClip * static_cast< f32 >(tan(fovy * (JGeometry::TUtil< f32 >::PI() / 360.0f)));
     f32 width = aspect * height;
+    // On widescreen and modern ultrawide screens (19.5:9, 20:9, 21:9), extend the horizontal frustum
+    // margin so actors at the screen periphery don't pop in/out during fast camera pans.
+    if (aspect > 1.77f) {
+        width *= 1.25f;
+    } else {
+        width *= 1.10f;
+    }
 #ifdef TARGET_PC
     {
         // In VR, cull against what the headset actually sees.

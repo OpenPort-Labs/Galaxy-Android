@@ -1038,6 +1038,7 @@ static void syncMobileFrameRate(int targetFps, float speed) {
     if (targetFps < 30) targetFps = 30;
     if (targetFps > 144) targetFps = 144;
     updateWindowRefreshRate((float)targetFps);
+    port_set_display_refresh_rate(targetFps);
 
     if (speed > 1.05f) {
         targetFps = (int)((float)targetFps * speed);

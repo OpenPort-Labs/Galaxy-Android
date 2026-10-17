@@ -33,6 +33,14 @@ extern "C" void port_android_exit_to_launcher();
 extern "C" void port_set_game_speed(float speed);
 extern "C" float port_get_game_speed(void);
 extern "C" void port_language_set(const char* name);
+extern "C" void port_set_display_refresh_rate(int hz);
+extern "C" int port_get_display_refresh_rate(void);
+
+inline void applyTargetFps(int fps) {
+    if (fps < 30) fps = 30;
+    if (fps > 144) fps = 144;
+    port_set_display_refresh_rate(fps);
+}
 
 inline void applyGameSpeed(int speedIdx) {
     float speed = 1.0f;
@@ -384,6 +392,7 @@ void UIOverlay::setSavePath(const std::string& path) {
     mSettings.load(path);
     applyGameSpeed(mSettings.gameSpeed);
     applyLanguage(mSettings.languageChoice);
+    applyTargetFps(mSettings.batterySaver ? 30 : mSettings.targetFps);
 }
 
 void UIOverlay::reportFramePresented() {
@@ -1040,7 +1049,7 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
         float contentW = drawerW - padX * 2.0f;
         float contentTop = mPlusEdition ? (112.0f * uiScale) : (68.0f * uiScale);
         float contentBottom = h - 56.0f * uiScale;
-        float totalContentH = (mSettingsTab == 0 || !mPlusEdition) ? (1520.0f * uiScale) : (440.0f * uiScale);
+        float totalContentH = (mSettingsTab == 0 || !mPlusEdition) ? (1580.0f * uiScale) : (440.0f * uiScale);
         float maxScroll = std::max(0.0f, totalContentH - (contentBottom - contentTop));
 
         // 1. Move Gesture for Smooth Scrolling
@@ -1224,30 +1233,49 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
                                       mSettings.renderScale == 1 ? "Resolution: 720p (HD Balanced)" :
                                       mSettings.renderScale == 2 ? "Resolution: 1080p (Full HD)" : "Resolution: 1440p (2K Ultra)");
                         }
+                        // Row 16b: Display Refresh Rate & Framerate
+                        else if (contentRelY >= 950.0f * uiScale && contentRelY < 1008.0f * uiScale) {
+                            float segW = contentW / 4.0f;
+                            int idx = (int)((px - (drawerX + padX)) / segW);
+                            int fps = (idx == 0) ? 60 : (idx == 1) ? 90 : (idx == 2) ? 120 : 144;
+                            mSettings.targetFps = fps;
+                            mSettings.batterySaver = false;
+                            applyTargetFps(fps);
+                            if (!mSavePath.empty()) mSettings.save(mSavePath);
+                            mDirty = true;
+                            showToast(fps == 60 ? "Framerate: 60 Hz (Standard)" :
+                                      fps == 90 ? "Framerate: 90 Hz (Smooth High-Refresh)" :
+                                      fps == 120 ? "Framerate: 120 Hz (Ultra Smooth Native Pacing)" :
+                                      "Framerate: 144 Hz (Extreme Refresh Rate)");
+                        }
                         // Row 17: Vibration Haptics
-                        else if (contentRelY >= 950.0f * uiScale && contentRelY < 1004.0f * uiScale) {
+                        else if (contentRelY >= 1008.0f * uiScale && contentRelY < 1062.0f * uiScale) {
                             mSettings.haptics = !mSettings.haptics;
                             showToast(mSettings.haptics ? "Vibration Haptics: ON" : "Vibration Haptics: OFF");
                         }
                         // Row 18: Battery Saver Switch
-                        else if (contentRelY >= 1004.0f * uiScale && contentRelY < 1058.0f * uiScale) {
+                        else if (contentRelY >= 1062.0f * uiScale && contentRelY < 1116.0f * uiScale) {
                             mSettings.batterySaver = !mSettings.batterySaver;
                             if (mSettings.batterySaver) {
                                 mSettings.targetFps = 30;
+                                applyTargetFps(30);
                             } else if (mSettings.targetFps <= 30) {
                                 mSettings.targetFps = 60;
+                                applyTargetFps(60);
+                            } else {
+                                applyTargetFps(mSettings.targetFps);
                             }
                             if (!mSavePath.empty()) mSettings.save(mSavePath);
                             mDirty = true;
                             showToast(mSettings.batterySaver ? "Battery Saver: ON (30 FPS Limit)" : "Battery Saver: OFF (Performance Mode)");
                         }
                         // Row 19: Gyroscope Star Pointer Switch
-                        else if (contentRelY >= 1058.0f * uiScale && contentRelY < 1112.0f * uiScale) {
+                        else if (contentRelY >= 1116.0f * uiScale && contentRelY < 1170.0f * uiScale) {
                             mSettings.gyroAiming = !mSettings.gyroAiming;
                             showToast(mSettings.gyroAiming ? "Gyro Aiming: ON (Tilt Device to Aim)" : "Gyro Aiming: OFF");
                         }
                         // Row 19b: Gyro Invert X / Invert Y Buttons
-                        else if (contentRelY >= 1112.0f * uiScale && contentRelY < 1162.0f * uiScale) {
+                        else if (contentRelY >= 1170.0f * uiScale && contentRelY < 1220.0f * uiScale) {
                             float midX = drawerX + padX + contentW * 0.5f;
                             if (px < midX) {
                                 mSettings.gyroInvertX = !mSettings.gyroInvertX;
@@ -1258,12 +1286,12 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
                             }
                         }
                         // Row 19c: Relative Pointer Switch (Issue #11)
-                        else if (contentRelY >= 1162.0f * uiScale && contentRelY < 1216.0f * uiScale) {
+                        else if (contentRelY >= 1220.0f * uiScale && contentRelY < 1274.0f * uiScale) {
                             mSettings.relativePointer = !mSettings.relativePointer;
                             showToast(mSettings.relativePointer ? "Relative Pointer: ON (Trackpad mode)" : "Relative Pointer: OFF (Direct touch)");
                         }
                         // Row 19d: Screen Orientation Choice (Issues #18 & #19)
-                        else if (contentRelY >= 1216.0f * uiScale && contentRelY < 1276.0f * uiScale) {
+                        else if (contentRelY >= 1274.0f * uiScale && contentRelY < 1334.0f * uiScale) {
                             float segW = contentW / 3.0f;
                             int idx = (int)((px - (drawerX + padX)) / segW);
                             mSettings.screenOrientationChoice = std::max(0, std::min(2, idx));
@@ -1271,7 +1299,7 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
                                       mSettings.screenOrientationChoice == 1 ? "Orientation: Fixed Landscape" : "Orientation: Fixed Reverse Landscape");
                         }
                         // Row 20: Save Backup (Export / Import)
-                        else if (contentRelY >= 1276.0f * uiScale && contentRelY < 1336.0f * uiScale) {
+                        else if (contentRelY >= 1334.0f * uiScale && contentRelY < 1394.0f * uiScale) {
                             float midX = drawerX + padX + contentW * 0.5f;
                             if (px < midX) {
                                 exportSave();
@@ -1280,7 +1308,7 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
                             }
                         }
                         // Row 22: Return to Setup / Launcher Button
-                        else if (contentRelY >= 1410.0f * uiScale && contentRelY < 1490.0f * uiScale) {
+                        else if (contentRelY >= 1468.0f * uiScale && contentRelY < 1548.0f * uiScale) {
                             mSettingsOpen = false;
                             port_android_exit_to_launcher();
                             return true;
@@ -2461,29 +2489,37 @@ void UIOverlay::generateVertices(int screenW, int screenH, std::vector<UIVertex>
                 drawSegmentedGroup(drawerX + padX, y + 22.0f * uiScale, contentW, 34.0f * uiScale, resOpts, 4, resIdx);
             });
 
+            // Row 16b: Display Refresh & Framerate Pacing
+            renderRow(950.0f * uiScale, 54.0f * uiScale, [&](float y) {
+                drawText("Display Refresh & Target FPS", drawerX + padX, y + 14.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
+                const char* fpsOpts[4] = {"60 Hz", "90 Hz", "120 Hz", "144 Hz"};
+                int fpsIdx = (mSettings.targetFps >= 144) ? 3 : (mSettings.targetFps >= 120) ? 2 : (mSettings.targetFps >= 90) ? 1 : 0;
+                drawSegmentedGroup(drawerX + padX, y + 22.0f * uiScale, contentW, 34.0f * uiScale, fpsOpts, 4, fpsIdx);
+            });
+
             // Row 17: Vibration Haptics Switch
-            renderRow(950.0f * uiScale, 46.0f * uiScale, [&](float y) {
+            renderRow(1008.0f * uiScale, 46.0f * uiScale, [&](float y) {
                 drawText("Vibration Haptics", drawerX + padX, y + 20.0f * uiScale, 0.40f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
                 drawText("Tactile feedback on button presses", drawerX + padX, y + 36.0f * uiScale, 0.29f * uiScale, rgba(0.761f, 0.776f, 0.812f, 0.85f), 0);
                 drawM3Switch(drawerX + drawerW - padX - swW, y + 10.0f * uiScale, swW, swH, mSettings.haptics);
             });
 
             // Row 18: Battery Saver Switch
-            renderRow(1004.0f * uiScale, 48.0f * uiScale, [&](float y) {
+            renderRow(1062.0f * uiScale, 48.0f * uiScale, [&](float y) {
                 drawText("Battery Saver / Cool Mode", drawerX + padX, y + 18.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
                 drawText("30 FPS lock, minimizes thermal load", drawerX + padX, y + 34.0f * uiScale, 0.28f * uiScale, rgba(0.761f, 0.776f, 0.812f, 0.85f), 0);
                 drawM3Switch(drawerX + drawerW - padX - swW, y + 10.0f * uiScale, swW, swH, mSettings.batterySaver);
             });
 
             // Row 19: Gyroscope Star Pointer Switch
-            renderRow(1058.0f * uiScale, 48.0f * uiScale, [&](float y) {
+            renderRow(1116.0f * uiScale, 48.0f * uiScale, [&](float y) {
                 drawText("Gyro Star Pointer Aiming", drawerX + padX, y + 18.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
                 drawText("Tilt phone to steer Star Pointer", drawerX + padX, y + 34.0f * uiScale, 0.28f * uiScale, rgba(0.761f, 0.776f, 0.812f, 0.85f), 0);
                 drawM3Switch(drawerX + drawerW - padX - swW, y + 10.0f * uiScale, swW, swH, mSettings.gyroAiming);
             });
 
             // Row 19b: Gyro Invert Axes
-            renderRow(1112.0f * uiScale, 46.0f * uiScale, [&](float y) {
+            renderRow(1170.0f * uiScale, 46.0f * uiScale, [&](float y) {
                 float b1X0 = drawerX + padX;
                 float b1X1 = drawerX + padX + contentW * 0.5f - 4.0f * uiScale;
                 float b2X0 = drawerX + padX + contentW * 0.5f + 4.0f * uiScale;
@@ -2499,21 +2535,21 @@ void UIOverlay::generateVertices(int screenW, int screenH, std::vector<UIVertex>
             });
 
             // Row 19c: Relative Pointer Switch (Issue #11)
-            renderRow(1164.0f * uiScale, 48.0f * uiScale, [&](float y) {
+            renderRow(1222.0f * uiScale, 48.0f * uiScale, [&](float y) {
                 drawText("Relative Star Pointer (Trackpad)", drawerX + padX, y + 18.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
                 drawText("Drag anywhere to steer pointer without blocking view", drawerX + padX, y + 34.0f * uiScale, 0.28f * uiScale, rgba(0.761f, 0.776f, 0.812f, 0.85f), 0);
                 drawM3Switch(drawerX + drawerW - padX - swW, y + 10.0f * uiScale, swW, swH, mSettings.relativePointer);
             });
 
             // Row 19d: Screen Orientation Segmented Button (Issues #18 & #19)
-            renderRow(1218.0f * uiScale, 56.0f * uiScale, [&](float y) {
+            renderRow(1276.0f * uiScale, 56.0f * uiScale, [&](float y) {
                 drawText("Screen Orientation", drawerX + padX, y + 14.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
                 const char* orientOpts[3] = {"Auto Sensor", "Landscape", "Reverse"};
                 drawSegmentedGroup(drawerX + padX, y + 22.0f * uiScale, contentW, 34.0f * uiScale, orientOpts, 3, mSettings.screenOrientationChoice);
             });
 
             // Row 20: Save Data Backup (Downloads)
-            renderRow(1280.0f * uiScale, 56.0f * uiScale, [&](float y) {
+            renderRow(1338.0f * uiScale, 56.0f * uiScale, [&](float y) {
                 drawText("Save Data Backup (Downloads)", drawerX + padX, y + 14.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
                 float btnY = y + 22.0f * uiScale;
                 float b1X0 = drawerX + padX;
@@ -2527,7 +2563,7 @@ void UIOverlay::generateVertices(int screenW, int screenH, std::vector<UIVertex>
             });
 
             // Row 21: Realtime Hardware & Device Info Card
-            renderRow(1342.0f * uiScale, 64.0f * uiScale, [&](float y) {
+            renderRow(1400.0f * uiScale, 64.0f * uiScale, [&](float y) {
                 float cardX0 = drawerX + padX;
                 float cardX1 = drawerX + drawerW - padX;
                 float cardH = 60.0f * uiScale;
@@ -2546,7 +2582,7 @@ void UIOverlay::generateVertices(int screenW, int screenH, std::vector<UIVertex>
             });
 
             // Row 22: Return to Setup / Launcher Button
-            renderRow(1414.0f * uiScale, 52.0f * uiScale, [&](float y) {
+            renderRow(1472.0f * uiScale, 52.0f * uiScale, [&](float y) {
                 float bX0 = drawerX + padX;
                 float bX1 = drawerX + drawerW - padX;
                 float btnY = y + 4.0f * uiScale;

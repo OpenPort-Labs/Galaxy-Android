@@ -127,6 +127,10 @@ int port_is_paused(void);
 // stays on screen for the same whole number of display refreshes.
 void port_vi_retrace(void);
 
+// Configures the display refresh rate (30, 60, 90, 120, 144 Hz) for frame pacing
+void port_set_display_refresh_rate(int hz);
+int port_get_display_refresh_rate(void);
+
 // Cutscene skipping (platform/src/port/cutscene_skip.cpp; the game's side is
 // in port/compat.h).
 void port_skip_set_hold_seconds(float seconds);  // 0 turns skipping off

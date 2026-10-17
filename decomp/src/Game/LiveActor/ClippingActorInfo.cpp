@@ -33,7 +33,9 @@ bool ClippingActorInfo::isJudgedToClip() const {
         farClipLevel = 0;
     }
 
-    f32 val = _8;
+    // Add a 25% safety margin to the test sphere radius to prevent boundary pop-in
+    // on ultrawide viewports during rapid camera rotation.
+    f32 val = _8 * 1.25f;
     ClippingJudge* judge = MR::getClippingJudge();
     return judge->isJudgedToClipFrustum(*_4, val, farClipLevel);
 }

@@ -27,15 +27,19 @@ static bool sInited;
 static std::atomic<int> sPaused{0};
 static std::atomic<int64_t> sExternalAt{0};  // host time of the last display-timed retrace
 static std::atomic<int64_t> sRaisedAt{0};    // host time of the last retrace raised
+static std::atomic<int> sDisplayRefreshRate{60};
 
-// Raises the retrace interrupt, unless one was raised less than 8 ms ago: as
-// on the console, retraces are a field apart.  When the display takes the
-// retraces back from the fallback clock, the two could otherwise land a
-// millisecond apart, and the game drew two frames within one retrace.
+// Raises the retrace interrupt, unless one was raised less than a fractional field ago.
+// Spacing scales dynamically with the display refresh rate (e.g. 60Hz, 90Hz, 120Hz, 144Hz)
+// so high-refresh rates are not prematurely throttled by a static millisecond threshold.
 static void raiseRetrace() {
     int64_t now = port_host_time_ns();
     int64_t last = sRaisedAt.load();
-    if (now - last < 8000000 || !sRaisedAt.compare_exchange_strong(last, now)) {
+    int hz = sDisplayRefreshRate.load();
+    if (hz < 30) hz = 30;
+    if (hz > 240) hz = 240;
+    int64_t minSpacing = (int64_t)((1000000000.0 / (double)hz) * 0.65);
+    if (now - last < minSpacing || !sRaisedAt.compare_exchange_strong(last, now)) {
         return;
     }
     port_irq_raise(PORT_IRQ_VI);
@@ -64,12 +68,18 @@ static void viIrq() {
 static std::atomic<float> sSpeedMultiplier{1.0f};
 
 static void viClock() {
-    // NTSC / EURGB60 field rate.
-    const int64_t basePeriod = 16683350;  // ns (1001/60000 s)
+    int hz = sDisplayRefreshRate.load();
+    if (hz < 30) hz = 30;
+    if (hz > 240) hz = 240;
+    int64_t basePeriod = (int64_t)(1000000000.0 / (double)hz);
     float speed = sSpeedMultiplier.load();
     int64_t period = (int64_t)((double)basePeriod / (speed > 0.1f ? speed : 1.0f));
     int64_t next = port_host_time_ns() + period;
     for (;;) {
+        hz = sDisplayRefreshRate.load();
+        if (hz < 30) hz = 30;
+        if (hz > 240) hz = 240;
+        basePeriod = (int64_t)(1000000000.0 / (double)hz);
         speed = sSpeedMultiplier.load();
         period = (int64_t)((double)basePeriod / (speed > 0.1f ? speed : 1.0f));
         int64_t now = port_host_time_ns();
@@ -98,6 +108,16 @@ void port_vi_retrace(void) {
     if (!sPaused.load()) {
         raiseRetrace();
     }
+}
+
+void port_set_display_refresh_rate(int hz) {
+    if (hz < 30) hz = 30;
+    if (hz > 240) hz = 240;
+    sDisplayRefreshRate.store(hz);
+}
+
+int port_get_display_refresh_rate(void) {
+    return sDisplayRefreshRate.load();
 }
 
 void port_set_paused(int paused) {

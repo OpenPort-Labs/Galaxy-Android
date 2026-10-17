@@ -87,7 +87,7 @@
                     android:paddingRight="10dp"
                     android:paddingTop="4dp"
                     android:paddingBottom="4dp"
-                    android:text="v0.0.1d"
+                    android:text="v0.0.2"
                     android:textColor="@color/success_green"
                     android:textSize="11sp"
                     android:textStyle="bold" />

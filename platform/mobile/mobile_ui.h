@@ -45,6 +45,13 @@ struct Settings {
     float dpadOffsetX = 0.0f;
     float dpadOffsetY = 0.0f;
 
+    // NVIDIA Shield & Remaster Mods
+    bool modShieldTextures = true;     // NVIDIA Shield 1080p AI Remastered Textures
+    bool modShieldCutscenes = true;    // 60 FPS Remastered Cutscenes
+    bool modShieldControls = true;     // NVIDIA Shield Calibrated Controller Curves
+    bool modClassicGamepadUI = true;   // ABXY Gamepad Button Sheets
+    bool modRiivolution = true;        // /sdcard/GalaxyData/mods Riivolution patches
+
     // Advanced Mods (off by default)
     bool modFly = false;
     bool modSkipCutscenes = false;
@@ -200,8 +207,8 @@ private:
     float mInitialBtnOfsX = 0.0f, mInitialBtnOfsY = 0.0f;
     float mInitialDpadOfsX = 0.0f, mInitialDpadOfsY = 0.0f;
 
-    // Settings Navigation & Scrolling
-    int mSettingsTab = 0;              // 0 = General, 1 = Advanced
+    // Settings Navigation & Scrolling (3 Dedicated Tabs)
+    int mSettingsTab = 0;              // 0 = General, 1 = Mod Manager, 2 = Save Anywhere
     float mDrawerScrollY = 0.0f;       // Current scroll offset (pixels)
     float mDrawerScrollTarget = 0.0f;
     bool mDrawerIsScrolling = false;

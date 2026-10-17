@@ -1512,5 +1512,25 @@ int port_is_infinite_lives(void) {
 int port_is_infinite_starbits(void) {
     return mobile_ui::UIOverlay::get().settings().modInfiniteStarBits ? 1 : 0;
 }
+
+int port_is_shield_hd_textures(void) {
+    return mobile_ui::UIOverlay::get().settings().modShieldTextures ? 1 : 0;
+}
+
+int port_is_shield_cutscenes(void) {
+    return mobile_ui::UIOverlay::get().settings().modShieldCutscenes ? 1 : 0;
+}
+
+int port_is_shield_controls(void) {
+    return mobile_ui::UIOverlay::get().settings().modShieldControls ? 1 : 0;
+}
+
+int port_is_classic_gamepad_ui(void) {
+    return mobile_ui::UIOverlay::get().settings().modClassicGamepadUI ? 1 : 0;
+}
+
+int port_is_riivolution_mods(void) {
+    return mobile_ui::UIOverlay::get().settings().modRiivolution ? 1 : 0;
+}
 }
 

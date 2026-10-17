@@ -1,3 +1,31 @@
+# GalaxyAndroid v0.0.2 — NVIDIA Shield Remaster, Mod Manager, & Save Anywhere Release
+
+Major milestone release bringing authentic NVIDIA Shield TV 1080p remaster integration, a dedicated in-game Mod Manager tab, full Save & Load Anywhere state snapshotting, and overhauled 3-tab Material 3 settings.
+
+---
+
+### Highlights & New Features in v0.0.2
+
+#### 1. In-Game Mod Manager (Dedicated Tab)
+- **NVIDIA Shield HD Textures (1080p)**: Toggle AI-remastered UI, character models, and icons extracted directly from the official Shield TV remaster.
+- **NVIDIA Shield 60 FPS Cutscenes**: Hardware-accelerated H.264 MP4 video stream for cinematics.
+- **Shield Calibrated Analog Curves**: Direct analog response curves and pointer damping curves (`smg_controller.ini`).
+- **Modern Gamepad ABXY Prompts**: Authentic Xbox / Shield controller button prompt textures replacing Wii Remote icons.
+- **External Riivolution Mod System**: Scan and apply custom Riivolution XML patches and texture packs on the fly from `/sdcard/GalaxyData/mods`.
+- **Integrated Cheats & Utilities**: Fly Mode (free 3D flight), Cutscene Prevention (skip dialogues/cutscenes), Infinite Health (invincibility & black hole safety), 99 Lives, 999 Star Bits, and Turbo Game Speed (1.0x to 4.0x).
+
+#### 2. Full In-Game Save & Load Anywhere System
+- **Instant Dual Action Cards**: Dedicated `QUICK SAVE NOW` (Emerald Green) and `QUICK LOAD NOW` (Cyan Blue) cards for one-tap stage state capture and instant reload.
+- **4-Way Multi-Save Slot Management**: Manage Slot 1, Slot 2, Slot 3, and Quick Slot with individual Save and Reload actions.
+- **Live In-Engine Scene Respawning**: Restoring a save instantly executes `MR::requestChangeScene()` to respawn Mario in the stage with saved progress, coins, star bits, and comet status.
+- **SD Card Backup & Synchronization**: Seamless Export and Import to `/sdcard/GalaxyData/saves` with Dolphin Wii save file compatibility.
+
+#### 3. Overhauled Material 3 Settings Drawer
+- **3-Tab Navigation Bar**: Clear, responsive tabs for `General`, `Mod Manager`, and `Save Anywhere`.
+- **Performance & Display Controls**: Internal resolution scaling (480p up to 1440p 2K), Display refresh rate (60 / 90 / 120 / 144 Hz), Battery Saver Mode (30 FPS limit), and full touch control customizations.
+
+---
+
 # GalaxyAndroid v0.0.1cx — Native Vulkan 1.0 UI, Startup Crash Fix, and Telemetry Release
 
 Hotfix and feature release bringing full native Vulkan 1.0 UI overlays, startup presentation crash resolution, corrected gyro coordinate transforms, and real-time renderer performance telemetry.

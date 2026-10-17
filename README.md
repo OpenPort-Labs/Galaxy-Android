@@ -73,11 +73,51 @@ We express our deepest thanks to both projects and their contributors for keepin
 - Centers 2D HUD elements (health meter, coin counters, dialogs) within a 16:9 safe region, preserving circular geometry and preventing obstruction by camera hole-punch cutouts or rounded screen corners.
 
 ### In-Game Settings Drawer & Customization
-- Slide-out drawer docked cleanly on the top-left edge of the screen (``).
+- Slide-out drawer docked cleanly on the top-left edge of the screen.
 - **Dynamic Resolution Scaling**: Native 480p, 720p HD, 1080p FHD, and 1440p 2K Ultra.
 - **Game Speed Multiplier**: 1.0x, 1.5x, 2.0x, 3.0x, and 4.0x speed options.
 - **In-Game Language Selection**: Auto-detect, English, Spanish, French, German, or Italian.
 - **Battery Saver / Thermal Mode**: 30 FPS cap for low thermal footprint and extended battery life.
+
+---
+
+## Native Decompilation Capabilities & Roadmap
+
+Unlike an emulator that interprets PowerPC assembly and emulates GameCube/Wii fixed-function hardware at runtime, having the complete reconstructed C++ source code unlocks capabilities impossible on traditional emulators:
+
+### 1. Engine & Framerate Modernization
+- **Physics Tick Decoupling (90Hz / 120Hz)**:
+  - GameCube and Wii logic and animation updates are tied to 60 FPS (`16.66ms`).
+  - By parameterizing delta time and adding sub-frame state interpolation in `GameSystem.cpp` and `LiveActor::calcAnim()`, the engine can run at true native 90 FPS or 120 FPS on high-refresh mobile and desktop displays without altering game physics speed.
+- **Uncapped Frustum Culling & Dynamic Ultrawide (20:9 / 21:9)**:
+  - Emulators produce pop-in and missing geometry when widening viewports because actors are culled by hardcoded bounding volumes.
+  - Native control over `ActorClippingService.cpp` and `CameraContext` allows dynamically scaling clipping volumes and culling planes to match any aspect ratio.
+- **Multithreaded Task Graph**:
+  - Independent systems such as actor collision checks (`CollisionDirector::update`), bone matrix updates, and particle simulations (`ParticleDirector`) can be dispatched to worker thread pools across multiple CPU cores, freeing the main thread for zero-latency render dispatch.
+
+### 2. Camera & Control Architecture
+- **True 360-Degree Dual-Stick Camera**:
+  - Original camera logic restricts angles or requires recentering. Decompiled camera controllers in `CameraDirector.cpp` allow injecting full, unconstrained 360-degree analog camera rotation across all levels.
+- **Direct Hardware Sensor Mapping**:
+  - Device IMUs (accelerometer and gyroscope) feed directly into pointer and tilt matrices without intermediate Bluetooth or HID emulation overhead.
+- **Rich Haptics Integration**:
+  - Native dispatch of device-specific tactile feedback (Android `VibrationEffect` waveforms, DualSense adaptive triggers) tied to player actions like ground pounds, spins, and surface friction.
+
+### 3. Modern Shading & Mobile GPU Optimizations
+- **Advanced Post-Processing Pipeline**:
+  - With depth buffers and vertex normals readily exposed in `vk_renderer.cpp`, screen-space ambient occlusion (SSAO), depth-of-field, bloom, and HDR tone mapping can be injected directly into the swapchain pass.
+- **Vulkan Tile-Based Subpass Optimization**:
+  - Mobile GPUs (ARM Mali and Qualcomm Adreno) use tile-based deferred architectures. Transitioning the GameCube EFB copy mechanism to native Vulkan subpasses allows transient framebuffer operations to stay entirely within on-chip tile memory, eliminating external DRAM bandwidth and reducing thermal throttling.
+- **Direct Asset Streaming**:
+  - Bypassing runtime Yaz0 compression in favor of pre-decompressed, memory-mapped formats (ASTC/BC7 textures, linear vertex buffers) enables instantaneous galaxy transitions.
+
+### 4. Modding, Extensibility & Multiplayer
+- **Super Mario Galaxy 2 Mechanics Backport**:
+  - Mechanics from the sequel (such as Yoshi riding, Cloud Flower, and Rock Mushroom) share the same underlying actor and collision framework and can be compiled directly into the engine.
+- **Split-Screen & Local Network Co-op**:
+  - Player 2 in the original title was restricted to the Star Pointer. With access to `MarioActor` and player state management, full secondary playable characters (Luigi, Rosalina) can be spawned for true cooperative play.
+- **Integrated Debugger & Level Tools**:
+  - Built-in live inspection tools (`LayoutViewer`, scene graphs, free-flight debug camera, gravity vector visualizers, and collision wireframe renderers).
 
 ---
 

@@ -24,8 +24,9 @@ This project is made possible through the pioneering work of the community:
 
 - **[bigmak94 / GalaxyQuest](https://github.com/bigmak94/GalaxyQuest)**: For the standalone mobile/ARM port architecture, memory reservation shims, and the little-endian asset cooker toolchain.
 - **[Petari Decompilation Project](https://github.com/SMGCommunity/Petari)**: For the reverse-engineering and C++ decompilation research.
+- **[LukeValen](https://github.com/LukeValen)**: Special thanks for helping sort out ARM Mali GPU rendering issues and shader pipeline compatibility.
 
-We express our deepest thanks to both projects and their contributors for keeping game preservation alive.
+We express our deepest thanks to our contributors and the community for keeping game preservation alive.
 
 ---
 

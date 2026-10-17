@@ -1,0 +1,42 @@
+<wiidisc version="1">
+    <id game="RMG">
+        <region type="E" />
+        <region type="P" />
+        <region type="J" />
+        <region type="K" />
+    </id>
+    <options>
+        <section name="Cutscenes">
+            <option name="Remastered HD Cutscenes" id="remaster_cutscenes" default="1">
+                <choice name="Enabled">
+                    <patch id="patch_cutscenes" />
+                </choice>
+            </option>
+        </section>
+        <section name="Language Swap">
+            <option name="Active Language" id="lang_select" default="0">
+                <choice name="English (Default)">
+                    <patch id="patch_lang_en" />
+                </choice>
+                <choice name="French (Francais)">
+                    <patch id="patch_lang_fr" />
+                </choice>
+                <choice name="Spanish (Espanol)">
+                    <patch id="patch_lang_es" />
+                </choice>
+            </option>
+        </section>
+    </options>
+    <patch id="patch_cutscenes">
+        <folder external="/MovieData" disc="/MovieData" resize="true" create="true" />
+    </patch>
+    <patch id="patch_lang_en">
+        <folder external="/UsEnglish" disc="/UsEnglish" />
+    </patch>
+    <patch id="patch_lang_fr">
+        <folder external="/UsFrench" disc="/UsEnglish" />
+    </patch>
+    <patch id="patch_lang_es">
+        <folder external="/UsSpanish" disc="/UsEnglish" />
+    </patch>
+</wiidisc>

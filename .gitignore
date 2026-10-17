@@ -28,6 +28,11 @@ cooked/
 movies.tar
 screen*.png
 tools/dolphin/
+tools/THPConv.exe
+tools/dsptool.dll
+tools/THPConv/
+tools/RiivolutionIsoBuilder/
+tools/temp_cutscene_build/
 
 # APK output and builds
 out-mobile/

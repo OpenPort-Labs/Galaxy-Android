@@ -655,7 +655,11 @@ void VkRenderer::initPipelineCache() {
         fseek(f, 0, SEEK_END);
         long sz = ftell(f);
         fseek(f, 0, SEEK_SET);
-        if (sz >= (long)sizeof(VkPipelineCacheHeaderVersionOne)) {
+        // The file is outside the driver's control and has been known to be
+        // replaced or truncated after a crash, so only a plausible size is
+        // read: a driver cache for this game is a few hundred kilobytes.
+        const long kMaxPipelineCacheBytes = 32l * 1024 * 1024;
+        if (sz >= (long)sizeof(VkPipelineCacheHeaderVersionOne) && sz <= kMaxPipelineCacheBytes) {
             cacheData.resize(sz);
             if (fread(cacheData.data(), 1, sz, f) != (size_t)sz) {
                 cacheData.clear();

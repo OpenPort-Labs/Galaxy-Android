@@ -240,7 +240,8 @@ std::string genVertexShader(const ShaderUid& u) {
                 continue;
             }
             uint32_t diffuse = (ctrl >> 7) & 3;
-            bool atten = gxDiffuseAttenuated(ctrl);
+            bool atten = (ctrl >> 9) & 1;
+            bool spot = (ctrl >> 10) & 1;
             o.w("  {\n    %s lit = %s;\n", alpha ? "float" : "vec3", amb);
             for (int l = 0; l < 8; l++) {
                 if (!(mask & (1u << l))) {
@@ -254,30 +255,26 @@ std::string genVertexShader(const ShaderUid& u) {
                 // in VR it belongs on the eye, or rims land mid-face.
                 o.w("      if (vrDraw && lpos == vec3(0.0)) lpos = vrEyePos.xyz;\n");
                 o.w("      vec3 ldir;\n      float att = 1.0;\n");
-                // `atten` is clear for GX_AF_SPEC (see gxDiffuseAttenuated):
-                // that attenuation belongs to the specular term, which this
-                // shader does not compute, so the diffuse sum stays
-                // unattenuated.  Attenuating it here used to gate the light on
-                // dot(nrm, light direction) -- the specular angle -- and so
-                // dropped it from every vertex past 90 degrees of the light's
-                // direction field: a character or a planet lost one whole
-                // side, with a hard terminator across its middle.
                 if (!atten) {
                     o.w("      vec3 lv = (dot(lpos, lpos) > 1e-6) ? (lpos - pos) : -pos;\n");
                     o.w("      ldir = (dot(lv, lv) > 1e-6) ? normalize(lv) : vec3(0.0, 0.0, 1.0);\n");
-                } else {
+                } else if (spot) {
                     o.w("      vec3 lv = (dot(lpos, lpos) > 1e-6) ? (lpos - pos) : -pos;\n");
                     o.w("      float d2 = dot(lv, lv); float d = sqrt(max(d2, 1e-4));\n");
                     o.w("      ldir = (d2 > 1e-6) ? (lv / d) : vec3(0.0, 0.0, 1.0);\n");
                     o.w("      vec3 dv = (dot(ldirv, ldirv) > 1e-6) ? normalize(ldirv) : vec3(0.0, 0.0, -1.0);\n");
-                    o.w("      float a = dot(ldir, dv);\n");
-                    o.w("      if (a > 0.0) {\n");
-                    o.w("        float distDenom = dot(ldist, vec3(1.0, d, d2));\n");
-                    o.w("        float cosNum = dot(lcos, vec3(1.0, a, a * a));\n");
-                    o.w("        att = (distDenom > 1e-4) ? clamp(cosNum / distDenom, 0.0, 1.0) : 0.0;\n");
-                    o.w("      } else {\n");
-                    o.w("        att = 0.0;\n");
-                    o.w("      }\n");
+                    o.w("      float a = max(0.0, dot(ldir, dv));\n");
+                    o.w("      float distDenom = dot(ldist, vec3(1.0, d, d2));\n");
+                    o.w("      float cosNum = dot(lcos, vec3(1.0, a, a * a));\n");
+                    o.w("      att = (distDenom > 1e-4) ? clamp(cosNum / distDenom, 0.0, 1.0) : 0.0;\n");
+                } else {
+                    o.w("      vec3 lv = (dot(lpos, lpos) > 1e-6) ? (lpos - pos) : -pos;\n");
+                    o.w("      ldir = (dot(lv, lv) > 1e-6) ? normalize(lv) : vec3(0.0, 0.0, 1.0);\n");
+                    o.w("      vec3 dv = (dot(ldirv, ldirv) > 1e-6) ? normalize(ldirv) : vec3(0.0, 0.0, -1.0);\n");
+                    o.w("      float a = (dot(nrm, ldir) >= 0.0) ? max(0.0, dot(nrm, dv)) : 0.0;\n");
+                    o.w("      float distDenom = dot(ldist, vec3(1.0, a, a * a));\n");
+                    o.w("      float cosNum = dot(lcos, vec3(1.0, a, a * a));\n");
+                    o.w("      att = (distDenom > 1e-4 && a > 0.0) ? clamp(cosNum / distDenom, 0.0, 1.0) : 0.0;\n");
                 }
                 const char* dif = diffuse == 0 ? "1.0" : diffuse == 1 ? "clamp(dot(ldir, nrm), -1.0, 1.0)" : "max(0.0, dot(ldir, nrm))";
                 o.w("      att = (isnan(att) || isinf(att)) ? 0.0 : clamp(att, 0.0, 1.0);\n");

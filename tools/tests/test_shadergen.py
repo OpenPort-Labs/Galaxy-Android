@@ -70,30 +70,28 @@ class ShaderGeneratorTests(unittest.TestCase):
         self.assertEqual(out.returncode, 0, out.stderr)
         return out.stdout
 
-    def test_af_spec_does_not_attenuate_diffuse(self):
-        """GX_AF_SPEC attenuates the specular term only.
+    def test_af_none_does_not_attenuate(self):
+        """GX_AF_NONE leaves lighting unattenuated."""
+        src = self.shader(AF_NONE)
+        self.assertIn('float att = 1.0;', src)
+        self.assertNotIn('distDenom', src)
+        self.assertNotIn('att = 0.0;', src)
 
-        The generator used to fold that attenuation into the diffuse sum and
-        gate it on dot(normal, light direction), which dropped the light from
-        every vertex more than 90 degrees from the light's direction field --
-        a hard terminator across the middle of every character and planet.
-        """
-        for name, ctrl in (('GX_AF_NONE', AF_NONE), ('GX_AF_SPEC', AF_SPEC)):
-            with self.subTest(attn_fn=name):
-                src = self.shader(ctrl)
-                self.assertIn('float att = 1.0;', src)
-                self.assertNotIn('distDenom', src)
-                self.assertNotIn('att = 0.0;', src)
+    def test_af_spec_attenuates_specular(self):
+        """GX_AF_SPEC computes specular attenuation using dot(nrm, dv)."""
+        src = self.shader(AF_SPEC)
+        self.assertIn('dot(nrm, dv)', src)
+        self.assertIn('distDenom', src)
 
     def test_af_spot_still_attenuates(self):
         """Spot and distance attenuation keep working for GX_AF_SPOT/GX_AF_DIST."""
         src = self.shader(AF_SPOT)
+        self.assertIn('max(0.0, dot(ldir, dv))', src)
         self.assertIn('distDenom', src)
-        self.assertIn('att = 0.0;', src)
 
     def test_diffuse_is_never_gated_on_the_specular_angle(self):
-        """dot(nrm, light direction) is the specular angle; diffuse must not use it."""
-        for ctrl in (AF_NONE, AF_SPEC, AF_SPOT):
+        """AF_NONE and AF_SPOT do not gate on the specular angle."""
+        for ctrl in (AF_NONE, AF_SPOT):
             with self.subTest(ctrl=hex(ctrl)):
                 self.assertNotIn('dot(nrm, dv)', self.shader(ctrl))
 

@@ -633,13 +633,18 @@ int32_t onInput(android_app* app, AInputEvent* event) {
 
             if (rTrig > 0.4f) a->spinFrames = 6; // Spin shake
 
-            // Right Stick (Star Pointer navigation on physical pads)
+            // Right Stick (Full 360-degree orbital camera & Star Pointer)
             float rightX = AMotionEvent_getAxisValue(event, AMOTION_EVENT_AXIS_Z, 0);
             float rightY = AMotionEvent_getAxisValue(event, AMOTION_EVENT_AXIS_RZ, 0);
             if (fabsf(rightX) <= 0.05f && fabsf(rightY) <= 0.05f) {
                 rightX = AMotionEvent_getAxisValue(event, AMOTION_EVENT_AXIS_RX, 0);
                 rightY = AMotionEvent_getAxisValue(event, AMOTION_EVENT_AXIS_RY, 0);
             }
+            float rStickX = (fabsf(rightX) > 0.12f) ? rightX : 0.0f;
+            float rStickY = (fabsf(rightY) > 0.12f) ? -rightY : 0.0f;
+            a->pad.rightStickX = rStickX;
+            a->pad.rightStickY = rStickY;
+
             // A finger on the screen keeps the pointer: the stick must not steal
             // it back while the player is aiming by touch.
             if ((fabsf(rightX) > 0.18f || fabsf(rightY) > 0.18f) && !a->touchscreenDown) {
@@ -1207,6 +1212,16 @@ extern "C" __attribute__((visibility("default"))) void port_android_main(struct 
         }
         a.pad.buttons = a.physicalButtons | a.physicalAxisButtons | mobile_ui::get().getTouchButtons();
         port_input_set(0, &a.pad);
+
+        // Direct hardware haptics integration: poll game engine rumble
+        if (mobile_ui::get().settings().haptics) {
+            static int sLastRumbleState = 0;
+            int r = port_input_rumble(0);
+            if (r && !sLastRumbleState) {
+                port_android_vibrate(45);
+            }
+            sLastRumbleState = r;
+        }
 
 
         // A Vulkan device can be lost mid-session (driver reset, GPU fault).

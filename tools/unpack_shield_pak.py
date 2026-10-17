@@ -96,13 +96,30 @@ def unpack_pak(pak_path: str, out_dir: str, max_files: int = 0):
             size1, size2, offset = struct.unpack('<III', decrypted_table[ptr:ptr+12])
             ptr += 12 + 16 # skip 16 unknown bytes
             
-            # Print sample files
-            if files_extracted < 20 or (files_extracted % 500 == 0):
+            # Decrypt and write asset to disk if out_dir specified
+            if out_dir:
+                curr_pos = f.tell()
+                f.seek(base_offset + offset)
+                raw_data = bytearray(f.read(size1))
+                f.seek(curr_pos)
+                
+                decrypted_data = decrypt_asset(filename, raw_data)
+                
+                clean_name = filename.replace('\\', '/').lstrip('/')
+                out_path = os.path.join(out_dir, clean_name)
+                os.makedirs(os.path.dirname(out_path), exist_ok=True)
+                with open(out_path, 'wb') as out_f:
+                    out_f.write(decrypted_data)
+                
+            if files_extracted < 20 or (files_extracted % 250 == 0):
                 print(f"[{files_extracted+1}/{num_assets}] {filename} ({size1} bytes, offset {offset})")
                 
             files_extracted += 1
+            
+        print(f"Extraction complete! Successfully extracted {files_extracted} assets to {out_dir}.")
 
 if __name__ == '__main__':
     pak = sys.argv[1] if len(sys.argv) > 1 else 'shield_extracted/com.nvidia.nintendo.smg/smg_assets.pak'
     out = sys.argv[2] if len(sys.argv) > 2 else 'shield_extracted/unpacked_assets'
-    unpack_pak(pak, out, max_files=20)
+    max_f = int(sys.argv[3]) if len(sys.argv) > 3 else 0
+    unpack_pak(pak, out, max_files=max_f)

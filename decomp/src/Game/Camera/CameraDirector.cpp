@@ -36,6 +36,17 @@
 #include "Game/Util/SoundUtil.hpp"
 #include <cstring>
 
+extern "C" void port_input_get_right_stick(int chan, float* x, float* y);
+extern "C" int port_input_camera_inverted(void);
+
+static inline TVec3f rotateVectorAxis(const TVec3f& v, const TVec3f& axis, f32 angle) {
+    f32 cosA = MR::cos(angle);
+    f32 sinA = MR::sin(angle);
+    TVec3f cross = axis.cross(v);
+    f32 dot = axis.dot(v);
+    return v * cosA + cross * sinA + axis * (dot * (1.0f - cosA));
+}
+
 void CameraDirector_FORCE_MATCH_SDATA2() {
     (void)1.0f;
     (void)0.0f;
@@ -212,6 +223,70 @@ void CameraDirector::calcPose() {
 
     mOnlyCamera->calcPose(getCurrentCameraMan());
     mPoseParam1->copyFrom(*mOnlyCamera->mPoseParam);
+
+    // Pillar 2: True 360-Degree Analog Right-Stick Orbital Camera
+    static f32 sOrbitYaw = 0.0f;
+    static f32 sOrbitPitch = 0.0f;
+
+    // Reset orbit on camera reset button or force camera change
+    if (CameraLocalUtil::testCameraPadTriggerReset() ||
+        MR::testSubPadButtonC(WPAD_CHAN0) ||
+        MR::testCorePadTriggerDown(WPAD_CHAN0) ||
+        mViewInterpolator->mIsForceCameraChange) {
+        sOrbitYaw = 0.0f;
+        sOrbitPitch = 0.0f;
+    }
+
+    float rx = 0.0f, ry = 0.0f;
+    port_input_get_right_stick(0, &rx, &ry);
+    if (port_input_camera_inverted()) {
+        rx = -rx;
+    }
+
+    if (rx > 0.08f || rx < -0.08f) {
+        sOrbitYaw += rx * 0.040f;
+        if (sOrbitYaw > 3.14159265f) sOrbitYaw -= 6.2831853f;
+        if (sOrbitYaw < -3.14159265f) sOrbitYaw += 6.2831853f;
+    }
+    if (ry > 0.08f || ry < -0.08f) {
+        sOrbitPitch += ry * 0.030f;
+        if (sOrbitPitch > 1.20f) sOrbitPitch = 1.20f;
+        if (sOrbitPitch < -1.05f) sOrbitPitch = -1.05f;
+    }
+
+    if (!mIsSubjectiveCamera && !isEventCameraActive() && !MR::isDemoActive()) {
+        if (sOrbitYaw > 0.001f || sOrbitYaw < -0.001f || sOrbitPitch > 0.001f || sOrbitPitch < -0.001f) {
+            TVec3f offset = mPoseParam1->mPos - mPoseParam1->mWatchPos;
+            f32 dist = offset.length();
+            if (dist > 10.0f) {
+                TVec3f up = mPoseParam1->mUpVec;
+                MR::normalizeOrZero(&up);
+                if (up.length() < 0.5f) {
+                    up.set(0.0f, 1.0f, 0.0f);
+                }
+
+                // Horizontal orbit around Up vector
+                TVec3f yawed = rotateVectorAxis(offset, up, sOrbitYaw);
+
+                // Vertical pitch around new Right vector
+                TVec3f right = up.cross(yawed);
+                MR::normalizeOrZero(&right);
+
+                TVec3f finalOffset = rotateVectorAxis(yawed, right, sOrbitPitch);
+                finalOffset.setLength(dist);
+
+                mPoseParam1->mPos = mPoseParam1->mWatchPos + finalOffset;
+
+                // Re-align up vector orthogonal to view direction
+                TVec3f look = mPoseParam1->mWatchPos - mPoseParam1->mPos;
+                MR::normalizeOrZero(&look);
+                TVec3f side = up.cross(look);
+                MR::normalizeOrZero(&side);
+                mPoseParam1->mUpVec = look.cross(side);
+                MR::normalizeOrZero(&mPoseParam1->mUpVec);
+            }
+        }
+    }
 }
 
 void CameraDirector::calcSubjective() {
@@ -464,15 +539,15 @@ bool CameraDirector::isEnableToControl() const {
 }
 
 bool CameraDirector::isEnableToRoundLeft() const {
-    return getCurrentCameraMan()->isEnableToRoundLeft();
+    return true; // Full 360 dual-stick unconstrained rotation
 }
 
 bool CameraDirector::isEnableToRoundRight() const {
-    return getCurrentCameraMan()->isEnableToRoundRight();
+    return true; // Full 360 dual-stick unconstrained rotation
 }
 
 bool CameraDirector::isEnableToReset() const {
-    return getCurrentCameraMan()->isEnableToReset();
+    return true;
 }
 
 bool CameraDirector::isEventCameraActive(s32 zoneID, const char* pName) const {
@@ -673,30 +748,16 @@ void CameraDirector::controlCameraSE() {
     }
 
     if (CameraLocalUtil::testCameraPadTriggerRoundLeft()) {
-        if (isEnableToRoundLeft()) {
-            getCurrentCameraMan()->roundLeft();
-            if (isPlayableCameraSE(false)) {
-                MR::startSystemSE("SE_SY_CAMERA_MOVE");
-            }
-        } else {
-            if (isPlayableCameraSE(false)) {
-                MR::startSystemSE("SE_SY_CAMERA_NG");
-                mIsCameraNG = true;
-            }
+        getCurrentCameraMan()->roundLeft();
+        if (isPlayableCameraSE(false)) {
+            MR::startSystemSE("SE_SY_CAMERA_MOVE");
         }
     }
 
     if (CameraLocalUtil::testCameraPadTriggerRoundRight()) {
-        if (isEnableToRoundRight()) {
-            getCurrentCameraMan()->roundRight();
-            if (isPlayableCameraSE(false)) {
-                MR::startSystemSE("SE_SY_CAMERA_MOVE");
-            }
-        } else {
-            if (isPlayableCameraSE(false)) {
-                MR::startSystemSE("SE_SY_CAMERA_NG");
-                mIsCameraNG = true;
-            }
+        getCurrentCameraMan()->roundRight();
+        if (isPlayableCameraSE(false)) {
+            MR::startSystemSE("SE_SY_CAMERA_MOVE");
         }
     }
 

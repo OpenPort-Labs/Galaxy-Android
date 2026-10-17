@@ -32,6 +32,17 @@ extern "C" void port_input_set(int chan, const PortPadState* state) {
     sPad[chan] = *state;
 }
 
+extern "C" void port_input_get_right_stick(int chan, float* x, float* y) {
+    if (chan < 0 || chan >= 4) {
+        if (x) *x = 0.0f;
+        if (y) *y = 0.0f;
+        return;
+    }
+    std::lock_guard<std::mutex> lk(sInputMutex);
+    if (x) *x = sPad[chan].rightStickX;
+    if (y) *y = sPad[chan].rightStickY;
+}
+
 extern "C" int port_input_rumble(int chan) { return (chan >= 0 && chan < 4) ? sRumble[chan] : 0; }
 
 extern "C" int port_input_real_a(void) {

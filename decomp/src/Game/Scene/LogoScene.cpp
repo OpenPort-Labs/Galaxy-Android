@@ -52,11 +52,8 @@ LogoScene::~LogoScene() {
 }
 
 void LogoScene::init() {
-    if (MR::isEqualString(MR::getCurrentRegionPrefix(), "Cn")) {
-        initNerve(GET_NERVE_ANON(LogoSceneCensorshipFadein));
-    } else {
-        initNerve(GET_NERVE_ANON(LogoSceneStrapFadein));
-    }
+    // Skip Wii remote strap safety warning screen directly to system archive loading
+    initNerve(GET_NERVE_ANON(LogoSceneWaitReadDoneSystemArchive));
 
     SceneFunction::createHioBasicNode(this);
     SceneFunction::initForNameObj();

@@ -159,6 +159,7 @@ With the unified **GalaxyAndroid** package:
 
 ## Documentation
 
+- [Decompilation Capabilities & Technical Roadmap](docs/DECOMP_ROADMAP.md) - Deep dive into 90Hz/120Hz physics decoupling, 360 camera, Vulkan subpasses, and co-op plan
 - [Controls & Input Reference](docs/CONTROLS.md) - Touch overlay, pointer aim, gyroscope, and gamepad layouts
 - [Technical Architecture](docs/TECHNICAL.md) - 32-bit address reservation, Vulkan 1.0 / GLES 3.2 translation, Hor+ ultrawide, and telemetry
 - [Installation Guide](docs/INSTALLATION.md) - Comprehensive setup instructions

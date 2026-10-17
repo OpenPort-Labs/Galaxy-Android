@@ -1042,8 +1042,12 @@ static int64_t sLastPresentNs = 0;
 static void syncMobileFrameRate(int targetFps, float speed) {
     if (targetFps < 30) targetFps = 30;
     if (targetFps > 144) targetFps = 144;
-    updateWindowRefreshRate((float)targetFps);
-    port_set_display_refresh_rate(targetFps);
+    static int sCurrentRefreshRate = 0;
+    if (sCurrentRefreshRate != targetFps) {
+        sCurrentRefreshRate = targetFps;
+        updateWindowRefreshRate((float)targetFps);
+        port_set_display_refresh_rate(targetFps);
+    }
 
     if (speed > 1.05f) {
         targetFps = (int)((float)targetFps * speed);
@@ -1055,10 +1059,12 @@ static void syncMobileFrameRate(int targetFps, float speed) {
         int64_t elapsedNs = nowNs - sLastPresentNs;
         if (elapsedNs < framePeriodNs) {
             int64_t waitNs = framePeriodNs - elapsedNs;
-            if (waitNs > 500000ll) {
+            // Leave a 1.2 ms margin so Android kernel timer slack does not cause a missed VSync pulse
+            if (waitNs > 1500000ll) {
                 struct timespec req;
-                req.tv_sec = waitNs / 1000000000ll;
-                req.tv_nsec = waitNs % 1000000000ll;
+                int64_t sleepNs = waitNs - 1200000ll;
+                req.tv_sec = sleepNs / 1000000000ll;
+                req.tv_nsec = sleepNs % 1000000000ll;
                 int64_t sleepStartNs = port_host_time_ns();
                 nanosleep(&req, nullptr);
                 port_perf_pace(port_host_time_ns() - sleepStartNs);

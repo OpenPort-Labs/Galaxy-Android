@@ -1460,8 +1460,11 @@ extern "C" __attribute__((visibility("default"))) void port_android_main(struct 
                 gPresentedFrames.store(vkr.frameNumber());
 
                 int scaleChoice = mobile_ui::get().settings().renderScale;
+                if (mobile_ui::get().settings().batterySaver) {
+                    scaleChoice = std::min(scaleChoice, 1);
+                }
                 int desiredTargetH = 1080;
-                if (scaleChoice == 0) desiredTargetH = 480;       // Native 480p
+                if (scaleChoice == 0) desiredTargetH = 480;       // Native 480p (Wii accurate)
                 else if (scaleChoice == 1) desiredTargetH = 720;  // 720p HD
                 else if (scaleChoice == 2) desiredTargetH = 1080; // 1080p FHD
                 else if (scaleChoice == 3) desiredTargetH = 1440; // 1440p 2K

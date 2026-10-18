@@ -1156,9 +1156,9 @@ bool VkRenderer::createRenderPasses() {
     efbAttachments[1].format = mDepthFormat;
     efbAttachments[1].samples = VK_SAMPLE_COUNT_1_BIT;
     efbAttachments[1].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    efbAttachments[1].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    efbAttachments[1].storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
     efbAttachments[1].stencilLoadOp = hasStencil ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    efbAttachments[1].stencilStoreOp = hasStencil ? VK_ATTACHMENT_STORE_OP_STORE : VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    efbAttachments[1].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
     efbAttachments[1].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     efbAttachments[1].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 

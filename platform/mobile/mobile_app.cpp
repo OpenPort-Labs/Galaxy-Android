@@ -639,8 +639,9 @@ int32_t onInput(android_app* app, AInputEvent* event) {
                 stickY = 0.0f;
             } else {
                 float norm = (stickMag - kDeadzone) / (1.0f - kDeadzone);
-                stickX = (stickX / stickMag) * std::min(1.0f, norm);
-                stickY = (stickY / stickMag) * std::min(1.0f, norm);
+                float sens = mobile_ui::get().settings().stickSensitivity;
+                stickX = (stickX / stickMag) * std::min(1.0f, norm * sens);
+                stickY = (stickY / stickMag) * std::min(1.0f, norm * sens);
             }
 
             a->pad.connected = 1;
@@ -691,16 +692,17 @@ int32_t onInput(android_app* app, AInputEvent* event) {
             }
             float rStickX = (fabsf(rightX) > 0.12f) ? rightX : 0.0f;
             float rStickY = (fabsf(rightY) > 0.12f) ? -rightY : 0.0f;
+            float starSens = mobile_ui::get().settings().starStickSensitivity;
             if (mobile_ui::get().settings().rightStickMode == 0) {
                 // Mode 0: 360-degree Orbital Camera
-                a->pad.rightStickX = rStickX;
-                a->pad.rightStickY = rStickY;
+                a->pad.rightStickX = std::max(-1.0f, std::min(1.0f, rStickX * starSens));
+                a->pad.rightStickY = std::max(-1.0f, std::min(1.0f, rStickY * starSens));
             } else {
                 // Mode 1: Star Pointer Stick
                 a->pad.rightStickX = 0.0f;
                 a->pad.rightStickY = 0.0f;
                 if ((fabsf(rStickX) > 0.10f || fabsf(rStickY) > 0.10f) && !a->touchscreenDown) {
-                    float speed = 0.040f;
+                    float speed = 0.040f * starSens;
                     a->pad.pointerX = std::max(-1.0f, std::min(1.0f, a->pad.pointerX + rStickX * speed));
                     a->pad.pointerY = std::max(-1.0f, std::min(1.0f, a->pad.pointerY + rStickY * speed));
                     a->pad.pointerValid = 1;

@@ -86,6 +86,8 @@ struct Settings {
     bool gyroInvertY = false;  // Invert vertical gyro axis
 
     bool starStick = false;    // Dedicated 2nd virtual joystick to control the Star Pointer
+    float stickSensitivity = 1.0f;     // Movement joystick sensitivity (0.75x, 1.0x, 1.25x, 1.5x)
+    float starStickSensitivity = 1.0f; // 2nd Joystick / Star Pointer sensitivity (0.5x, 0.75x, 1.0x, 1.5x, 2.0x)
     int rightStickMode = 0;    // 0 = 360 Camera Orbit, 1 = Star Pointer (Right Analog Stick)
     bool touchCamera = true;   // Touch drag on right screen orbits camera in 360 degrees
 

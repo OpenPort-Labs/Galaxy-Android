@@ -131,6 +131,7 @@ enum MenuActionId {
     ACT_CONTROLS_OPACITY,
     ACT_BUTTON_SIZE,
     ACT_JOYSTICK_MODE,
+    ACT_STICK_SENSITIVITY,
     ACT_SHOW_DPAD,
     ACT_DPAD_SIDE,
     ACT_GYRO_AIMING,
@@ -140,6 +141,7 @@ enum MenuActionId {
     ACT_HAPTICS,
     ACT_TOUCH_CAMERA,
     ACT_STAR_STICK,
+    ACT_STAR_STICK_SENSITIVITY,
     ACT_REPOSITION_STAR_STICK,
     ACT_RIGHT_STICK_MODE,
     // Graphics & Display Tab
@@ -209,9 +211,11 @@ static const MenuRowDef kControlsRows[] = {
     {ACT_CONTROLS_OPACITY, ROW_SEGMENTED, 56.0f, "Controls Opacity", "HUD transparency level", 4, {"25%", "50%", "75%", "100%"}},
     {ACT_BUTTON_SIZE, ROW_SEGMENTED, 56.0f, "Button Size", "Scale of touch action buttons", 3, {"Small", "Medium", "Large"}},
     {ACT_JOYSTICK_MODE, ROW_SEGMENTED, 56.0f, "Virtual Joystick", "Stick anchor behavior", 2, {"Dynamic", "Fixed"}},
+    {ACT_STICK_SENSITIVITY, ROW_SEGMENTED, 56.0f, "Movement Sensitivity", "Joystick responsiveness & speed", 4, {"75%", "100%", "125%", "150%"}},
     {ACT_SECTION_HEADER, ROW_SECTION, 36.0f, "CAMERA & STAR POINTER", "Aiming, sensor tilting & camera rotation", 0, {}},
     {ACT_TOUCH_CAMERA, ROW_SWITCH, 50.0f, "360 Touch Camera Swipe", "Drag right side of screen to freely orbit 360 camera", 0, {}},
     {ACT_STAR_STICK, ROW_SWITCH, 50.0f, "2nd Joystick (Star Pointer)", "Dedicated virtual stick to steer Star Pointer", 0, {}},
+    {ACT_STAR_STICK_SENSITIVITY, ROW_SEGMENTED, 56.0f, "Star Stick Sensitivity", "Steering speed for 2nd joystick & right stick", 5, {"50%", "75%", "100%", "150%", "200%"}},
     {ACT_REPOSITION_STAR_STICK, ROW_DUAL_BTN, 50.0f, "Reposition Star Stick", "Reset Above Buttons", 0, {}},
     {ACT_RIGHT_STICK_MODE, ROW_SEGMENTED, 56.0f, "Right Analog Stick Mode", "Gamepad / Controller right stick function", 2, {"360 Camera", "Star Pointer"}},
     {ACT_SHOW_DPAD, ROW_SWITCH, 50.0f, "Camera D-Pad", "Directional disc for camera rotation & recenter", 0, {}},
@@ -523,6 +527,8 @@ void Settings::load(const std::string& path) {
             else if (!strcmp(key, "gyro_invert_x")) gyroInvertX = (val > 0.5f);
             else if (!strcmp(key, "gyro_invert_y")) gyroInvertY = (val > 0.5f);
             else if (!strcmp(key, "star_stick")) starStick = (val > 0.5f);
+            else if (!strcmp(key, "stick_sensitivity")) stickSensitivity = std::max(0.25f, std::min(3.0f, val));
+            else if (!strcmp(key, "star_stick_sensitivity")) starStickSensitivity = std::max(0.25f, std::min(3.0f, val));
             else if (!strcmp(key, "right_stick_mode")) rightStickMode = std::max(0, std::min(1, (int)val));
             else if (!strcmp(key, "touch_camera")) touchCamera = (val > 0.5f);
             else if (!strcmp(key, "graphics_backend")) {
@@ -539,8 +545,8 @@ void Settings::load(const std::string& path) {
         }
     }
     fclose(f);
-    LOGI("Loaded settings: show=%d, full=%d, touch=%d, hud=%d, backend=%d, relPtr=%d, orient=%d, saver=%d, gyro=%d, invX=%d, invY=%d, starStick=%d, rightStickMode=%d, touchCam=%d, op=%.2f, scale=%.2f, dpad=%d, fly=%d, skip=%d, infHp=%d, infLives=%d, infBits=%d, spd=%d, lang=%d, res=%d, hap=%d, hero=%d, odyssey=%d, coop=%d, speedrunHud=%d",
-         showControls, fullscreen, fullTouchMode, perfHudMode, graphicsBackend, relativePointer ? 1 : 0, screenOrientationChoice, batterySaver ? 1 : 0, gyroAiming ? 1 : 0, gyroInvertX ? 1 : 0, gyroInvertY ? 1 : 0, starStick ? 1 : 0, rightStickMode, touchCamera ? 1 : 0, opacity, scale, showDpad, modFly, modSkipCutscenes, modInfiniteHealth, modInfiniteLives, modInfiniteStarBits, gameSpeed, languageChoice, renderScale, haptics ? 1 : 0, characterChoice, odysseyMoveset ? 1 : 0, coopMode ? 1 : 0, speedrunHud ? 1 : 0);
+    LOGI("Loaded settings: show=%d, full=%d, touch=%d, hud=%d, backend=%d, relPtr=%d, orient=%d, saver=%d, gyro=%d, invX=%d, invY=%d, starStick=%d, stickSens=%.2f, starSens=%.2f, rightStickMode=%d, touchCam=%d, op=%.2f, scale=%.2f, dpad=%d, fly=%d, skip=%d, infHp=%d, infLives=%d, infBits=%d, spd=%d, lang=%d, res=%d, hap=%d, hero=%d, odyssey=%d, coop=%d, speedrunHud=%d",
+         showControls, fullscreen, fullTouchMode, perfHudMode, graphicsBackend, relativePointer ? 1 : 0, screenOrientationChoice, batterySaver ? 1 : 0, gyroAiming ? 1 : 0, gyroInvertX ? 1 : 0, gyroInvertY ? 1 : 0, starStick ? 1 : 0, stickSensitivity, starStickSensitivity, rightStickMode, touchCamera ? 1 : 0, opacity, scale, showDpad, modFly, modSkipCutscenes, modInfiniteHealth, modInfiniteLives, modInfiniteStarBits, gameSpeed, languageChoice, renderScale, haptics ? 1 : 0, characterChoice, odysseyMoveset ? 1 : 0, coopMode ? 1 : 0, speedrunHud ? 1 : 0);
 }
 
 void Settings::save(const std::string& path) const {
@@ -558,6 +564,8 @@ void Settings::save(const std::string& path) const {
     fprintf(f, "gyro_invert_x=%d\n", gyroInvertX ? 1 : 0);
     fprintf(f, "gyro_invert_y=%d\n", gyroInvertY ? 1 : 0);
     fprintf(f, "star_stick=%d\n", starStick ? 1 : 0);
+    fprintf(f, "stick_sensitivity=%.2f\n", stickSensitivity);
+    fprintf(f, "star_stick_sensitivity=%.2f\n", starStickSensitivity);
     fprintf(f, "right_stick_mode=%d\n", rightStickMode);
     fprintf(f, "touch_camera=%d\n", touchCamera ? 1 : 0);
     fprintf(f, "opacity=%.2f\n", opacity);
@@ -1512,6 +1520,17 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
                                 mSettings.dynamicStick = (px < midX);
                                 showToast(mSettings.dynamicStick ? "Joystick: Dynamic Anchor" : "Joystick: Fixed Anchor");
                                 break;
+                            case ACT_STICK_SENSITIVITY: {
+                                int idx = std::max(0, std::min(3, (int)(relX / (contentW / 4.0f))));
+                                if (idx == 0) mSettings.stickSensitivity = 0.75f;
+                                else if (idx == 1) mSettings.stickSensitivity = 1.00f;
+                                else if (idx == 2) mSettings.stickSensitivity = 1.25f;
+                                else mSettings.stickSensitivity = 1.50f;
+                                char msg[64];
+                                snprintf(msg, sizeof(msg), "Movement Sensitivity: %.0f%%", mSettings.stickSensitivity * 100.0f);
+                                showToast(msg);
+                                break;
+                            }
                             case ACT_TOUCH_CAMERA:
                                 mSettings.touchCamera = !mSettings.touchCamera;
                                 showToast(mSettings.touchCamera ? "360 Touch Camera: ON (Swipe right screen)" : "360 Touch Camera: OFF");
@@ -1520,6 +1539,18 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
                                 mSettings.starStick = !mSettings.starStick;
                                 showToast(mSettings.starStick ? "2nd Joystick (Star Pointer): ON" : "2nd Joystick (Star Pointer): OFF");
                                 break;
+                            case ACT_STAR_STICK_SENSITIVITY: {
+                                int idx = std::max(0, std::min(4, (int)(relX / (contentW / 5.0f))));
+                                if (idx == 0) mSettings.starStickSensitivity = 0.50f;
+                                else if (idx == 1) mSettings.starStickSensitivity = 0.75f;
+                                else if (idx == 2) mSettings.starStickSensitivity = 1.00f;
+                                else if (idx == 3) mSettings.starStickSensitivity = 1.50f;
+                                else mSettings.starStickSensitivity = 2.00f;
+                                char msg[64];
+                                snprintf(msg, sizeof(msg), "Star Stick Sensitivity: %.0f%%", mSettings.starStickSensitivity * 100.0f);
+                                showToast(msg);
+                                break;
+                            }
                             case ACT_REPOSITION_STAR_STICK:
                                 if (px < midX) {
                                     mSettingsOpen = false;
@@ -2172,14 +2203,14 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
             if (dist > stickMaxR && dist > 0.001f) {
                 mStickKnobX = mStickBaseX + (dx / dist) * stickMaxR;
                 mStickKnobY = mStickBaseY + (dy / dist) * stickMaxR;
-                mTouchStickX = dx / dist;
-                mTouchStickY = -dy / dist;
+                mTouchStickX = (dx / dist) * mSettings.stickSensitivity;
+                mTouchStickY = (-dy / dist) * mSettings.stickSensitivity;
             } else if (dist > deadzone) {
                 mStickKnobX = px;
                 mStickKnobY = py;
                 float norm = (dist - deadzone) / (stickMaxR - deadzone);
-                mTouchStickX = (dx / dist) * norm;
-                mTouchStickY = -(dy / dist) * norm;
+                mTouchStickX = ((dx / dist) * norm) * mSettings.stickSensitivity;
+                mTouchStickY = (-(dy / dist) * norm) * mSettings.stickSensitivity;
             } else {
                 mStickKnobX = px;
                 mStickKnobY = py;
@@ -2273,7 +2304,7 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
             mStarStickY = std::max(-1.0f, std::min(1.0f, mStarStickY));
 
             // Smoothly steer star pointer across the screen
-            float slewSpeed = 0.038f;
+            float slewSpeed = 0.038f * mSettings.starStickSensitivity;
             mPointerX = std::max(-1.0f, std::min(1.0f, mPointerX + mStarStickX * slewSpeed));
             mPointerY = std::max(-1.0f, std::min(1.0f, mPointerY - mStarStickY * slewSpeed));
         }
@@ -2286,7 +2317,7 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
                 mTouches[touchSlot].lastY = py;
 
                 // Scale swipe deltas into rightStick orbital rate (smooth 360 camera rotation)
-                float sens = 0.055f;
+                float sens = 0.055f * mSettings.starStickSensitivity;
                 pad.rightStickX = std::max(-1.0f, std::min(1.0f, dx * sens));
                 pad.rightStickY = std::max(-1.0f, std::min(1.0f, -dy * sens));
             }
@@ -3066,6 +3097,17 @@ void UIOverlay::generateVertices(int screenW, int screenH, std::vector<UIVertex>
                     break;
                 case ACT_JOYSTICK_MODE:
                     activeIdx = mSettings.dynamicStick ? 0 : 1;
+                    break;
+                case ACT_STICK_SENSITIVITY:
+                    activeIdx = (fabsf(mSettings.stickSensitivity - 0.75f) < 0.10f) ? 0 :
+                                (fabsf(mSettings.stickSensitivity - 1.25f) < 0.10f) ? 2 :
+                                (fabsf(mSettings.stickSensitivity - 1.50f) < 0.10f) ? 3 : 1;
+                    break;
+                case ACT_STAR_STICK_SENSITIVITY:
+                    activeIdx = (fabsf(mSettings.starStickSensitivity - 0.50f) < 0.10f) ? 0 :
+                                (fabsf(mSettings.starStickSensitivity - 0.75f) < 0.10f) ? 1 :
+                                (fabsf(mSettings.starStickSensitivity - 1.50f) < 0.10f) ? 3 :
+                                (fabsf(mSettings.starStickSensitivity - 2.00f) < 0.10f) ? 4 : 2;
                     break;
                 case ACT_DPAD_SIDE:
                     activeIdx = mSettings.dpadOnRight ? 1 : 0;

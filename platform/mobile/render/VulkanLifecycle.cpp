@@ -4,6 +4,7 @@
 #include <string>
 
 #include "../ui/UIOverlay.h"
+#include "gx/gl_renderer.h"
 #include "gx/vk_shadergen.h"
 #include "port/port.h"
 
@@ -66,6 +67,7 @@ bool VulkanLifecycle::handleDeviceLoss(ANativeWindow* window, int& screenW, int&
     LOGE("Vulkan was lost again immediately (or could not be recreated); falling back to OpenGL ES 3.2");
     sQuickRecreates = 0;
     if (egl.init() && egl.createSurface(window, screenW, screenH)) {
+        gpu::renderer().init();
         mobile_ui::UIOverlay::get().setActiveBackend(0);
         LOGI("OpenGL ES 3.2 fallback renderer active");
         return true;

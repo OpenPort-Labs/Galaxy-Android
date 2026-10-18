@@ -899,6 +899,9 @@ bool VkRenderer::createLogicalDevice() {
     VkPhysicalDeviceFeatures deviceFeatures{};
     deviceFeatures.samplerAnisotropy = mDeviceFeatures.samplerAnisotropy;
     deviceFeatures.depthClamp = VK_FALSE;
+    if (mDeviceFeatures.robustBufferAccess) {
+        deviceFeatures.robustBufferAccess = VK_TRUE;
+    }
     createInfo.pEnabledFeatures = &deviceFeatures;
 
     if (vkCreateDevice(mPhysicalDevice, &createInfo, nullptr, &mDevice) != VK_SUCCESS) {
@@ -2835,17 +2838,18 @@ VkPipeline VkRenderer::placeholderPipeline(const Item& it) {
     // Same render state as the draw it replaces, but the smallest program the
     // generators produce: geometry, depth and blending stay correct and only the
     // shading of this one draw is wrong until the real program arrives.
-    static const ShaderUid kStub = ShaderUid{};
-    const PipelineKey key = pipelineKeyFor(it, kStub);
+    ShaderUid stub{};
+    stub.vtxFlags = it.flags;
+    const PipelineKey key = pipelineKeyFor(it, stub);
     auto pit = mPipelines.find(key);
     if (pit != mPipelines.end()) return pit->second;
 
     std::vector<uint32_t> vsSpirv, fsSpirv;
-    if (!lookupVulkanShader(kStub, vsSpirv, fsSpirv) &&
-        !compileVulkanShader(kStub, vsSpirv, fsSpirv)) {
+    if (!lookupVulkanShader(stub, vsSpirv, fsSpirv) &&
+        !compileVulkanShader(stub, vsSpirv, fsSpirv)) {
         return VK_NULL_HANDLE;
     }
-    return createPipeline(it, key, kStub, vsSpirv, fsSpirv);
+    return createPipeline(it, key, stub, vsSpirv, fsSpirv);
 }
 
 void VkRenderer::requestShader(const ShaderUid& uid, const Item& it) {
@@ -3629,7 +3633,7 @@ bool VkRenderer::render(VkTarget& target, const EyeView* eye, VkTarget* hud, Hud
                 }
             } else if (tr < f.textures.size()) {
                 const std::shared_ptr<TexImage>& ti = f.textures[tr];
-                if (ti && ti->vkView != 0 && ti->vkVersion == ti->version) {
+                if (ti && ti->vkView != 0 && ti->vkVersion == ti->version && ti->vkGeneration == sVkDeviceGeneration) {
                     views[u] = (VkImageView)ti->vkView;
                     samplers[u] = getSampler(it.texMode0[u], it.texMode1[u], ti->levels);
                 } else {
@@ -3665,6 +3669,11 @@ bool VkRenderer::render(VkTarget& target, const EyeView* eye, VkTarget* hud, Hud
     if (endRes != VK_SUCCESS) {
         markFatal("render", "vkEndCommandBuffer", (int)endRes);
         return false;
+    }
+
+    if (mRenderSignaledSem) {
+        vkQueueWaitIdle(mQueue);
+        mRenderSignaledSem = false;
     }
 
     VkSubmitInfo submitInfo{};

@@ -45,12 +45,14 @@ void MobileApp::handleAppCmd(int32_t cmd) {
                 mVkReady = false;
                 mEgl.init();
                 mEgl.createSurface(mAndroid->window, mScreenWidth, mScreenHeight);
+                gpu::renderer().init();
             } else {
                 mVkReady = true;
             }
         } else {
             mEgl.init();
             mEgl.createSurface(mAndroid->window, mScreenWidth, mScreenHeight);
+            gpu::renderer().init();
         }
         mobile_system::SystemManager::enforceOrientation(mAndroid, mobile_ui::UIOverlay::get().settings().screenOrientationChoice);
         mWindowReady = true;

@@ -45,6 +45,8 @@
 #include "Game/Util/ScreenUtil.hpp"
 #include "Game/Util/SoundUtil.hpp"
 #include "Game/Util/StarPointerUtil.hpp"
+#include "Game/MapObj/StarPieceDirector.hpp"
+#include "Game/MapObj/StarPiece.hpp"
 #include <JSystem/JKernel/JKRHeap.hpp>
 #include <JSystem/JUtility/JUTVideo.hpp>
 
@@ -1049,18 +1051,71 @@ void MarioActor::control() {
         }
     }
 
-    // Rosalina: Cosmic Gravitational Pull for Starbits & Coins
-    if (charChoice == 3) {
+    // Rosalina: Full Cosmic Moveset (Double Mid-Air Spin, Cosmic Float, Spin Lift, Starbit Magnetic Attraction)
+    static int sRosalinaMidAirSpins = 0;
+    static int sRosalinaFloatTimer = 0;
+    if (charChoice == 3 && mMario) {
+        bool inAir = !MR::isOnGroundPlayer();
+        if (inAir) {
+            // Cosmic Star Float (holding Jump while falling in mid-air)
+            if (isKeepJump() && mVelocity.dot(getGravityVec()) > 0.0f) {
+                if (sRosalinaFloatTimer < 110) {
+                    sRosalinaFloatTimer++;
+                    TVec3f antiGrav = -getGravityVec() * (mVelocity.dot(getGravityVec()) * 0.82f);
+                    mVelocity += antiGrav;
+                    mMario->mJumpVec += antiGrav;
+                }
+            }
+
+            // Mid-Air Double Spin Boost (Rosalina's signature aerial spin recovery)
+            if (isRequestSpin() && sRosalinaMidAirSpins == 0) {
+                sRosalinaMidAirSpins = 1;
+                TVec3f up = -getGravityVec();
+                MR::normalizeOrZero(&up);
+                mVelocity += up * 28.0f;
+                mMario->mJumpVec = up * 28.0f;
+                mMario->mVelocity = mVelocity;
+                MR::startSystemSE("SE_PM_SPIN_ATTACK");
+            }
+        } else {
+            sRosalinaFloatTimer = 0;
+            sRosalinaMidAirSpins = 0;
+        }
+
+        // Ground / Air Cosmic Spin Extra Lift
+        if (isRequestSpin()) {
+            TVec3f up = -getGravityVec();
+            MR::normalizeOrZero(&up);
+            mVelocity += up * 12.0f;
+            mMario->mJumpVec += up * 12.0f;
+        }
+
+        // Cosmic Starbit Attraction Field
+        StarPieceDirector* spDir = MR::getStarPieceDirector();
+        if (spDir) {
+            s32 num = spDir->getObjNum();
+            for (s32 i = 0; i < num; i++) {
+                LiveActor* act = spDir->getActor(i);
+                if (act && !MR::isDead(act)) {
+                    TVec3f diff = mPosition - act->mPosition;
+                    float distSq = diff.squared();
+                    if (distSq < 1500.0f * 1500.0f && distSq > 25.0f) {
+                        ((StarPiece*)act)->goToPlayer(diff);
+                    }
+                }
+            }
+        }
         MR::tryPlayerCoinPull();
     }
 
     // Expanded Odyssey Moveset (Dive, Crouch Roll, Ground-Pound Jump)
     if (port_is_odyssey_moveset() && mMario) {
         bool jumpTrg = isRequestJump();
+        bool isCrouchHeld = checkButtonType(9, false) || (port_input_real_z() != 0);
 
         // Mid-Air Forward Dive (Spin while in midair and holding Crouch Z)
         bool inAir = !MR::isOnGroundPlayer();
-        if (inAir && isRequestSpin() && (checkButtonType(5, false) || checkButtonType(2, false))) {
+        if (inAir && isRequestSpin() && isCrouchHeld) {
             TVec3f front = mMario->mFrontVec;
             MR::normalizeOrZero(&front);
             TVec3f up = -getGravityVec();
@@ -1082,7 +1137,7 @@ void MarioActor::control() {
         }
 
         // Crouch Roll (Spin while crouching on ground)
-        if (MR::isOnGroundPlayer() && checkButtonType(5, false) && isRequestSpin()) {
+        if (MR::isOnGroundPlayer() && isCrouchHeld && isRequestSpin()) {
             TVec3f front = mMario->mFrontVec;
             MR::normalizeOrZero(&front);
             mVelocity += front * 36.0f;

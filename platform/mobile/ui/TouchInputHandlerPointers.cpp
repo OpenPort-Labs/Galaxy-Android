@@ -34,7 +34,7 @@ void TouchInputHandler::updateActivePointers(
             stickFound = true;
             float dx = px - mStickBaseX, dy = py - mStickBaseY;
             float dist = sqrtf(dx * dx + dy * dy);
-            float deadzone = 16.0f * scale;
+            float deadzone = 10.0f * scale;
             if (dist > stickMaxR && dist > 0.001f) {
                 mStickKnobX = mStickBaseX + (dx / dist) * stickMaxR;
                 mStickKnobY = mStickBaseY + (dy / dist) * stickMaxR;

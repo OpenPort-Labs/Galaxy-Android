@@ -211,13 +211,19 @@ bool TouchInputHandler::handleTouch(const AInputEvent* event, PortPadState& pad,
             float d2Star = (px - starL.cx)*(px - starL.cx) + (py - starL.cy)*(py - starL.cy);
             bool starEligible = (settings.starStick && mStarStickPointerId < 0 && d2Star <= (starL.r * 1.45f)*(starL.r * 1.45f));
 
+            bool dpadEligible = false;
+            if (settings.showControls && settings.showDpad) {
+                float d2Dpad = (px - dpadX)*(px - dpadX) + (py - dpadY)*(py - dpadY);
+                dpadEligible = (d2Dpad <= (dpadTotalR * 1.35f)*(dpadTotalR * 1.35f));
+            }
+
             bool stickEligible = false;
-            if (settings.showControls && mStickPointerId < 0 && !starEligible) {
+            if (settings.showControls && mStickPointerId < 0 && !starEligible && !dpadEligible && bestBtnIdx < 0) {
                 if (settings.dynamicStick) {
-                    stickEligible = (px <= w * 0.38f && py >= h * 0.45f);
+                    stickEligible = (px <= w * 0.50f && (py >= 85.0f * uiScale || px > 160.0f * uiScale));
                 } else {
                     float d2 = (px - defaultStickX)*(px - defaultStickX) + (py - defaultStickY)*(py - defaultStickY);
-                    stickEligible = (d2 <= (stickBaseR * 1.5f)*(stickBaseR * 1.5f));
+                    stickEligible = (d2 <= (stickBaseR * 2.5f)*(stickBaseR * 2.5f)) || (px <= w * 0.45f && py >= h * 0.35f);
                 }
             }
 
@@ -231,6 +237,8 @@ bool TouchInputHandler::handleTouch(const AInputEvent* event, PortPadState& pad,
                 mStarStickBaseY = starL.cy;
                 mStarStickKnobX = px;
                 mStarStickKnobY = py;
+            } else if (dpadEligible) {
+                mTouches[slot].role = TouchRole::DPAD;
             } else if (stickEligible) {
                 mTouches[slot].role = TouchRole::STICK;
                 mStickPointerId = pid;
@@ -238,10 +246,7 @@ bool TouchInputHandler::handleTouch(const AInputEvent* event, PortPadState& pad,
                 mStickBaseY = settings.dynamicStick ? py : defaultStickY;
                 mStickKnobX = px;
                 mStickKnobY = py;
-            } else if (settings.showControls && settings.showDpad &&
-                     ((px - dpadX)*(px - dpadX) + (py - dpadY)*(py - dpadY) <= dpadTotalR * dpadTotalR)) {
-                mTouches[slot].role = TouchRole::DPAD;
-            } else if (settings.touchCamera && px >= w * 0.38f) {
+            } else if (settings.touchCamera && px >= w * 0.50f) {
                 mTouches[slot].role = TouchRole::CAMERA_SWIPE;
                 mTouches[slot].lastX = px;
                 mTouches[slot].lastY = py;

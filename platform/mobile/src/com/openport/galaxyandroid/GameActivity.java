@@ -44,13 +44,14 @@ public class GameActivity extends NativeActivity {
                             android.view.Display.Mode[] modes = display.getSupportedModes();
                             android.view.Display.Mode currentMode = display.getMode();
                             android.view.Display.Mode bestMode = null;
+                            float targetRefresh = (maxFps < 60.0f) ? 60.0f : maxFps;
                             for (android.view.Display.Mode m : modes) {
                                 if (currentMode != null &&
                                     (m.getPhysicalWidth() != currentMode.getPhysicalWidth() ||
                                      m.getPhysicalHeight() != currentMode.getPhysicalHeight())) {
                                     continue;
                                 }
-                                if (m.getRefreshRate() <= maxFps + 1.0f) {
+                                if (m.getRefreshRate() <= targetRefresh + 1.0f) {
                                     if (bestMode == null || m.getRefreshRate() > bestMode.getRefreshRate()) {
                                         bestMode = m;
                                     }

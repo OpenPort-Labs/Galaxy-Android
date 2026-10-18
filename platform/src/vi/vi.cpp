@@ -38,7 +38,7 @@ static void raiseRetrace() {
     int64_t now = port_host_time_ns();
     int64_t last = sRaisedAt.load();
     int hz = sDisplayRefreshRate.load();
-    if (hz < 30) hz = 60;
+    if (hz < 60) hz = 60; // Emulated Wii VI retrace clock must never drop below 60 Hz to preserve 100% physics speed
     // Dynamic interval threshold: prevents double-triggering while allowing full 60/90/120/144Hz pacing
     int64_t minInterval = (int64_t)(1000000000LL / (hz * 1.5f));
     if (minInterval < 2000000LL) minInterval = 2000000LL;
@@ -109,7 +109,7 @@ void port_vi_retrace(void) {
 }
 
 void port_set_display_refresh_rate(int hz) {
-    if (hz < 30) hz = 30;
+    if (hz < 60) hz = 60;
     if (hz > 240) hz = 240;
     sDisplayRefreshRate.store(hz);
 }

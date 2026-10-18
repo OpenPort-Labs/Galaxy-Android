@@ -24,9 +24,19 @@ void OverlayRenderer::renderPerfHud(VertexBatcher& vb, int screenW, int screenH,
     if (settings.perfHudMode == 1) {
         snprintf(buf, sizeof(buf), "%.1f FPS  •  %.1f ms", perfMon.currentFps(), perfMon.avgFrameTimeMs());
     } else {
-        snprintf(buf, sizeof(buf), "%.1f FPS  •  %.1f ms  •  CPU %.0f%%  •  GPU %.0f%%  •  RAM %.0f MB",
-                 perfMon.currentFps(), perfMon.avgFrameTimeMs(),
-                 perfMon.cpuUsagePercent(), perfMon.gpuUsagePercent(), perfMon.ramUsageMB());
+        if (perfMon.hasHardwareGpuUsage()) {
+            snprintf(buf, sizeof(buf), "%.1f FPS  •  %.1f ms  •  CPU %.0f%%  •  GPU %.0f%%  •  RAM %.0f MB",
+                     perfMon.currentFps(), perfMon.avgFrameTimeMs(),
+                     perfMon.cpuUsagePercent(), perfMon.gpuUsagePercent(), perfMon.ramUsageMB());
+        } else if (perfMon.gpuUsagePercent() >= 0.0f) {
+            snprintf(buf, sizeof(buf), "%.1f FPS  •  %.1f ms  •  CPU %.0f%%  •  GPU Duty %.0f%%  •  RAM %.0f MB",
+                     perfMon.currentFps(), perfMon.avgFrameTimeMs(),
+                     perfMon.cpuUsagePercent(), perfMon.gpuUsagePercent(), perfMon.ramUsageMB());
+        } else {
+            snprintf(buf, sizeof(buf), "%.1f FPS  •  %.1f ms  •  CPU %.0f%%  •  GPU N/A  •  RAM %.0f MB",
+                     perfMon.currentFps(), perfMon.avgFrameTimeMs(),
+                     perfMon.cpuUsagePercent(), perfMon.ramUsageMB());
+        }
     }
 
     float textScale = 0.28f * uiScale;

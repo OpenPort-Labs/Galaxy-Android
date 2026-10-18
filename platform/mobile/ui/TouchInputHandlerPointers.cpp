@@ -107,16 +107,25 @@ void TouchInputHandler::updateActivePointers(
         } else if (role == TouchRole::CAMERA_SWIPE) {
             cameraSwipeFound = true;
             if (slot >= 0) {
-                float dx = px - mTouches[slot].lastX, dy = py - mTouches[slot].lastY;
-                mTouches[slot].lastX = px; mTouches[slot].lastY = py;
-                float sens = 0.055f * settings.starStickSensitivity;
-                pad.rightStickX = std::max(-1.0f, std::min(1.0f, -dx * sens));
-                pad.rightStickY = std::max(-1.0f, std::min(1.0f, -dy * sens));
+                float dx = px - mTouches[slot].lastX;
+                float dy = py - mTouches[slot].lastY;
+                mTouches[slot].lastX = px;
+                mTouches[slot].lastY = py;
+                float deadzone = 2.0f * scale;
+                if (fabsf(dx) > deadzone || fabsf(dy) > deadzone) {
+                    float sens = 0.055f * settings.starStickSensitivity;
+                    pad.rightStickX = std::max(-1.0f, std::min(1.0f, -dx * sens));
+                    pad.rightStickY = std::max(-1.0f, std::min(1.0f, -dy * sens));
+                } else {
+                    pad.rightStickX = pad.rightStickY = 0.0f;
+                }
             }
         } else if (role == TouchRole::STAR_POINTER && vpW > 0 && vpH > 0) {
             if (settings.relativePointer && slot >= 0) {
-                mPointerX = std::max(-1.0f, std::min(1.0f, mPointerX + ((px - mTouches[slot].lastX) / (float)vpW) * 2.0f));
-                mPointerY = std::max(-1.0f, std::min(1.0f, mPointerY + ((py - mTouches[slot].lastY) / (float)vpH) * 2.0f));
+                float dx = px - mTouches[slot].lastX;
+                float dy = py - mTouches[slot].lastY;
+                mPointerX = std::max(-1.0f, std::min(1.0f, mPointerX + (dx / (float)vpW) * 2.0f));
+                mPointerY = std::max(-1.0f, std::min(1.0f, mPointerY + (dy / (float)vpH) * 2.0f));
             } else {
                 mPointerX = std::max(-1.0f, std::min(1.0f, ((px - vpX) / (float)vpW) * 2.0f - 1.0f));
                 mPointerY = std::max(-1.0f, std::min(1.0f, ((py - vpY) / (float)vpH) * 2.0f - 1.0f));

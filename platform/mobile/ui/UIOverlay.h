@@ -48,6 +48,7 @@ public:
 
     void reportFramePresented() { mPerf.reportFramePresented(); }
     void reportGpuRenderTime(int64_t dur) { mPerf.reportGpuRenderTime(dur); }
+    void resetInput() { mTouch.reset(); }
 
     bool needsRedraw() { return mDirty || mMenu.isOpen() || mToastTimer > 0.0f; }
 

@@ -53,6 +53,7 @@ struct Settings {
     int renderScale = 0;
     bool haptics = false;
     int targetFps = 60;
+    int preferredRefreshRate = 60;
     bool adaptiveFps = true;
     bool batterySaver = false;
     bool gyroAiming = false;

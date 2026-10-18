@@ -86,7 +86,7 @@ bool GamepadInput::handleMotionEvent(AInputEvent* event, PortPadState& pad, int&
         if ((fabsf(rStickX) > 0.01f || fabsf(rStickY) > 0.01f) && !touchscreenDown) {
             float speed = 0.035f * starSens;
             pad.pointerX = std::max(-1.0f, std::min(1.0f, pad.pointerX + rStickX * speed));
-            pad.pointerY = std::max(-1.0f, std::min(1.0f, pad.pointerY + rStickY * speed));
+            pad.pointerY = std::max(-1.0f, std::min(1.0f, pad.pointerY - rStickY * speed));
             pad.pointerValid = 1;
             mobile_ui::UIOverlay::get().setPointerPos(pad.pointerX, pad.pointerY);
         }

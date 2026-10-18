@@ -21,6 +21,18 @@ static int64_t currentTimeMs() {
 
 TouchInputHandler::TouchInputHandler() = default;
 
+void TouchInputHandler::reset() {
+    for (int i = 0; i < 10; i++) mTouches[i] = {};
+    mStickPointerId = mStarStickPointerId = mTouchPointerId = -1;
+    mStickKnobX = mStickBaseX = mStickKnobY = mStickBaseY = 0.0f;
+    mStarStickKnobX = mStarStickBaseX = mStarStickKnobY = mStarStickBaseY = 0.0f;
+    mTouchStickX = mTouchStickY = mStarStickX = mStarStickY = 0.0f;
+    mPointerActiveFrames = 0;
+    mBtnAPressed = mBtnBPressed = mBtnZPressed = mBtnSpinPressed = mBtnPlusPressed = false;
+    mBtnDpadLeft = mBtnDpadRight = mBtnDpadUp = mBtnDpadDown = false;
+    mFingerDownOnA = mFingerDownOnB = mFingerDownOnZ = mFingerDownOnSpin = mFingerDownOnPlus = false;
+}
+
 void TouchInputHandler::update(PortPadState& pad, int& spinFrames, bool fullTouchMode) {
     (void)fullTouchMode;
     if (mTapDelayFrames > 0) {
@@ -135,14 +147,9 @@ bool TouchInputHandler::handleTouch(const AInputEvent* event, PortPadState& pad,
     float stickMaxR = 100.0f * scale;
 
     if (action == AMOTION_EVENT_ACTION_UP || action == AMOTION_EVENT_ACTION_CANCEL) {
-        for (int i = 0; i < 10; i++) mTouches[i] = {};
-        mStickPointerId = -1;
-        mStickKnobX = mStickBaseX;
-        mStickKnobY = mStickBaseY;
-        mTouchStickX = mTouchStickY = 0.0f;
+        reset();
         pad.stickX = pad.stickY = 0.0f;
         pad.buttons &= ~0x3C1F;
-        mFingerDownOnA = mFingerDownOnB = mFingerDownOnZ = mFingerDownOnSpin = mFingerDownOnPlus = false;
 
         if (mTouchPointerId >= 0) {
             int64_t dur = currentTimeMs() - mTouchStartTime;
@@ -165,8 +172,7 @@ bool TouchInputHandler::handleTouch(const AInputEvent* event, PortPadState& pad,
                     mStickPointerId = -1;
                     mStickKnobX = mStickBaseX;
                     mStickKnobY = mStickBaseY;
-                    mTouchStickX = mTouchStickY = 0.0f;
-                    pad.stickX = pad.stickY = 0.0f;
+                    mTouchStickX = mTouchStickY = pad.stickX = pad.stickY = 0.0f;
                 } else if (mTouches[i].role == TouchRole::STAR_STICK) {
                     mStarStickPointerId = -1;
                     mStarStickKnobX = mStarStickBaseX;
@@ -192,8 +198,8 @@ bool TouchInputHandler::handleTouch(const AInputEvent* event, PortPadState& pad,
         }
         if (slot >= 0) {
             mTouches[slot].id = pid;
-            mTouches[slot].startX = px;
-            mTouches[slot].startY = py;
+            mTouches[slot].startX = mTouches[slot].lastX = px;
+            mTouches[slot].startY = mTouches[slot].lastY = py;
             mTouches[slot].startTime = currentTimeMs();
             mTouches[slot].role = TouchRole::NONE;
 
@@ -230,12 +236,14 @@ bool TouchInputHandler::handleTouch(const AInputEvent* event, PortPadState& pad,
             bool stickEligible = false;
             if (settings.showControls && mStickPointerId < 0 && !starEligible && !dpadEligible && bestBtnIdx < 0) {
                 if (settings.dynamicStick) {
-                    stickEligible = (px <= w * 0.50f && (py >= 85.0f * uiScale || px > 160.0f * uiScale));
+                    stickEligible = (px <= w * 0.40f && py >= h * 0.45f);
                 } else {
                     float d2 = (px - defaultStickX)*(px - defaultStickX) + (py - defaultStickY)*(py - defaultStickY);
-                    stickEligible = (d2 <= (stickBaseR * 2.5f)*(stickBaseR * 2.5f)) || (px <= w * 0.45f && py >= h * 0.35f);
+                    stickEligible = (d2 <= (stickBaseR * 2.2f)*(stickBaseR * 2.2f));
                 }
             }
+
+            bool cameraSwipeEligible = (settings.touchCamera && !settings.starStick && px >= w * 0.55f && py <= h * 0.50f && bestBtnIdx < 0);
 
             if (bestBtnIdx >= 0) {
                 TouchRole btnRoles[5] = {TouchRole::BTN_A, TouchRole::BTN_B, TouchRole::BTN_Z, TouchRole::BTN_SPIN, TouchRole::BTN_PLUS};
@@ -256,17 +264,17 @@ bool TouchInputHandler::handleTouch(const AInputEvent* event, PortPadState& pad,
                 mStickBaseY = settings.dynamicStick ? py : defaultStickY;
                 mStickKnobX = px;
                 mStickKnobY = py;
-            } else if (settings.touchCamera && px >= w * 0.50f) {
+            } else if (cameraSwipeEligible) {
                 mTouches[slot].role = TouchRole::CAMERA_SWIPE;
-                mTouches[slot].lastX = px;
-                mTouches[slot].lastY = py;
             } else {
                 mTouches[slot].role = TouchRole::STAR_POINTER;
             }
 
-            if (mTouches[slot].role == TouchRole::STAR_POINTER && !settings.relativePointer && vpW > 0 && vpH > 0) {
-                mPointerX = std::max(-1.0f, std::min(1.0f, ((px - vpX) / (float)vpW) * 2.0f - 1.0f));
-                mPointerY = std::max(-1.0f, std::min(1.0f, ((py - vpY) / (float)vpH) * 2.0f - 1.0f));
+            if (mTouches[slot].role == TouchRole::STAR_POINTER && vpW > 0 && vpH > 0) {
+                if (!settings.relativePointer) {
+                    mPointerX = std::max(-1.0f, std::min(1.0f, ((px - vpX) / (float)vpW) * 2.0f - 1.0f));
+                    mPointerY = std::max(-1.0f, std::min(1.0f, ((py - vpY) / (float)vpH) * 2.0f - 1.0f));
+                }
                 mPointerActiveFrames = 120;
             }
         }

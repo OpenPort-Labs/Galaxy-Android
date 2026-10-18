@@ -46,6 +46,7 @@ void MobileApp::handleAppCmd(int32_t cmd) {
                 mEgl.init();
                 mEgl.createSurface(mAndroid->window, mScreenWidth, mScreenHeight);
                 gpu::renderer().init();
+                mobile_ui::UIOverlay::get().setActiveBackend(0);
             } else {
                 mVkReady = true;
             }
@@ -53,6 +54,7 @@ void MobileApp::handleAppCmd(int32_t cmd) {
             mEgl.init();
             mEgl.createSurface(mAndroid->window, mScreenWidth, mScreenHeight);
             gpu::renderer().init();
+            mobile_ui::UIOverlay::get().setActiveBackend(0);
         }
         mobile_system::SystemManager::enforceOrientation(mAndroid, mobile_ui::UIOverlay::get().settings().screenOrientationChoice);
         mWindowReady = true;
@@ -60,6 +62,7 @@ void MobileApp::handleAppCmd(int32_t cmd) {
     }
     case APP_CMD_TERM_WINDOW:
         LOGI("APP_CMD_TERM_WINDOW");
+        mobile_ui::UIOverlay::get().resetInput();
         if (mVkReady) {
             if (mVkTarget.framebuffer) gpu::VkRenderer::get().destroyTarget(mVkTarget);
             gpu::VkRenderer::get().shutdown();
@@ -90,6 +93,7 @@ void MobileApp::handleAppCmd(int32_t cmd) {
     case APP_CMD_PAUSE:
         LOGI("APP_CMD_PAUSE");
         if (mVkReady) gpu::VkRenderer::get().savePipelineCache();
+        mobile_ui::UIOverlay::get().resetInput();
         mGamepad.reset();
         mSpinFrames = 0;
         mTouchscreenDown = false;

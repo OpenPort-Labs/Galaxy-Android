@@ -13,6 +13,7 @@ public:
     TouchInputHandler();
 
     void update(PortPadState& pad, int& spinFrames, bool fullTouchMode);
+    void reset();
 
     uint32_t getTouchButtons() const;
 

@@ -125,14 +125,15 @@ void PerformanceMonitor::update(int targetFps, bool batterySaver) {
             if (gotGpu) break;
         }
     }
+    mHasHardwareGpuUsage = gotGpu;
     if (!gotGpu) {
         if (diffNs > 0 && mGpuRenderFrameCount > 0) {
             float gpuDuty = ((float)mGpuRenderTimeAccumNs / (float)diffNs) * 100.0f;
             if (gpuDuty < 0.0f) gpuDuty = 0.0f;
             if (gpuDuty > 100.0f) gpuDuty = 100.0f;
             mGpuUsagePercent = gpuDuty;
-        } else if (mCurrentFps > 0.0f) {
-            mGpuUsagePercent = std::min(100.0f, (mAvgFrameTimeMs / 16.67f) * 40.0f);
+        } else {
+            mGpuUsagePercent = -1.0f;
         }
     }
     mGpuRenderTimeAccumNs = 0;

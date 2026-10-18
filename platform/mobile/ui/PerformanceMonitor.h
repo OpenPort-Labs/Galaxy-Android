@@ -23,6 +23,7 @@ public:
     float cpuUsagePercent() const { return mCpuUsagePercent; }
     float gpuUsagePercent() const { return mGpuUsagePercent; }
     float ramUsageMB() const { return mRamUsageMB; }
+    bool hasHardwareGpuUsage() const { return mHasHardwareGpuUsage; }
 
     const std::string& gpuRendererName() const { return mGpuRendererName; }
     void setGpuRendererName(const std::string& name) {
@@ -37,6 +38,7 @@ private:
 
     float mCpuUsagePercent = 0.0f;
     float mGpuUsagePercent = 0.0f;
+    bool mHasHardwareGpuUsage = false;
     float mRamUsageMB = 0.0f;
 
     int64_t mGpuRenderTimeAccumNs = 0;

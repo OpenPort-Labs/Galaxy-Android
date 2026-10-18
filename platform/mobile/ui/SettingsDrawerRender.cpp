@@ -140,15 +140,10 @@ void SettingsMenuHandler::renderDrawer(VertexBatcher& vb, int screenW, int scree
                 break;
             case ACT_JOYSTICK_MODE: activeIdx = settings.dynamicStick ? 0 : 1; break;
             case ACT_STICK_SENSITIVITY:
-                activeIdx = (fabsf(settings.stickSensitivity - 0.75f) < 0.10f) ? 0 :
-                            (fabsf(settings.stickSensitivity - 1.25f) < 0.10f) ? 2 :
-                            (fabsf(settings.stickSensitivity - 1.50f) < 0.10f) ? 3 : 1;
+                activeIdx = (fabsf(settings.stickSensitivity - 0.75f) < 0.10f) ? 0 : (fabsf(settings.stickSensitivity - 1.25f) < 0.10f) ? 2 : (fabsf(settings.stickSensitivity - 1.50f) < 0.10f) ? 3 : 1;
                 break;
             case ACT_STAR_STICK_SENSITIVITY:
-                activeIdx = (fabsf(settings.starStickSensitivity - 0.50f) < 0.10f) ? 0 :
-                            (fabsf(settings.starStickSensitivity - 0.75f) < 0.10f) ? 1 :
-                            (fabsf(settings.starStickSensitivity - 1.50f) < 0.10f) ? 3 :
-                            (fabsf(settings.starStickSensitivity - 2.00f) < 0.10f) ? 4 : 2;
+                activeIdx = (fabsf(settings.starStickSensitivity - 0.50f) < 0.10f) ? 0 : (fabsf(settings.starStickSensitivity - 0.75f) < 0.10f) ? 1 : (fabsf(settings.starStickSensitivity - 1.50f) < 0.10f) ? 3 : (fabsf(settings.starStickSensitivity - 2.00f) < 0.10f) ? 4 : 2;
                 break;
             case ACT_DPAD_SIDE: activeIdx = settings.dpadOnRight ? 1 : 0; break;
             case ACT_GRAPHICS_BACKEND: activeIdx = (settings.graphicsBackend == 1) ? 1 : 0; break;
@@ -157,7 +152,7 @@ void SettingsMenuHandler::renderDrawer(VertexBatcher& vb, int screenW, int scree
                 activeIdx = (settings.targetFps >= 144) ? 4 : (settings.targetFps >= 120) ? 3 : (settings.targetFps >= 90) ? 2 : (settings.targetFps >= 60) ? 1 : 0;
                 break;
             case ACT_DISPLAY_REFRESH:
-                activeIdx = (settings.targetFps >= 144) ? 3 : (settings.targetFps >= 120) ? 2 : (settings.targetFps >= 90) ? 1 : 0;
+                activeIdx = (settings.preferredRefreshRate >= 144) ? 3 : (settings.preferredRefreshRate >= 120) ? 2 : (settings.preferredRefreshRate >= 90) ? 1 : 0;
                 break;
             case ACT_ORIENTATION: activeIdx = std::max(0, std::min(2, settings.screenOrientationChoice)); break;
             case ACT_PERF_HUD: activeIdx = std::max(0, std::min(2, settings.perfHudMode)); break;
@@ -278,10 +273,9 @@ void SettingsMenuHandler::renderDrawer(VertexBatcher& vb, int screenW, int scree
                 vb.drawText(apiLine, rowX0 + 12.0f * uiScale, drawY + 54.0f * uiScale, 0.24f * uiScale, rgba(0.55f, 0.60f, 0.68f, 0.80f), 0);
             } else if (r.action == ACT_STORAGE_INFO_CARD) {
                 vb.drawText("NAND SAVE SYSTEM & STORAGE", rowX0 + 12.0f * uiScale, drawY + 20.0f * uiScale, 0.31f * uiScale, rgba(1.0f, 0.78f, 0.25f, 0.95f), 0);
-                vb.drawText("Directory: /sdcard/GalaxyData/saves", rowX0 + 12.0f * uiScale, drawY + 38.0f * uiScale, 0.26f * uiScale, rgba(0.85f, 0.88f, 0.94f, 0.90f), 0);
-                vb.drawText("Dual persistent snapshot system with CRC32 integrity.", rowX0 + 12.0f * uiScale, drawY + 56.0f * uiScale, 0.25f * uiScale, rgba(0.78f, 0.82f, 0.88f, 0.85f), 0);
-                vb.drawText("Reloading a slot instantly respawns in active galaxy.", rowX0 + 12.0f * uiScale, drawY + 74.0f * uiScale, 0.25f * uiScale, rgba(0.78f, 0.82f, 0.88f, 0.85f), 0);
-                vb.drawText("100% interoperable with Dolphin Wii saves.", rowX0 + 12.0f * uiScale, drawY + 92.0f * uiScale, 0.24f * uiScale, rgba(0.55f, 0.65f, 0.80f, 0.75f), 0);
+                vb.drawText("Directory: /sdcard/GalaxyData/saves (Dolphin compatible)", rowX0 + 12.0f * uiScale, drawY + 40.0f * uiScale, 0.26f * uiScale, rgba(0.85f, 0.88f, 0.94f, 0.90f), 0);
+                vb.drawText("Dual snapshot system with CRC32 integrity check.", rowX0 + 12.0f * uiScale, drawY + 60.0f * uiScale, 0.25f * uiScale, rgba(0.78f, 0.82f, 0.88f, 0.85f), 0);
+                vb.drawText("Instant reload respawns Mario directly in active galaxy.", rowX0 + 12.0f * uiScale, drawY + 80.0f * uiScale, 0.25f * uiScale, rgba(0.78f, 0.82f, 0.88f, 0.85f), 0);
             }
         }
     }

@@ -30,15 +30,20 @@ bool VulkanLifecycle::bringUp(ANativeWindow* window, int& screenW, int& screenH,
         screenW, screenH, settings.renderScale, settings.batterySaver, settings.fullscreen,
         targetW, targetH);
 
+    gpu::VkTarget newTarget = gpu::VkRenderer::get().createTarget(targetW, targetH);
+    if (newTarget.framebuffer == VK_NULL_HANDLE) {
+        LOGE("Failed to allocate initial Vulkan render target (%dx%d)", targetW, targetH);
+        return false;
+    }
     if (target.framebuffer) {
         gpu::VkRenderer::get().destroyTarget(target);
     }
-    target = gpu::VkRenderer::get().createTarget(targetW, targetH);
+    target = newTarget;
     vpMgr.update(screenW, screenH, settings.fullscreen);
 
     LOGI("Vulkan 1.0 native renderer initialized (%dx%d), offscreen target: %dx%d",
          screenW, screenH, targetW, targetH);
-    return (target.framebuffer != VK_NULL_HANDLE);
+    return true;
 }
 
 bool VulkanLifecycle::handleDeviceLoss(ANativeWindow* window, int& screenW, int& screenH,

@@ -61,6 +61,7 @@ void Settings::load(const std::string& path) {
                 else if (v >= 60) targetFps = 60;
                 else targetFps = 30;
             }
+            else if (!strcmp(key, "display_refresh_rate")) preferredRefreshRate = (int)val;
             else if (!strcmp(key, "adaptive_fps")) adaptiveFps = (val > 0.5f);
             else if (!strcmp(key, "battery_saver")) batterySaver = (val > 0.5f);
             else if (!strcmp(key, "gyro_aiming")) gyroAiming = (val > 0.5f);
@@ -96,6 +97,8 @@ void Settings::save(const std::string& path) const {
     fprintf(f, "graphics_backend=%d\n", graphicsBackend);
     fprintf(f, "relative_pointer=%d\n", relativePointer ? 1 : 0);
     fprintf(f, "screen_orientation=%d\n", screenOrientationChoice);
+    fprintf(f, "target_fps=%d\n", targetFps);
+    fprintf(f, "display_refresh_rate=%d\n", preferredRefreshRate);
     fprintf(f, "battery_saver=%d\n", batterySaver ? 1 : 0);
     fprintf(f, "gyro_aiming=%d\n", gyroAiming ? 1 : 0);
     fprintf(f, "gyro_invert_x=%d\n", gyroInvertX ? 1 : 0);

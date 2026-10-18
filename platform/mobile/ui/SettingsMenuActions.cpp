@@ -19,13 +19,6 @@ namespace mobile_ui {
 
 namespace {
 
-static void applyTargetFps(int fps) {
-    if (fps < 30) fps = 30;
-    if (fps > 144) fps = 144;
-    port_set_display_refresh_rate(fps);
-    mobile_system::SystemManager::setPreferredRefreshRate(nullptr, (float)fps);
-}
-
 
 static void applyLanguage(int langIdx) {
     if (langIdx <= 0) {
@@ -161,10 +154,13 @@ bool SettingsMenuActions::dispatch(MenuActionId action, float px, float midX, fl
         settings.haptics = !settings.haptics;
         outToastMsg = settings.haptics ? "Vibration Haptics: ON" : "Vibration Haptics: OFF";
         break;
-    case ACT_GRAPHICS_BACKEND:
-        settings.graphicsBackend = (px < midX) ? 0 : 1;
-        outToastMsg = (settings.graphicsBackend == 0) ? "Backend: OpenGL ES 3.2" : "Backend: Vulkan 1.0";
+    case ACT_GRAPHICS_BACKEND: {
+        int chosen = (px < midX) ? 0 : 1;
+        settings.graphicsBackend = chosen;
+        outToastMsg = (chosen == 0) ? "Preferred Backend: OpenGL ES (Restart required)"
+                                    : "Preferred Backend: Vulkan (Restart required)";
         break;
+    }
     case ACT_RENDER_SCALE: {
         int idx = std::max(0, std::min(3, (int)(relX / (contentW / 4.0f))));
         settings.renderScale = idx;
@@ -178,23 +174,21 @@ bool SettingsMenuActions::dispatch(MenuActionId action, float px, float midX, fl
         int fps = (idx == 0) ? 30 : (idx == 1) ? 60 : (idx == 2) ? 90 : (idx == 3) ? 120 : 144;
         settings.targetFps = fps;
         settings.batterySaver = (fps <= 30);
-        applyTargetFps(fps);
         outToastMsg = "Target Framerate: " + std::to_string(fps) + " FPS";
         break;
     }
     case ACT_DISPLAY_REFRESH: {
         int idx = std::max(0, std::min(3, (int)(relX / (contentW / 4.0f))));
-        int fps = (idx == 0) ? 60 : (idx == 1) ? 90 : (idx == 2) ? 120 : 144;
-        settings.targetFps = fps;
-        settings.batterySaver = false;
-        applyTargetFps(fps);
-        outToastMsg = "Display Refresh Rate: " + std::to_string(fps) + " Hz";
+        int hz = (idx == 0) ? 60 : (idx == 1) ? 90 : (idx == 2) ? 120 : 144;
+        settings.preferredRefreshRate = hz;
+        port_set_display_refresh_rate(hz);
+        mobile_system::SystemManager::setPreferredRefreshRate(nullptr, (float)hz);
+        outToastMsg = "Display Refresh Rate: " + std::to_string(hz) + " Hz";
         break;
     }
     case ACT_BATTERY_SAVER:
         settings.batterySaver = !settings.batterySaver;
         settings.targetFps = settings.batterySaver ? 30 : 60;
-        applyTargetFps(settings.targetFps);
         outToastMsg = settings.batterySaver ? "Battery Saver: ON (30 FPS Lock)" : "Battery Saver: OFF";
         break;
     case ACT_FULLSCREEN:

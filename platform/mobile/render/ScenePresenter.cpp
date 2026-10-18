@@ -27,10 +27,17 @@ void ScenePresenter::presentVulkan(gpu::VkRenderer& vkr, gpu::VkTarget& target,
             screenW, screenH, settings.renderScale, settings.batterySaver, settings.fullscreen,
             desiredW, desiredH);
 
-        if (target.width != desiredW || target.height != desiredH) {
-            vkr.destroyTarget(target);
-            target = vkr.createTarget(desiredW, desiredH);
-            vpMgr.update(screenW, screenH, settings.fullscreen);
+        if (target.framebuffer == VK_NULL_HANDLE || target.width != desiredW || target.height != desiredH) {
+            gpu::VkTarget newTarget = vkr.createTarget(desiredW, desiredH);
+            if (newTarget.framebuffer != VK_NULL_HANDLE) {
+                if (target.framebuffer != VK_NULL_HANDLE) {
+                    vkr.destroyTarget(target);
+                }
+                target = newTarget;
+                vpMgr.update(screenW, screenH, settings.fullscreen);
+            } else {
+                port_log("ScenePresenter: failed to create Vulkan target (%dx%d), preserving existing", desiredW, desiredH);
+            }
         }
 
         int64_t renderStartNs = port_host_time_ns();

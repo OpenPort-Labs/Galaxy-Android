@@ -95,6 +95,7 @@ void VkRenderer::trimFrameCaches(uint64_t frame) {
     }
 }
 
+#if defined(VK_EXT_device_fault) && defined(VK_STRUCTURE_TYPE_DEVICE_FAULT_COUNTS_EXT)
 // The driver's own account of a lost device (VK_EXT_device_fault).  It is read
 // before anything else touches the device, because the fault info is only valid
 // while the device still exists.
@@ -133,6 +134,11 @@ void VkRenderer::logDeviceFault(const char* where) {
                  (unsigned long long)vendorInfo[i].vendorFaultCode, (unsigned long long)vendorInfo[i].vendorFaultData);
     }
 }
+#else
+void VkRenderer::logDeviceFault(const char* /*where*/) {
+    // VK_EXT_device_fault is not available in current toolchain Vulkan headers (e.g. NDK r25c)
+}
+#endif
 
 void VkRenderer::markFatal(const char* where, const char* what, int result) {
     if (mFatal) return;
@@ -881,6 +887,7 @@ bool VkRenderer::createLogicalDevice() {
     if (availExtCount > 0) {
         std::vector<VkExtensionProperties> avail(availExtCount);
         vkEnumerateDeviceExtensionProperties(mPhysicalDevice, nullptr, &availExtCount, avail.data());
+#if defined(VK_EXT_device_fault) && defined(VK_STRUCTURE_TYPE_DEVICE_FAULT_COUNTS_EXT)
         for (const VkExtensionProperties& ext : avail) {
             if (strcmp(ext.extensionName, "VK_EXT_device_fault") == 0) {
                 deviceExtensions.push_back("VK_EXT_device_fault");
@@ -888,6 +895,7 @@ bool VkRenderer::createLogicalDevice() {
                 break;
             }
         }
+#endif
     }
 
     VkDeviceCreateInfo createInfo{};
@@ -3570,7 +3578,7 @@ bool VkRenderer::render(VkTarget& target, const EyeView* eye, VkTarget* hud, Hud
         int sx, sy, sw, sh;
         float targetAspect = (float)target.width / (float)target.height;
         const float k169 = 16.0f / 9.0f;
-        if (!port_is_fullscreen_aspect() && it.hudSafe && targetAspect > k169 + 0.01f) {
+        if (it.hudSafe && targetAspect > k169 + 0.01f) {
             float hudW = (float)target.height * k169;
             float hudOfsX = ((float)target.width - hudW) * 0.5f;
             float hudFx = hudW / (float)p.nativeW;

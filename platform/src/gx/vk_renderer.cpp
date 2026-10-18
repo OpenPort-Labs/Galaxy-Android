@@ -16,6 +16,8 @@
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, TAG, __VA_ARGS__)
 #define LOGW(...) __android_log_print(ANDROID_LOG_WARN, TAG, __VA_ARGS__)
 
+extern "C" int port_is_post_processing_enabled(void);
+
 namespace gpu {
 
 namespace {
@@ -420,6 +422,10 @@ void VkRenderer::destroyPresentationPipeline() {
         if (mPresentPipeline != VK_NULL_HANDLE) {
             vkDestroyPipeline(mDevice, mPresentPipeline, nullptr);
             mPresentPipeline = VK_NULL_HANDLE;
+        }
+        if (mPresentPipelinePostProcess != VK_NULL_HANDLE) {
+            vkDestroyPipeline(mDevice, mPresentPipelinePostProcess, nullptr);
+            mPresentPipelinePostProcess = VK_NULL_HANDLE;
         }
         if (mPresentPipelineLayout != VK_NULL_HANDLE) {
             vkDestroyPipelineLayout(mDevice, mPresentPipelineLayout, nullptr);
@@ -1156,9 +1162,9 @@ bool VkRenderer::createRenderPasses() {
     efbAttachments[1].format = mDepthFormat;
     efbAttachments[1].samples = VK_SAMPLE_COUNT_1_BIT;
     efbAttachments[1].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    efbAttachments[1].storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    efbAttachments[1].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
     efbAttachments[1].stencilLoadOp = hasStencil ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    efbAttachments[1].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    efbAttachments[1].stencilStoreOp = hasStencil ? VK_ATTACHMENT_STORE_OP_STORE : VK_ATTACHMENT_STORE_OP_DONT_CARE;
     efbAttachments[1].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     efbAttachments[1].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
@@ -1404,7 +1410,16 @@ void main() {
     gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
 }
 )";
-    const char* fsSrc = R"(#version 450 core
+    const char* fsSrcFast = R"(#version 450 core
+layout(location = 0) in vec2 v_uv;
+layout(location = 0) out vec4 outColor;
+layout(set = 0, binding = 0) uniform sampler2D s_target;
+void main() {
+    outColor = vec4(texture(s_target, v_uv).rgb, 1.0);
+}
+)";
+
+    const char* fsSrcPost = R"(#version 450 core
 layout(location = 0) in vec2 v_uv;
 layout(location = 0) out vec4 outColor;
 layout(set = 0, binding = 0) uniform sampler2D s_target;
@@ -1472,16 +1487,18 @@ void main() {
 }
 )";
 
-    std::vector<uint32_t> vsSpirv, fsSpirv;
+    std::vector<uint32_t> vsSpirv, fsFastSpirv, fsPostSpirv;
     std::string err;
     if (!compileShaderToSPIRV(vsSrc, true, vsSpirv, err) ||
-        !compileShaderToSPIRV(fsSrc, false, fsSpirv, err)) {
-        LOGE("Failed to compile presentation shaders: %s", err.c_str());
+        !compileShaderToSPIRV(fsSrcFast, false, fsFastSpirv, err)) {
+        LOGE("Failed to compile presentation fast shaders: %s", err.c_str());
         return false;
     }
+    compileShaderToSPIRV(fsSrcPost, false, fsPostSpirv, err);
 
     VkShaderModule vsMod = createShaderModule(vsSpirv.data(), vsSpirv.size() * 4);
-    VkShaderModule fsMod = createShaderModule(fsSpirv.data(), fsSpirv.size() * 4);
+    VkShaderModule fsFastMod = createShaderModule(fsFastSpirv.data(), fsFastSpirv.size() * 4);
+    VkShaderModule fsPostMod = fsPostSpirv.empty() ? VK_NULL_HANDLE : createShaderModule(fsPostSpirv.data(), fsPostSpirv.size() * 4);
 
     VkPipelineShaderStageCreateInfo stages[2]{};
     stages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -1490,7 +1507,7 @@ void main() {
     stages[0].pName = "main";
     stages[1].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
     stages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-    stages[1].module = fsMod;
+    stages[1].module = fsFastMod;
     stages[1].pName = "main";
 
     VkPipelineVertexInputStateCreateInfo vici{};
@@ -1552,8 +1569,17 @@ void main() {
         }
     }
 
+    if (fsPostMod != VK_NULL_HANDLE) {
+        stages[1].module = fsPostMod;
+        vkCreateGraphicsPipelines(mDevice, mPipelineCache, 1, &pci, nullptr, &mPresentPipelinePostProcess);
+        if (mPresentPipelinePostProcess == VK_NULL_HANDLE && mPipelineCache != VK_NULL_HANDLE) {
+            vkCreateGraphicsPipelines(mDevice, VK_NULL_HANDLE, 1, &pci, nullptr, &mPresentPipelinePostProcess);
+        }
+        vkDestroyShaderModule(mDevice, fsPostMod, nullptr);
+    }
+
     vkDestroyShaderModule(mDevice, vsMod, nullptr);
-    vkDestroyShaderModule(mDevice, fsMod, nullptr);
+    vkDestroyShaderModule(mDevice, fsFastMod, nullptr);
 
     return res == VK_SUCCESS;
 }
@@ -3652,12 +3678,14 @@ bool VkRenderer::render(VkTarget& target, const EyeView* eye, VkTarget* hud, Hud
     vkResetFences(mDevice, 1, &mRenderFence);
     VkResult subRes = vkQueueSubmit(mQueue, 1, &submitInfo, mRenderFence);
     if (subRes != VK_SUCCESS) {
+        mRenderSignaledSem = false;
         markFatal("render", "vkQueueSubmit", (int)subRes);
         target.hasValidContent = false;
         return false;
     }
 
     mRenderFenceInFlight = true;
+    mRenderSignaledSem = true;
     target.hasValidContent = true;
     target.colorLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     evictCopies(p.number);
@@ -3777,7 +3805,11 @@ void VkRenderer::present(const VkTarget& target, int vpX, int vpY, int vpW, int 
         scissor.extent = {(uint32_t)qw, (uint32_t)qh};
         vkCmdSetScissor(mPresentCommandBuffer, 0, 1, &scissor);
 
-        vkCmdBindPipeline(mPresentCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, mPresentPipeline);
+        VkPipeline chosenPipe = mPresentPipeline;
+        if (port_is_post_processing_enabled() && mPresentPipelinePostProcess != VK_NULL_HANDLE) {
+            chosenPipe = mPresentPipelinePostProcess;
+        }
+        vkCmdBindPipeline(mPresentCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, chosenPipe);
         vkCmdBindDescriptorSets(mPresentCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, mPresentPipelineLayout, 0, 1, &presentSet, 0, nullptr);
 
         // Draw procedural fullscreen quad (3 vertices)
@@ -3797,12 +3829,22 @@ void VkRenderer::present(const VkTarget& target, int vpX, int vpY, int vpW, int 
 
     VkSubmitInfo submitInfo{};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    VkSemaphore waitSemaphores[] = {mImageAvailableSem, mRenderToPresentSem};
-    VkPipelineStageFlags waitStages[] = {
-        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT
-    };
-    submitInfo.waitSemaphoreCount = 2;
+    VkSemaphore waitSemaphores[2];
+    VkPipelineStageFlags waitStages[2];
+    uint32_t waitCount = 0;
+
+    waitSemaphores[waitCount] = mImageAvailableSem;
+    waitStages[waitCount] = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    waitCount++;
+
+    if (mRenderSignaledSem) {
+        waitSemaphores[waitCount] = mRenderToPresentSem;
+        waitStages[waitCount] = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+        waitCount++;
+        mRenderSignaledSem = false;
+    }
+
+    submitInfo.waitSemaphoreCount = waitCount;
     submitInfo.pWaitSemaphores = waitSemaphores;
     submitInfo.pWaitDstStageMask = waitStages;
     submitInfo.commandBufferCount = 1;

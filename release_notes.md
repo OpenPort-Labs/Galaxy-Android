@@ -36,9 +36,17 @@ Major performance and stability release eliminating all Vulkan frame stuttering,
 
 Major release resolving all 19 open community issues (#51 through #70), fully integrating NVIDIA Shield TV 1080p remastered assets and controller curves, eliminating save loading crashes, and delivering rock-solid 60 FPS performance across all Mali and Adreno chipsets.
 
+### Release Links & Support Channels
+- **GitHub Release**: [v0.0.3 Release](https://github.com/OpenPort-Labs/Galaxy-Android/releases/tag/v0.0.3)
+- **Discord Community**: [Join Discord](https://discord.gg/hGbgSmepC)
+- **GitHub Issues**: [OpenPort-Labs Issues](https://github.com/OpenPort-Labs/Galaxy-Android/issues)
+- **Comments**: Report issues in public comments under the release announcement.
+- **Support Privacy Policy**: NO EMAILS. Email is a personal privacy boundary, and emails regarding bug reports or support will not be read or answered. Please use Discord, GitHub Issues, or public comments instead.
+
 ---
 
 ### Highlights & Issue Fixes in v0.0.3
+
 
 #### 1. Save Loading & Stage Transition Stability (Fixes #60, #61, #64, #70)
 - **Save File Index & State Preservation**: Fixed critical save file corruption where `quickLoadGame()` passed 0 as file index to `SaveDataHandleSequence`, producing `config0` and `mario0` and crashing on reload. The system now strictly preserves 1-based indexing (`1..3`) and Mario/Luigi character selection.

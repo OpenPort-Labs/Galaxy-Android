@@ -197,6 +197,21 @@ The output APK is generated at `out-mobile/GalaxyAndroid.apk`.
 
 ---
 
+## Community & Support
+
+Need assistance, want to report an issue, or discuss development? Join our community:
+
+- **Discord Server**: [https://discord.gg/hGbgSmepC](https://discord.gg/hGbgSmepC)
+- **GitHub Issues**: [https://github.com/OpenPort-Labs/Galaxy-Android/issues](https://github.com/OpenPort-Labs/Galaxy-Android/issues)
+- **GitHub Releases**: [https://github.com/OpenPort-Labs/Galaxy-Android/releases](https://github.com/OpenPort-Labs/Galaxy-Android/releases)
+
+> [!IMPORTANT]
+> **Support Privacy Policy: NO EMAILS**
+> Email is a strict personal privacy boundary. Support requests or bug reports sent via email will not be read or answered. Please use Discord, GitHub Issues, or public comments instead.
+
+---
+
 ## License
 
 This project is licensed under the **GNU General Public License v3.0 (GPL-3.0)**. See the [`LICENSE`](LICENSE) file for details.
+

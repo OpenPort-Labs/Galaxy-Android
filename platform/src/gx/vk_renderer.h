@@ -294,6 +294,7 @@ private:
 
     VkSemaphore mImageAvailableSem = VK_NULL_HANDLE;
     VkSemaphore mRenderToPresentSem = VK_NULL_HANDLE;
+    bool mRenderSignaledSem = false;
     // One "render finished" semaphore per swapchain image.  The presentation of
     // an image consumes it, and that outlives the submit's fence, so a single
     // shared semaphore would be signalled again while still in use - the spec
@@ -324,6 +325,7 @@ private:
     VkDescriptorSetLayout mPresentDescLayout = VK_NULL_HANDLE;
     VkPipelineLayout mPresentPipelineLayout = VK_NULL_HANDLE;
     VkPipeline mPresentPipeline = VK_NULL_HANDLE;
+    VkPipeline mPresentPipelinePostProcess = VK_NULL_HANDLE;
     VkSampler mPresentSampler = VK_NULL_HANDLE;
     std::unordered_map<VkImageView, VkDescriptorSet> mPresentDescSets;
 

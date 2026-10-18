@@ -169,15 +169,25 @@ static void pollSensors(MobileApp& a) {
                 port_input_set(0, &a.pad);
             }
         } else if (event.type == ASENSOR_TYPE_ACCELEROMETER) {
-            // Compute phone tilt/roll for motion steering (Ray Surfing, Star Ball)
-            float rawRoll = event.acceleration.x / 9.81f;
-            float rawPitch = (event.acceleration.y - 4.9f) / 9.81f;
+            // Android Landscape coordinate conversion for motion steering (Ray Surfing / Mantis, Star Ball)
+            // - Tilting phone like a steering wheel (Roll): pulls along the phone's Y axis (long axis)
+            // - Tilting phone forward/backward (Pitch): pulls along the phone's X axis (short axis)
+            float rawRoll, rawPitch;
+            if (mobile_ui::get().settings().screenOrientationChoice == 2) {
+                // Reverse landscape (USB port to the left)
+                rawRoll = (event.acceleration.y / 9.81f) * 1.4f;
+                rawPitch = ((-event.acceleration.x - 3.5f) / 9.81f) * 1.4f;
+            } else {
+                // Standard landscape (USB port to the right)
+                rawRoll = (-event.acceleration.y / 9.81f) * 1.4f;
+                rawPitch = ((event.acceleration.x - 3.5f) / 9.81f) * 1.4f;
+            }
             rawRoll = std::max(-1.0f, std::min(1.0f, rawRoll));
             rawPitch = std::max(-1.0f, std::min(1.0f, rawPitch));
 
             // Apply physical tilt if virtual touch stick is not being actively dragged
             if (!mobile_ui::get().isStickActive()) {
-                if (fabsf(rawRoll) > 0.08f || fabsf(rawPitch) > 0.08f) {
+                if (fabsf(rawRoll) > 0.05f || fabsf(rawPitch) > 0.05f) {
                     a.pad.tilted = 1;
                     a.pad.downX = rawRoll;
                     a.pad.downZ = rawPitch;
@@ -665,16 +675,21 @@ int32_t onInput(android_app* app, AInputEvent* event) {
             }
             float rStickX = (fabsf(rightX) > 0.12f) ? rightX : 0.0f;
             float rStickY = (fabsf(rightY) > 0.12f) ? -rightY : 0.0f;
-            a->pad.rightStickX = rStickX;
-            a->pad.rightStickY = rStickY;
-
-            // A finger on the screen keeps the pointer: the stick must not steal
-            // it back while the player is aiming by touch.
-            if ((fabsf(rightX) > 0.18f || fabsf(rightY) > 0.18f) && !a->touchscreenDown) {
-                a->pad.pointerValid = 1;
-                a->pad.pointerX = rightX;
-                a->pad.pointerY = -rightY;
-                a->pad.pointerDist = 2.0f;
+            if (mobile_ui::get().settings().rightStickMode == 0) {
+                // Mode 0: 360-degree Orbital Camera
+                a->pad.rightStickX = rStickX;
+                a->pad.rightStickY = rStickY;
+            } else {
+                // Mode 1: Star Pointer Stick
+                a->pad.rightStickX = 0.0f;
+                a->pad.rightStickY = 0.0f;
+                if ((fabsf(rStickX) > 0.10f || fabsf(rStickY) > 0.10f) && !a->touchscreenDown) {
+                    float speed = 0.040f;
+                    a->pad.pointerX = std::max(-1.0f, std::min(1.0f, a->pad.pointerX + rStickX * speed));
+                    a->pad.pointerY = std::max(-1.0f, std::min(1.0f, a->pad.pointerY + rStickY * speed));
+                    a->pad.pointerValid = 1;
+                    mobile_ui::get().setPointerPos(a->pad.pointerX, a->pad.pointerY);
+                }
             }
 
             a->pad.buttons = a->physicalButtons | a->physicalAxisButtons | mobile_ui::get().getTouchButtons();

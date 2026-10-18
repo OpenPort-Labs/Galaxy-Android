@@ -79,6 +79,10 @@ struct Settings {
     bool gyroInvertX = false;  // Invert horizontal gyro axis
     bool gyroInvertY = false;  // Invert vertical gyro axis
 
+    bool starStick = false;    // Dedicated 2nd virtual joystick to control the Star Pointer
+    int rightStickMode = 0;    // 0 = 360 Camera Orbit, 1 = Star Pointer (Right Analog Stick)
+    bool touchCamera = true;   // Touch drag on right screen orbits camera in 360 degrees
+
     bool fullTouchMode = true;
     int perfHudMode = 0; // 0 = Off (Zero telemetry overhead), 1 = FPS, 2 = Full Hardware Stats
     int graphicsBackend = 1; // 0 = OpenGL ES 3.2, 1 = Vulkan 1.0 (Low CPU driver overhead)
@@ -106,6 +110,11 @@ public:
     bool isStickActive() const { return mStickPointerId >= 0; }
     float getTouchStickX() const { return (mStickPointerId >= 0) ? mTouchStickX : 0.0f; }
     float getTouchStickY() const { return (mStickPointerId >= 0) ? mTouchStickY : 0.0f; }
+
+    // 2nd virtual stick for Star Pointer
+    bool isStarStickActive() const { return mStarStickPointerId >= 0; }
+    float getTouchStarStickX() const { return (mStarStickPointerId >= 0) ? mStarStickX : 0.0f; }
+    float getTouchStarStickY() const { return (mStarStickPointerId >= 0) ? mStarStickY : 0.0f; }
 
     // Processes an Android motion or key event.
     // Returns true if consumed (e.g., settings menu or virtual controls).
@@ -253,6 +262,8 @@ private:
     enum class TouchRole {
         NONE,
         STICK,
+        STAR_STICK,
+        CAMERA_SWIPE,
         DPAD,
         BTN_A,
         BTN_B,
@@ -261,6 +272,15 @@ private:
         BTN_PLUS,
         STAR_POINTER
     };
+
+    // 2nd Virtual Stick (Star Pointer) coordinates
+    int mStarStickPointerId = -1;
+    float mStarStickBaseX = 0.0f;
+    float mStarStickBaseY = 0.0f;
+    float mStarStickKnobX = 0.0f;
+    float mStarStickKnobY = 0.0f;
+    float mStarStickX = 0.0f;
+    float mStarStickY = 0.0f;
 
     struct TouchPoint {
         int32_t id = -1;

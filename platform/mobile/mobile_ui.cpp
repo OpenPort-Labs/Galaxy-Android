@@ -138,6 +138,9 @@ enum MenuActionId {
     ACT_RELATIVE_POINTER,
     ACT_FULL_TOUCH_MODE,
     ACT_HAPTICS,
+    ACT_TOUCH_CAMERA,
+    ACT_STAR_STICK,
+    ACT_RIGHT_STICK_MODE,
     // Graphics & Display Tab
     ACT_GRAPHICS_BACKEND,
     ACT_RENDER_SCALE,
@@ -200,6 +203,9 @@ static const MenuRowDef kControlsRows[] = {
     {ACT_BUTTON_SIZE, ROW_SEGMENTED, 56.0f, "Button Size", "Scale of touch action buttons", 3, {"Small", "Medium", "Large"}},
     {ACT_JOYSTICK_MODE, ROW_SEGMENTED, 56.0f, "Virtual Joystick", "Stick anchor behavior", 2, {"Dynamic", "Fixed"}},
     {ACT_SECTION_HEADER, ROW_SECTION, 36.0f, "CAMERA & STAR POINTER", "Aiming, sensor tilting & camera rotation", 0, {}},
+    {ACT_TOUCH_CAMERA, ROW_SWITCH, 50.0f, "360 Touch Camera Swipe", "Drag right side of screen to freely orbit 360 camera", 0, {}},
+    {ACT_STAR_STICK, ROW_SWITCH, 50.0f, "2nd Joystick (Star Pointer)", "Dedicated right virtual stick to steer Star Pointer", 0, {}},
+    {ACT_RIGHT_STICK_MODE, ROW_SEGMENTED, 56.0f, "Right Analog Stick Mode", "Gamepad / Controller right stick function", 2, {"360 Camera", "Star Pointer"}},
     {ACT_SHOW_DPAD, ROW_SWITCH, 50.0f, "Camera D-Pad", "Directional disc for camera rotation & recenter", 0, {}},
     {ACT_DPAD_SIDE, ROW_SEGMENTED, 56.0f, "D-Pad Position", "Anchor side for camera controls", 2, {"Left Side", "Right Side"}},
     {ACT_GYRO_AIMING, ROW_SWITCH, 50.0f, "Gyro Star Pointer Aiming", "Tilt device to steer the Star Pointer", 0, {}},
@@ -497,6 +503,9 @@ void Settings::load(const std::string& path) {
             else if (!strcmp(key, "gyro_aiming")) gyroAiming = (val > 0.5f);
             else if (!strcmp(key, "gyro_invert_x")) gyroInvertX = (val > 0.5f);
             else if (!strcmp(key, "gyro_invert_y")) gyroInvertY = (val > 0.5f);
+            else if (!strcmp(key, "star_stick")) starStick = (val > 0.5f);
+            else if (!strcmp(key, "right_stick_mode")) rightStickMode = std::max(0, std::min(1, (int)val));
+            else if (!strcmp(key, "touch_camera")) touchCamera = (val > 0.5f);
             else if (!strcmp(key, "graphics_backend")) {
                 graphicsBackend = (int)val;
             }
@@ -507,8 +516,8 @@ void Settings::load(const std::string& path) {
         }
     }
     fclose(f);
-    LOGI("Loaded settings: show=%d, full=%d, touch=%d, hud=%d, backend=%d, relPtr=%d, orient=%d, saver=%d, gyro=%d, invX=%d, invY=%d, op=%.2f, scale=%.2f, dpad=%d, fly=%d, skip=%d, infHp=%d, infLives=%d, infBits=%d, spd=%d, lang=%d, res=%d, hap=%d",
-         showControls, fullscreen, fullTouchMode, perfHudMode, graphicsBackend, relativePointer ? 1 : 0, screenOrientationChoice, batterySaver ? 1 : 0, gyroAiming ? 1 : 0, gyroInvertX ? 1 : 0, gyroInvertY ? 1 : 0, opacity, scale, showDpad, modFly, modSkipCutscenes, modInfiniteHealth, modInfiniteLives, modInfiniteStarBits, gameSpeed, languageChoice, renderScale, haptics ? 1 : 0);
+    LOGI("Loaded settings: show=%d, full=%d, touch=%d, hud=%d, backend=%d, relPtr=%d, orient=%d, saver=%d, gyro=%d, invX=%d, invY=%d, starStick=%d, rightStickMode=%d, touchCam=%d, op=%.2f, scale=%.2f, dpad=%d, fly=%d, skip=%d, infHp=%d, infLives=%d, infBits=%d, spd=%d, lang=%d, res=%d, hap=%d",
+         showControls, fullscreen, fullTouchMode, perfHudMode, graphicsBackend, relativePointer ? 1 : 0, screenOrientationChoice, batterySaver ? 1 : 0, gyroAiming ? 1 : 0, gyroInvertX ? 1 : 0, gyroInvertY ? 1 : 0, starStick ? 1 : 0, rightStickMode, touchCamera ? 1 : 0, opacity, scale, showDpad, modFly, modSkipCutscenes, modInfiniteHealth, modInfiniteLives, modInfiniteStarBits, gameSpeed, languageChoice, renderScale, haptics ? 1 : 0);
 }
 
 void Settings::save(const std::string& path) const {
@@ -525,6 +534,9 @@ void Settings::save(const std::string& path) const {
     fprintf(f, "gyro_aiming=%d\n", gyroAiming ? 1 : 0);
     fprintf(f, "gyro_invert_x=%d\n", gyroInvertX ? 1 : 0);
     fprintf(f, "gyro_invert_y=%d\n", gyroInvertY ? 1 : 0);
+    fprintf(f, "star_stick=%d\n", starStick ? 1 : 0);
+    fprintf(f, "right_stick_mode=%d\n", rightStickMode);
+    fprintf(f, "touch_camera=%d\n", touchCamera ? 1 : 0);
     fprintf(f, "opacity=%.2f\n", opacity);
     fprintf(f, "scale=%.2f\n", scale);
     fprintf(f, "dynamic_stick=%d\n", dynamicStick ? 1 : 0);
@@ -1432,6 +1444,18 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
                                 mSettings.dynamicStick = (px < midX);
                                 showToast(mSettings.dynamicStick ? "Joystick: Dynamic Anchor" : "Joystick: Fixed Anchor");
                                 break;
+                            case ACT_TOUCH_CAMERA:
+                                mSettings.touchCamera = !mSettings.touchCamera;
+                                showToast(mSettings.touchCamera ? "360 Touch Camera: ON (Swipe right screen)" : "360 Touch Camera: OFF");
+                                break;
+                            case ACT_STAR_STICK:
+                                mSettings.starStick = !mSettings.starStick;
+                                showToast(mSettings.starStick ? "2nd Joystick (Star Pointer): ON" : "2nd Joystick (Star Pointer): OFF");
+                                break;
+                            case ACT_RIGHT_STICK_MODE:
+                                mSettings.rightStickMode = (px >= midX) ? 1 : 0;
+                                showToast(mSettings.rightStickMode == 1 ? "Right Stick: Star Pointer" : "Right Stick: 360 Camera Orbit");
+                                break;
                             case ACT_SHOW_DPAD:
                                 mSettings.showDpad = !mSettings.showDpad;
                                 showToast(mSettings.showDpad ? "Camera D-Pad: ON" : "Camera D-Pad: OFF");
@@ -1805,6 +1829,28 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
                     mTouchStickY = 0.0f;
                     pad.stickX = 0.0f;
                     pad.stickY = 0.0f;
+                } else if (mTouches[i].role == TouchRole::STAR_STICK) {
+                    mStarStickPointerId = -1;
+                    mStarStickKnobX = mStarStickBaseX;
+                    mStarStickKnobY = mStarStickBaseY;
+                    mStarStickX = 0.0f;
+                    mStarStickY = 0.0f;
+                } else if (mTouches[i].role == TouchRole::CAMERA_SWIPE) {
+                    float px = AMotionEvent_getX(event, pointerIndex);
+                    float py = AMotionEvent_getY(event, pointerIndex);
+                    int64_t dur = currentTimeMs() - mTouches[i].startTime;
+                    float fdx = px - mTouches[i].startX;
+                    float fdy = py - mTouches[i].startY;
+                    if (dur < 220 && (fdx * fdx + fdy * fdy <= 30.0f * scale * 30.0f * scale)) {
+                        if (vpW > 0 && vpH > 0) {
+                            mPointerX = ((px - vpX) / (float)vpW) * 2.0f - 1.0f;
+                            mPointerY = ((py - vpY) / (float)vpH) * 2.0f - 1.0f;
+                            mPointerX = std::max(-1.0f, std::min(1.0f, mPointerX));
+                            mPointerY = std::max(-1.0f, std::min(1.0f, mPointerY));
+                        }
+                    }
+                    pad.rightStickX = 0.0f;
+                    pad.rightStickY = 0.0f;
                 }
                 mTouches[i] = {};
             }
@@ -1904,9 +1950,40 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
                 if (bestIdx >= 0) {
                     mTouches[slot].role = candidates[bestIdx].role;
                     mDirty = true;
+                } else if (mSettings.starStick && mStarStickPointerId < 0) {
+                    float defaultStarX = w - 165.0f * scale;
+                    float defaultStarY = h - 295.0f * scale;
+                    float d2Star = (px - defaultStarX) * (px - defaultStarX) + (py - defaultStarY) * (py - defaultStarY);
+                    float starBaseR = 75.0f * scale;
+                    if (d2Star <= (starBaseR * 1.5f) * (starBaseR * 1.5f)) {
+                        mTouches[slot].role = TouchRole::STAR_STICK;
+                        mStarStickPointerId = pid;
+                        mStarStickBaseX = defaultStarX;
+                        mStarStickBaseY = defaultStarY;
+                        mStarStickKnobX = px;
+                        mStarStickKnobY = py;
+                        mDirty = true;
+                    } else if (mSettings.touchCamera && px >= w * 0.38f) {
+                        mTouches[slot].role = TouchRole::CAMERA_SWIPE;
+                        mTouches[slot].lastX = px;
+                        mTouches[slot].lastY = py;
+                        mDirty = true;
+                    } else {
+                        mTouches[slot].role = TouchRole::STAR_POINTER;
+                    }
+                } else if (mSettings.touchCamera && px >= w * 0.38f) {
+                    mTouches[slot].role = TouchRole::CAMERA_SWIPE;
+                    mTouches[slot].lastX = px;
+                    mTouches[slot].lastY = py;
+                    mDirty = true;
                 } else {
                     mTouches[slot].role = TouchRole::STAR_POINTER;
                 }
+            } else if (mSettings.touchCamera && px >= w * 0.38f) {
+                mTouches[slot].role = TouchRole::CAMERA_SWIPE;
+                mTouches[slot].lastX = px;
+                mTouches[slot].lastY = py;
+                mDirty = true;
             } else {
                 mTouches[slot].role = TouchRole::STAR_POINTER;
             }
@@ -1928,6 +2005,9 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
                         mPointerY = std::max(-1.0f, std::min(1.0f, mPointerY));
                     }
                 }
+            } else if (mTouches[slot].role == TouchRole::CAMERA_SWIPE) {
+                mTouches[slot].lastX = px;
+                mTouches[slot].lastY = py;
             }
         }
     }
@@ -1943,6 +2023,8 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
     mBtnDpadUp = false;
     mBtnDpadDown = false;
     bool stickFound = false;
+    bool starStickFound = false;
+    bool cameraSwipeFound = false;
 
     for (size_t i = 0; i < pointerCount; i++) {
         if (action == AMOTION_EVENT_ACTION_POINTER_UP && (int32_t)i == pointerIndex) {
@@ -2046,6 +2128,52 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
             mBtnPlusPressed = true;
             mFingerDownOnPlus = true;
         }
+        else if (role == TouchRole::STAR_STICK) {
+            starStickFound = true;
+            float dx = px - mStarStickBaseX;
+            float dy = py - mStarStickBaseY;
+            float dist = sqrtf(dx * dx + dy * dy);
+            float deadzone = 10.0f * scale;
+
+            if (dist > stickMaxR && dist > 0.001f) {
+                mStarStickKnobX = mStarStickBaseX + (dx / dist) * stickMaxR;
+                mStarStickKnobY = mStarStickBaseY + (dy / dist) * stickMaxR;
+                mStarStickX = dx / dist;
+                mStarStickY = -dy / dist;
+            } else if (dist > deadzone) {
+                mStarStickKnobX = px;
+                mStarStickKnobY = py;
+                float norm = (dist - deadzone) / (stickMaxR - deadzone);
+                mStarStickX = (dx / dist) * norm;
+                mStarStickY = -(dy / dist) * norm;
+            } else {
+                mStarStickKnobX = px;
+                mStarStickKnobY = py;
+                mStarStickX = 0.0f;
+                mStarStickY = 0.0f;
+            }
+            mStarStickX = std::max(-1.0f, std::min(1.0f, mStarStickX));
+            mStarStickY = std::max(-1.0f, std::min(1.0f, mStarStickY));
+
+            // Smoothly steer star pointer across the screen
+            float slewSpeed = 0.038f;
+            mPointerX = std::max(-1.0f, std::min(1.0f, mPointerX + mStarStickX * slewSpeed));
+            mPointerY = std::max(-1.0f, std::min(1.0f, mPointerY - mStarStickY * slewSpeed));
+        }
+        else if (role == TouchRole::CAMERA_SWIPE) {
+            cameraSwipeFound = true;
+            if (touchSlot >= 0) {
+                float dx = px - mTouches[touchSlot].lastX;
+                float dy = py - mTouches[touchSlot].lastY;
+                mTouches[touchSlot].lastX = px;
+                mTouches[touchSlot].lastY = py;
+
+                // Scale swipe deltas into rightStick orbital rate (smooth 360 camera rotation)
+                float sens = 0.055f;
+                pad.rightStickX = std::max(-1.0f, std::min(1.0f, dx * sens));
+                pad.rightStickY = std::max(-1.0f, std::min(1.0f, -dy * sens));
+            }
+        }
         else {
             // Star Pointer
             if (vpW > 0 && vpH > 0) {
@@ -2083,6 +2211,22 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
         mTouchStickY = 0.0f;
         pad.stickX = 0.0f;
         pad.stickY = 0.0f;
+    }
+
+    if (!starStickFound) {
+        if (mStarStickPointerId >= 0) {
+            mStarStickPointerId = -1;
+            mStarStickKnobX = mStarStickBaseX;
+            mStarStickKnobY = mStarStickBaseY;
+            mDirty = true;
+        }
+        mStarStickX = 0.0f;
+        mStarStickY = 0.0f;
+    }
+
+    if (!cameraSwipeFound && pad.rightStickX != 0.0f) {
+        pad.rightStickX = 0.0f;
+        pad.rightStickY = 0.0f;
     }
 
     if (mTapPendingFrames > 0) {
@@ -2361,6 +2505,42 @@ void UIOverlay::generateVertices(int screenW, int screenH, std::vector<UIVertex>
         drawRing(knobX, knobY, kpR * 0.68f, 0.93f, rgba(1.0f, 1.0f, 1.0f, hudOp * 0.35f));
         // Center tactile micro-dot
         drawCircle(knobX, knobY, 3.0f * scale, stickActive ? rgba(0.22f, 0.74f, 0.97f, hudOp * 0.95f) : rgba(1.0f, 1.0f, 1.0f, hudOp * 0.50f));
+
+        // ---------------------------------------------------------
+        // 1b. 2nd Virtual Joystick (Star Pointer) - Golden Star Theme
+        // ---------------------------------------------------------
+        if (mSettings.starStick) {
+            float defaultStarX = w - 165.0f * scale;
+            float defaultStarY = h - 295.0f * scale;
+            float sBaseX = (mStarStickPointerId >= 0) ? mStarStickBaseX : defaultStarX;
+            float sBaseY = (mStarStickPointerId >= 0) ? mStarStickBaseY : defaultStarY;
+            float sKnobX = (mStarStickPointerId >= 0) ? mStarStickKnobX : sBaseX;
+            float sKnobY = (mStarStickPointerId >= 0) ? mStarStickKnobY : sBaseY;
+            float sBaseR = 75.0f * scale;
+            float sKnobR = 30.0f * scale;
+            bool sActive = (mStarStickPointerId >= 0);
+
+            // Base plate: Translucent dark gold glass disc
+            drawCircle(sBaseX, sBaseY, sBaseR, rgba(0.12f, 0.10f, 0.05f, hudOp * 0.35f));
+            drawRing(sBaseX, sBaseY, sBaseR, 0.94f, rgba(1.0f, 0.85f, 0.20f, hudOp * (sActive ? 0.75f : 0.40f)));
+
+            // Center star micro-dot
+            drawCircle(sBaseX, sBaseY, 3.0f * scale, rgba(1.0f, 0.90f, 0.30f, hudOp * 0.70f));
+
+            // Laser Tether to Knob
+            float sDx = sKnobX - sBaseX;
+            float sDy = sKnobY - sBaseY;
+            float sDist = sqrtf(sDx * sDx + sDy * sDy);
+            if (sDist > 4.0f * scale) {
+                drawLine(sBaseX, sBaseY, sKnobX, sKnobY, 2.5f * scale, rgba(1.0f, 0.80f, 0.15f, hudOp * 0.70f));
+            }
+
+            // Knob disc
+            float spR = sActive ? (sKnobR * 1.05f) : sKnobR;
+            drawCircle(sKnobX, sKnobY, spR, rgba(0.20f, 0.16f, 0.06f, hudOp * (sActive ? 0.90f : 0.70f)));
+            drawRing(sKnobX, sKnobY, spR, 0.88f, rgba(1.0f, 0.90f, 0.30f, hudOp * 0.95f));
+            drawText("*", sKnobX, sKnobY + 6.0f * scale, 0.45f * scale, rgba(1.0f, 1.0f, 1.0f, hudOp * 0.95f), 1);
+        }
 
         // ---------------------------------------------------------
         // 2. Action Buttons - Frosted Glass with Signature Micro-Accents
@@ -2677,6 +2857,8 @@ void UIOverlay::generateVertices(int screenW, int screenH, std::vector<UIVertex>
                 bool swOn = false;
                 switch (r.action) {
                 case ACT_SHOW_CONTROLS: swOn = mSettings.showControls; break;
+                case ACT_TOUCH_CAMERA: swOn = mSettings.touchCamera; break;
+                case ACT_STAR_STICK: swOn = mSettings.starStick; break;
                 case ACT_SHOW_DPAD: swOn = mSettings.showDpad; break;
                 case ACT_GYRO_AIMING: swOn = mSettings.gyroAiming; break;
                 case ACT_RELATIVE_POINTER: swOn = mSettings.relativePointer; break;
@@ -2704,6 +2886,9 @@ void UIOverlay::generateVertices(int screenW, int screenH, std::vector<UIVertex>
 
                 int activeIdx = 0;
                 switch (r.action) {
+                case ACT_RIGHT_STICK_MODE:
+                    activeIdx = (mSettings.rightStickMode == 1) ? 1 : 0;
+                    break;
                 case ACT_CONTROLS_OPACITY:
                     activeIdx = (fabsf(mSettings.opacity - 0.25f) < 0.12f) ? 0 : (fabsf(mSettings.opacity - 0.50f) < 0.12f) ? 1 : (fabsf(mSettings.opacity - 0.75f) < 0.12f) ? 2 : 3;
                     break;

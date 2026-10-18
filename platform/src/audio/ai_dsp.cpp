@@ -38,7 +38,9 @@ void __DSPHandler(__OSInterrupt interrupt, OSContext* context);
 static std::mutex sMailMutex;
 static std::deque<u32> sMailFromDsp;
 
-static std::vector<u32> sPacket;
+static std::mutex sDspCmdMutex;
+static u32 sPacket[64];
+static u32 sPacketSize = 0;
 static u32 sPacketExpected = 0;
 static bool sWaitingCount = true;
 static u32 sVaramBase = 0;
@@ -68,13 +70,7 @@ extern "C" void __attribute__((weak)) port_dsp_mix_frame(u32 subFrames, s16* out
 // a time: the game updates the voices (JASDSPChannel::updateAll), releasing
 // them to the DSP sixteen at a time; with the last sixteen released the DSP
 // renders the sub-frame's 80 samples and reports with a mail, on which the
-// game updates the voices for the next one.  The game so follows each voice
-// 80 samples at a time, and JASAramStream counts on it: it sets up a stream's
-// loop (or its end) once the voice is within 400 samples of it, and takes a
-// voice found beyond it for a fatal error that silences every stream until
-// the game is restarted.  Rendered a whole frame at once, a voice moved 560
-// samples between two looks and jumped that window on about one pass in
-// four: the music of the file select screen stopped for good after 55 s.
+// game updates the voices for the next one.
 static struct {
     u32 subFrames = 0;
     u32 done = 0;
@@ -83,16 +79,15 @@ static struct {
 } sFrame;
 
 static void executePacket() {
-    const std::vector<u32>& p = sPacket;
-    u32 w0 = p.empty() ? 0 : p[0];
+    u32 w0 = sPacketSize > 0 ? sPacket[0] : 0;
     u32 cmd = w0 >> 24;
     switch (cmd) {
     case 0x82:  // sync frame: `subFrames` sub-frames of 80 samples to render
         sFrame.subFrames = (w0 >> 16) & 0xFF;
         sFrame.done = 0;
         sMixerLevel = (u16)(w0 & 0xFFFF);
-        sFrame.outL = (s16*)(uintptr_t)(p.size() > 1 ? p[1] : 0);
-        sFrame.outR = (s16*)(uintptr_t)(p.size() > 2 ? p[2] : 0);
+        sFrame.outL = (s16*)(uintptr_t)(sPacketSize > 1 ? sPacket[1] : 0);
+        sFrame.outR = (s16*)(uintptr_t)(sPacketSize > 2 ? sPacket[2] : 0);
         break;
     case 0x00:  // release halt: voices 0 .. 16 * (group + 1) - 1 are ready for the sub-frame
         if (((w0 >> 16) & 0xFF) == 3 && sFrame.done < sFrame.subFrames) {
@@ -104,12 +99,12 @@ static void executePacket() {
         }
         break;
     case 0x8E:  // set VARAM base (alt-ARAM start in MEM2)
-        sVaramBase = p.size() > 1 ? p[1] : 0;
+        sVaramBase = sPacketSize > 1 ? sPacket[1] : 0;
         queueMail(0xDCD10004, 0xF3550000 | (w0 >> 16));
         break;
     case 0x81:  // table setup (channel buffer, filters, FX buffer)
-        if (p.size() >= 5) {
-            port_dsp_setup(w0 & 0xFFFF, p[1], p[2], p[3], p[4]);
+        if (sPacketSize >= 5) {
+            port_dsp_setup(w0 & 0xFFFF, sPacket[1], sPacket[2], sPacket[3], sPacket[4]);
         }
         queueMail(0xDCD10004, 0xF3550000 | (w0 >> 16));
         break;
@@ -158,14 +153,21 @@ u32 DSPReadMailFromDSP(void) {
 }
 
 void DSPSendMailToDSP(u32 mail) {
+    if ((mail & 0xFFFF0000) == 0xCDD10000) {
+        return;
+    }
+    std::lock_guard<std::mutex> lk(sDspCmdMutex);
     if (sWaitingCount) {
-        sPacket.clear();
-        sPacketExpected = mail == 0 ? 1 : mail;
+        sPacketSize = 0;
+        sPacketExpected = (mail == 0) ? 1 : mail;
         sWaitingCount = false;
         return;
     }
-    sPacket.push_back(mail);
-    if (sPacket.size() >= sPacketExpected) {
+    if (sPacketSize < 64) {
+        sPacket[sPacketSize] = mail;
+    }
+    sPacketSize++;
+    if (sPacketSize >= sPacketExpected) {
         sWaitingCount = true;
         executePacket();
     }

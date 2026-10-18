@@ -106,29 +106,65 @@ s32 NANDOpen(const char* path, NANDFileInfo* info, u8 mode) {
 
 s32 NANDPrivateOpen(const char* path, NANDFileInfo* info, u8 mode) { return NANDOpen(path, info, mode); }
 
+static bool atomicMirrorFile(const std::string& src, const std::string& dst) {
+    struct stat st;
+    if (stat(src.c_str(), &st) != 0 || st.st_size < 512) {
+        port_log("nand: atomicMirrorFile source invalid or too small: %s (size %ld)", src.c_str(), (long)(st.st_size));
+        return false;
+    }
+    FILE* in = fopen(src.c_str(), "rb");
+    if (!in) return false;
+
+    std::string tmpDst = dst + ".tmp";
+    FILE* out = fopen(tmpDst.c_str(), "wb");
+    if (!out) {
+        fclose(in);
+        return false;
+    }
+
+    char buf[8192];
+    size_t n;
+    size_t total = 0;
+    bool writeErr = false;
+    while ((n = fread(buf, 1, sizeof(buf), in)) > 0) {
+        if (fwrite(buf, 1, n, out) != n) {
+            writeErr = true;
+            break;
+        }
+        total += n;
+    }
+    fflush(out);
+    int fd = fileno(out);
+    if (fd >= 0) fsync(fd);
+    fclose(out);
+    fclose(in);
+
+    if (writeErr || total != (size_t)st.st_size) {
+        port_log("nand: atomicMirrorFile write failed (wrote %zu of %ld bytes)", total, (long)st.st_size);
+        unlink(tmpDst.c_str());
+        return false;
+    }
+
+    if (rename(tmpDst.c_str(), dst.c_str()) != 0) {
+        unlink(tmpDst.c_str());
+        return false;
+    }
+    return true;
+}
+
 s32 NANDClose(NANDFileInfo* info) {
     if (info->fileDescriptor >= 0) {
         if (info->accType != NAND_ACCESS_READ) {
             fsync(info->fileDescriptor);
-            // Auto-mirror GameData.bin to persistent external storage (/sdcard/GalaxyData/saves)
+            // Auto-mirror GameData.bin to persistent external storage (/sdcard/GalaxyData/saves) atomically
             if (strstr(info->origPath, "GameData.bin")) {
                 std::string hp = hostPath(info->origPath);
-                FILE* in = fopen(hp.c_str(), "rb");
-                if (in) {
-                    mkdir("/sdcard/GalaxyData", 0770);
-                    mkdir("/sdcard/GalaxyData/saves", 0770);
-                    FILE* out = fopen("/sdcard/GalaxyData/saves/GameData.bin", "wb");
-                    if (out) {
-                        char buf[4096];
-                        size_t n;
-                        while ((n = fread(buf, 1, sizeof(buf), in)) > 0) {
-                            fwrite(buf, 1, n, out);
-                        }
-                        fflush(out);
-                        fclose(out);
-                        port_log("nand: mirrored %s -> /sdcard/GalaxyData/saves/GameData.bin", hp.c_str());
-                    }
-                    fclose(in);
+                mkdir("/sdcard/GalaxyData", 0770);
+                mkdir("/sdcard/GalaxyData/saves", 0770);
+                if (atomicMirrorFile(hp, "/sdcard/GalaxyData/saves/GameData.bin")) {
+                    port_log("nand: atomically mirrored %s -> /sdcard/GalaxyData/saves/GameData.bin", hp.c_str());
+                } else {
+                    port_log("nand: warning - atomic save mirror failed for %s", hp.c_str());
                 }
             }
         }

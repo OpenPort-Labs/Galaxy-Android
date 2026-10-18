@@ -33,6 +33,7 @@ tools/dsptool.dll
 tools/THPConv/
 tools/RiivolutionIsoBuilder/
 tools/temp_cutscene_build/
+tools/orig_wii_extracted/
 
 # APK output and builds
 out-mobile/

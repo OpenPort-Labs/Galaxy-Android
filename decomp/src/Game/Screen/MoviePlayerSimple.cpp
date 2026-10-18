@@ -18,6 +18,9 @@
 #include <JSystem/JKernel/JKRExpHeap.hpp>
 #include <JSystem/JUtility/JUTVideo.hpp>
 #include <revolution/gx/GXEnum.h>
+#ifdef TARGET_PC
+#include "port/heap_routing.h"
+#endif
 
 namespace {
     static const s16 sCinemaFrameHeightTop = 44;
@@ -50,7 +53,26 @@ MoviePlayerSimple::~MoviePlayerSimple() {
     SingletonHolder< GameSystem >::get()->mHomeButtonStateNotifier->unregisterMoviePlayerSimple(this);
     mPlayerWrapper->quit();
     delete mPlayerWrapper;
-    JKRHeap::destroy(mHeap);
+    if (mHeap) {
+        JKRHeap::destroy(mHeap);
+        mHeap = nullptr;
+    }
+    if (mMovie) {
+        if (mMovie->mBuffer) {
+#ifdef TARGET_PC
+            if (!port_is_game_heap_ptr(mMovie->mBuffer)) {
+                port_host_free(mMovie->mBuffer);
+            } else {
+                delete[] mMovie->mBuffer;
+            }
+#else
+            delete[] mMovie->mBuffer;
+#endif
+            mMovie->mBuffer = nullptr;
+        }
+        delete mMovie;
+        mMovie = nullptr;
+    }
 }
 
 void MoviePlayerSimple::init(const JMapInfoIter& rIter) {
@@ -59,7 +81,11 @@ void MoviePlayerSimple::init(const JMapInfoIter& rIter) {
     mPlayerWrapper = new THPSimplePlayerWrapper("THP\x83\x56\x83\x93\x83\x76\x83\x8b\x83\x76\x83\x8c\x83\x43\x83\x84\x81\x5b\x82\xcc\x83\x89\x83\x62\x83\x70");
     mPlayerWrapper->init(0);
 
-    mHeap = JKRExpHeap::create(calcNeedMemoryForMovieWorks(), MR::getCurrentHeap(), true);
+    u32 worksMem = calcNeedMemoryForMovieWorks();
+    mHeap = JKRExpHeap::create(worksMem, MR::getCurrentHeap(), false);
+    if (!mHeap) {
+        mHeap = JKRExpHeap::create(worksMem, JKRHeap::sRootHeap, false);
+    }
 
     initNerve(GET_NERVE_ANON(MoviePlayerSimpleOff));
     kill();
@@ -177,8 +203,22 @@ void MoviePlayerSimple::exeOpen() {
         mMovie->_20 = 0;
         mMovie->_19 = false;
         setFrameRateDefault();
-        mMovie->mBuffer = new (mHeap, 32) u8[mPlayerWrapper->calcNeedMemory()];
-        mPlayerWrapper->setBuffer(mMovie->mBuffer);
+        u32 needMem = mPlayerWrapper->calcNeedMemory();
+#ifdef TARGET_PC
+        mMovie->mBuffer = (u8*)port_host_alloc(needMem, 32);
+#else
+        mMovie->mBuffer = new (mHeap, 32) u8[needMem];
+#endif
+        if (!mMovie->mBuffer) {
+            mMovie->mBuffer = new (mHeap, 32) u8[needMem];
+        }
+        if (!mMovie->mBuffer) {
+            mMovie->mBuffer = new (32) u8[needMem];
+        }
+        if (!mMovie->mBuffer || !mPlayerWrapper->setBuffer(mMovie->mBuffer)) {
+            stopMovie();
+            return;
+        }
         mPlayerWrapper->preLoad(_44 != false);
         setNerve(GET_NERVE_ANON(MoviePlayerSimplePreload));
     } else if (MR::isGreaterStep(this, 120)) {
@@ -248,8 +288,18 @@ void MoviePlayerSimple::play(bool a1) {
 void MoviePlayerSimple::stop() {
     mPlayerWrapper->loadStop();
     mPlayerWrapper->close();
-    delete[] mMovie->mBuffer;
-    mMovie->mBuffer = nullptr;
+    if (mMovie->mBuffer) {
+#ifdef TARGET_PC
+        if (!port_is_game_heap_ptr(mMovie->mBuffer)) {
+            port_host_free(mMovie->mBuffer);
+        } else {
+            delete[] mMovie->mBuffer;
+        }
+#else
+        delete[] mMovie->mBuffer;
+#endif
+        mMovie->mBuffer = nullptr;
+    }
     MR::endStarPointerMode(this);
     GameSystemFunction::setPermissionToCheckWiiRemoteConnectAndScreenDimming(_45);
 }

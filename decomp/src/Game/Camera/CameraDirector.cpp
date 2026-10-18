@@ -131,8 +131,13 @@ void CameraDirector::movement() {
     updateCameraMan();
     calcPose();
     createViewMtx();
-    getCurrentCameraMan()->mMatrix.set(MR::getCameraInvViewMtx());
-    mPoseParam2->copyFrom(*getCurrentCameraMan()->mPoseParam);
+    CameraMan* curMan = getCurrentCameraMan();
+    if (curMan) {
+        curMan->mMatrix.set(MR::getCameraInvViewMtx());
+        if (curMan->mPoseParam && mPoseParam2) {
+            mPoseParam2->copyFrom(*curMan->mPoseParam);
+        }
+    }
     calcSubjective();
     mShaker->movement();
     checkStartCondition();
@@ -189,7 +194,11 @@ void CameraDirector::updateTarget() {
 }
 
 CameraMan* CameraDirector::getCurrentCameraMan() const {
-    return mStack->mElements[mStack->mCount - 1];
+    if (!mStack || mStack->mCount <= 0) {
+        return mCameraManGame;
+    }
+    CameraMan* man = mStack->mElements[mStack->mCount - 1];
+    return man ? man : mCameraManGame;
 }
 
 void CameraDirector::updateCameraMan() {
@@ -197,31 +206,37 @@ void CameraDirector::updateCameraMan() {
         resetCameraMan();
     }
 
-    if (mRequestCameraLocalOffsetReset) {
-        CameraMan* man = getCurrentCameraMan();
-        man->mRequestLOfsReset = true;
+    CameraMan* man = getCurrentCameraMan();
+    if (man) {
+        if (mRequestCameraLocalOffsetReset) {
+            man->mRequestLOfsReset = true;
+        }
+        man->movement();
     }
-
-    getCurrentCameraMan()->movement();
     controlCameraSE();
 }
 
 void CameraDirector::calcPose() {
     switchAntiOscillation();
 
-    if (getCurrentCameraMan()->isCollisionOff()) {
+    CameraMan* man = getCurrentCameraMan();
+    if (!man) {
+        return;
+    }
+
+    if (man->isCollisionOff()) {
         mViewInterpolator->mIsCollisionOff = true;
     }
 
-    if (getCurrentCameraMan()->isCorrectingErpPositionOff()) {
+    if (man->isCorrectingErpPositionOff()) {
         mViewInterpolator->mIsCorrectErpPositionOn = false;
     }
 
-    if (getCurrentCameraMan()->isZeroFrameMoveOff()) {
+    if (man->isZeroFrameMoveOff()) {
         mOnlyCamera->mIsZeroFrameMoveOff = true;
     }
 
-    mOnlyCamera->calcPose(getCurrentCameraMan());
+    mOnlyCamera->calcPose(man);
     mPoseParam1->copyFrom(*mOnlyCamera->mPoseParam);
 
     // Pillar 2: True 360-Degree Analog Right-Stick Orbital Camera
@@ -373,7 +388,8 @@ void CameraDirector::calcSubjective() {
 }
 
 bool CameraDirector::isInterpolationOff() {
-    return getCurrentCameraMan()->isInterpolationOff() || mViewInterpolator->mIsForceCameraChange;
+    CameraMan* man = getCurrentCameraMan();
+    return (man && man->isInterpolationOff()) || (mViewInterpolator && mViewInterpolator->mIsForceCameraChange);
 }
 
 void CameraDirector::switchAntiOscillation() {
@@ -522,9 +538,10 @@ bool CameraDirector::isSubjectiveCamera() const {
 bool CameraDirector::isEnableToControl() const {
     bool enable = false;
 
-    if (!getCurrentCameraMan()->isSubjectiveCameraOff()) {
+    CameraMan* curMan = getCurrentCameraMan();
+    if (curMan && !curMan->isSubjectiveCameraOff()) {
         bool change = true;
-        bool equals = getCurrentCameraMan() == mCameraManEvent;
+        bool equals = (curMan == mCameraManEvent);
 
         if (equals && !isEventCameraActive(0, ::sSubjectiveCameraName)) {
             change = false;
@@ -748,16 +765,22 @@ void CameraDirector::controlCameraSE() {
     }
 
     if (CameraLocalUtil::testCameraPadTriggerRoundLeft()) {
-        getCurrentCameraMan()->roundLeft();
-        if (isPlayableCameraSE(false)) {
-            MR::startSystemSE("SE_SY_CAMERA_MOVE");
+        CameraMan* man = getCurrentCameraMan();
+        if (man) {
+            man->roundLeft();
+            if (isPlayableCameraSE(false)) {
+                MR::startSystemSE("SE_SY_CAMERA_MOVE");
+            }
         }
     }
 
     if (CameraLocalUtil::testCameraPadTriggerRoundRight()) {
-        getCurrentCameraMan()->roundRight();
-        if (isPlayableCameraSE(false)) {
-            MR::startSystemSE("SE_SY_CAMERA_MOVE");
+        CameraMan* man = getCurrentCameraMan();
+        if (man) {
+            man->roundRight();
+            if (isPlayableCameraSE(false)) {
+                MR::startSystemSE("SE_SY_CAMERA_MOVE");
+            }
         }
     }
 
@@ -870,14 +893,14 @@ bool CameraDirector::isPlayableCameraSE(bool checkSubjective) {
 void CameraDirector::resetCameraMan() {
     setInterpolation(0);
 
-    CameraTargetObj* target1;
-    CameraTargetObj* target2;
-    CameraTargetObj* target3;
     CameraMan* man = getCurrentCameraMan();
+    if (!man || !mTargetHolder || !mTargetHolder->get()) {
+        return;
+    }
 
-    target1 = mTargetHolder->get();
-    target2 = mTargetHolder->get();
-    target3 = mTargetHolder->get();
+    CameraTargetObj* target1 = mTargetHolder->get();
+    CameraTargetObj* target2 = mTargetHolder->get();
+    CameraTargetObj* target3 = mTargetHolder->get();
 
     TVec3f newPos = target3->getPosition() - target2->getFrontVec() * 800.0f + target1->getUpVec() * 300.0f;
 

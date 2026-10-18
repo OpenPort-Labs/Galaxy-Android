@@ -18,6 +18,8 @@
 #include "Game/System/GameSystemResetAndPowerProcess.hpp"
 #include "Game/System/GameSystemSceneController.hpp"
 #include "Game/System/GameSystemStationedArchiveLoader.hpp"
+#include "Game/System/SaveDataHandleSequence.hpp"
+#include "Game/System/UserFile.hpp"
 #include "Game/System/HeapMemoryWatcher.hpp"
 #include "Game/System/HomeButtonStateNotifier.hpp"
 #include "Game/System/MainLoopFramework.hpp"
@@ -248,14 +250,62 @@ void GameSystem::frameLoop() {
         GameSequenceFunction::quickSaveAnywhere();
     }
 
-    int loadSlot = 1;
-    if (port_check_quick_load_request(&loadSlot)) {
-        GameSequenceFunction::startPreLoadSaveDataSequence();
-        GameSequenceFunction::startGameDataLoadSequence(0, true);
-        GameSequenceFunction::storeSceneStartGameDataHolder();
-        const char* stage = MR::getCurrentStageName();
-        if (stage && stage[0] && strcmp(stage, "Logo") != 0 && strcmp(stage, "Title") != 0) {
-            MR::requestChangeScene(stage);
+    static int sQuickLoadState = 0; // 0: Idle, 1: Waiting to PreLoad, 2: PreLoading, 3: Loading UserFile, 4: Changing Scene
+    static int sActiveLoadSlot = 1;
+    static int sQuickLoadDelayFrames = 0;
+
+    int reqSlot = 1;
+    if (port_check_quick_load_request(&reqSlot)) {
+        sActiveLoadSlot = reqSlot;
+        sQuickLoadState = 1;
+        sQuickLoadDelayFrames = 0;
+        port_log("[QUICK_LOAD] Quick load requested for slot %d", reqSlot);
+    }
+
+    if (sQuickLoadState == 1) {
+        if (!GameSequenceFunction::isActiveSaveDataHandleSequence()) {
+            GameSequenceFunction::startPreLoadSaveDataSequence();
+            sQuickLoadState = 2;
+        }
+    } else if (sQuickLoadState == 2) {
+        if (!GameSequenceFunction::isActiveSaveDataHandleSequence()) {
+            if (GameSequenceFunction::isSuccessSaveDataHandleSequence()) {
+                int fileIdx = (sActiveLoadSlot >= 1 && sActiveLoadSlot <= 3) ? sActiveLoadSlot : 1;
+                bool isMario = true;
+                SaveDataHandleSequence* seq = mSequenceDirector ? mSequenceDirector->mSaveDataHandleSequence : nullptr;
+                UserFile* cur = seq ? seq->getCurrentUserFile() : nullptr;
+                if (cur) {
+                    const char* confName = cur->getConfigDataName();
+                    if (confName && confName[0]) {
+                        char c = confName[strlen(confName) - 1];
+                        if (c >= '1' && c <= '3') {
+                            fileIdx = c - '0';
+                        }
+                    }
+                    isMario = cur->mIsPlayerMario;
+                }
+                port_log("[QUICK_LOAD] Loading UserFile slot %d (isMario=%d)", fileIdx, isMario ? 1 : 0);
+                GameSequenceFunction::startGameDataLoadSequence(fileIdx, isMario);
+                GameSequenceFunction::storeSceneStartGameDataHolder();
+                sQuickLoadState = 3;
+                sQuickLoadDelayFrames = 2;
+            } else {
+                port_log("[QUICK_LOAD] PreLoad failed or cancelled");
+                sQuickLoadState = 0;
+            }
+        }
+    } else if (sQuickLoadState == 3) {
+        if (--sQuickLoadDelayFrames <= 0 && !GameSequenceFunction::isActiveSaveDataHandleSequence()) {
+            const char* stage = MR::getCurrentStageName();
+            if (stage && stage[0] && strcmp(stage, "Logo") != 0 && strcmp(stage, "Title") != 0) {
+                port_log("[QUICK_LOAD] Safely reloading stage: %s (scenario %d)", stage, MR::getCurrentScenarioNo());
+                GameSystemSceneController* pController = SingletonHolder< GameSystem >::get()->mSceneController;
+                pController->mNextSceneControlInfo.setScene("Game");
+                pController->mNextSceneControlInfo.setStage(stage);
+                pController->mNextSceneControlInfo.mScenarioNo = MR::getCurrentScenarioNo();
+                pController->requestChangeScene();
+            }
+            sQuickLoadState = 0;
         }
     }
 

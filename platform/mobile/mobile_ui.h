@@ -65,14 +65,14 @@ struct Settings {
     // In-game Language (0 = Auto, 1 = English, 2 = Spanish, 3 = French, 4 = German, 5 = Italian)
     int languageChoice = 0;
 
-    // Render Resolution Scale (0 = 480p Native, 1 = 720p HD, 2 = 1080p FHD, 3 = 1440p 2K)
-    int renderScale = 2;
+    // Render Resolution Scale (0 = 480p Native Wii, 1 = 720p HD, 2 = 1080p FHD, 3 = 1440p 2K)
+    int renderScale = 0;
 
     // Haptic feedback (off by default)
     bool haptics = false;
 
     // FPS configuration
-    int targetFps = 60;  // 30, 60, 90, 120, or 144
+    int targetFps = 60;  // 30, 60, 90, 120, or 144 (Wii ran at 60 fields/sec)
     bool adaptiveFps = true;
     bool batterySaver = false; // 30 FPS thermal protection & power save mode
     bool gyroAiming = false;   // Gyroscope / accelerometer Star Pointer motion aiming
@@ -80,8 +80,8 @@ struct Settings {
     bool gyroInvertY = false;  // Invert vertical gyro axis
 
     bool fullTouchMode = true;
-    int perfHudMode = 2; // 0 = Off, 1 = FPS, 2 = Full Hardware Stats
-    int graphicsBackend = 1; // 1 = Vulkan 1.0 (Full Native Default), 0 = OpenGL ES 3.2
+    int perfHudMode = 0; // 0 = Off (Zero telemetry overhead), 1 = FPS, 2 = Full Hardware Stats
+    int graphicsBackend = 1; // 0 = OpenGL ES 3.2, 1 = Vulkan 1.0 (Low CPU driver overhead)
     bool relativePointer = false; // Relative trackpad-style Star Pointer aiming (Issue #11)
     int screenOrientationChoice = 0; // 0 = Auto Sensor Landscape, 1 = Landscape, 2 = Reverse Landscape (Issues #18 & #19)
 
@@ -207,8 +207,8 @@ private:
     float mInitialBtnOfsX = 0.0f, mInitialBtnOfsY = 0.0f;
     float mInitialDpadOfsX = 0.0f, mInitialDpadOfsY = 0.0f;
 
-    // Settings Navigation & Scrolling (3 Dedicated Tabs)
-    int mSettingsTab = 0;              // 0 = General, 1 = Mod Manager, 2 = Save Anywhere
+    // Settings Navigation & Scrolling (4 Dedicated Tabs: Controls, Graphics, Mods, Save & System)
+    int mSettingsTab = 0;              // 0 = Controls, 1 = Graphics, 2 = Mods, 3 = Save & System
     float mDrawerScrollY = 0.0f;       // Current scroll offset (pixels)
     float mDrawerScrollTarget = 0.0f;
     bool mDrawerIsScrolling = false;
@@ -301,6 +301,11 @@ private:
     // Toast Notification State
     std::string mToastMessage = "Game Progress Saved Anywhere!";
     float mSaveToastTimer = 0.0f;
+
+    // Transactional Save State
+    int mPendingSaveSlot = -1;
+    uint64_t mPendingSaveStartGen = 0;
+    int mPendingSaveWaitFrames = 0;
 
     // GL resources
     unsigned int mProg = 0;

@@ -55,14 +55,36 @@ inline void applyGameSpeed(int speedIdx) {
     port_set_game_speed(speed);
 }
 
+extern "C" int port_language_count(void);
+extern "C" const char* port_language_name(int index);
+
 inline void applyLanguage(int langIdx) {
-    switch (langIdx) {
-        case 1: port_language_set("english"); break;
-        case 2: port_language_set("spanish"); break;
-        case 3: port_language_set("french"); break;
-        case 4: port_language_set("german"); break;
-        case 5: port_language_set("italian"); break;
-        default: break;
+    if (langIdx <= 0) {
+        port_language_set("auto");
+        return;
+    }
+    const char* wanted = (langIdx == 1) ? "english" :
+                         (langIdx == 2) ? "spanish" :
+                         (langIdx == 3) ? "french" :
+                         (langIdx == 4) ? "german" : "italian";
+    int count = port_language_count();
+    if (count > 0) {
+        bool found = false;
+        for (int i = 0; i < count; i++) {
+            const char* n = port_language_name(i);
+            if (n && strcasecmp(n, wanted) == 0) {
+                found = true;
+                break;
+            }
+        }
+        if (found) {
+            port_language_set(wanted);
+        } else {
+            const char* prim = port_language_name(0);
+            port_language_set(prim ? prim : "english");
+        }
+    } else {
+        port_language_set(wanted);
     }
 }
 
@@ -98,6 +120,160 @@ int base64Val(char c) {
     if (c == '+') return 62;
     if (c == '/') return 63;
     return -1;
+}
+
+enum MenuActionId {
+    ACT_NONE = 0,
+    ACT_SECTION_HEADER,
+    // Controls Tab
+    ACT_SHOW_CONTROLS,
+    ACT_LAYOUT_BUTTONS,
+    ACT_CONTROLS_OPACITY,
+    ACT_BUTTON_SIZE,
+    ACT_JOYSTICK_MODE,
+    ACT_SHOW_DPAD,
+    ACT_DPAD_SIDE,
+    ACT_GYRO_AIMING,
+    ACT_GYRO_INVERT_BUTTONS,
+    ACT_RELATIVE_POINTER,
+    ACT_FULL_TOUCH_MODE,
+    ACT_HAPTICS,
+    // Graphics & Display Tab
+    ACT_GRAPHICS_BACKEND,
+    ACT_RENDER_SCALE,
+    ACT_TARGET_FPS,
+    ACT_DISPLAY_REFRESH,
+    ACT_BATTERY_SAVER,
+    ACT_FULLSCREEN,
+    ACT_ORIENTATION,
+    ACT_PERF_HUD,
+    ACT_DEVICE_INFO_CARD,
+    // Mods & Enhancements Tab
+    ACT_SHIELD_TEXTURES,
+    ACT_SHIELD_CUTSCENES,
+    ACT_SHIELD_CONTROLS,
+    ACT_CLASSIC_GAMEPAD,
+    ACT_GAME_SPEED,
+    ACT_FLY_MODE,
+    ACT_SKIP_CUTSCENES,
+    ACT_INFINITE_HEALTH,
+    ACT_INFINITE_LIVES,
+    ACT_INFINITE_STARBITS,
+    ACT_RIIVOLUTION,
+    ACT_RELOAD_MODS,
+    // Save & System Tab
+    ACT_QUICK_CARDS,
+    ACT_SELECT_SLOT,
+    ACT_SLOT_ACTIONS,
+    ACT_SD_BACKUP_ACTIONS,
+    ACT_STORAGE_INFO_CARD,
+    ACT_LANGUAGE,
+    ACT_VIEW_LOGS,
+    ACT_EXIT_LAUNCHER
+};
+
+enum RowType {
+    ROW_SECTION,
+    ROW_SWITCH,
+    ROW_SEGMENTED,
+    ROW_DUAL_BTN,
+    ROW_SINGLE_BTN,
+    ROW_INFO_CARD,
+    ROW_QUICK_CARDS
+};
+
+struct MenuRowDef {
+    MenuActionId action;
+    RowType type;
+    float heightDp;
+    const char* title;
+    const char* subtitle;
+    int optCount;
+    const char* optLabels[6];
+};
+
+static const MenuRowDef kControlsRows[] = {
+    {ACT_SECTION_HEADER, ROW_SECTION, 36.0f, "TOUCH CONTROLS", "Virtual buttons and joystick overlay", 0, {}},
+    {ACT_SHOW_CONTROLS, ROW_SWITCH, 50.0f, "On-Screen Controls", "Display virtual buttons on touchscreen", 0, {}},
+    {ACT_LAYOUT_BUTTONS, ROW_DUAL_BTN, 50.0f, "Reposition Layout", "Reset Default", 0, {}},
+    {ACT_CONTROLS_OPACITY, ROW_SEGMENTED, 56.0f, "Controls Opacity", "HUD transparency level", 4, {"25%", "50%", "75%", "100%"}},
+    {ACT_BUTTON_SIZE, ROW_SEGMENTED, 56.0f, "Button Size", "Scale of touch action buttons", 3, {"Small", "Medium", "Large"}},
+    {ACT_JOYSTICK_MODE, ROW_SEGMENTED, 56.0f, "Virtual Joystick", "Stick anchor behavior", 2, {"Dynamic", "Fixed"}},
+    {ACT_SECTION_HEADER, ROW_SECTION, 36.0f, "CAMERA & STAR POINTER", "Aiming, sensor tilting & camera rotation", 0, {}},
+    {ACT_SHOW_DPAD, ROW_SWITCH, 50.0f, "Camera D-Pad", "Directional disc for camera rotation & recenter", 0, {}},
+    {ACT_DPAD_SIDE, ROW_SEGMENTED, 56.0f, "D-Pad Position", "Anchor side for camera controls", 2, {"Left Side", "Right Side"}},
+    {ACT_GYRO_AIMING, ROW_SWITCH, 50.0f, "Gyro Star Pointer Aiming", "Tilt device to steer the Star Pointer", 0, {}},
+    {ACT_GYRO_INVERT_BUTTONS, ROW_DUAL_BTN, 48.0f, "Invert X", "Invert Y", 0, {}},
+    {ACT_RELATIVE_POINTER, ROW_SWITCH, 50.0f, "Relative Pointer (Trackpad)", "Drag anywhere to steer pointer without obstructing view", 0, {}},
+    {ACT_FULL_TOUCH_MODE, ROW_SWITCH, 50.0f, "Full Touch Navigation", "Tap to jump/dialogue, flick to spin", 0, {}},
+    {ACT_HAPTICS, ROW_SWITCH, 50.0f, "Vibration Haptics", "Tactile feedback pulses on button presses", 0, {}},
+};
+
+static const MenuRowDef kGraphicsRows[] = {
+    {ACT_SECTION_HEADER, ROW_SECTION, 36.0f, "GRAPHICS ENGINE", "Hardware renderer, resolution & frame pacing", 0, {}},
+    {ACT_GRAPHICS_BACKEND, ROW_SEGMENTED, 56.0f, "Graphics Backend", "Select high-performance rendering pipeline", 2, {"OpenGL ES 3.2", "Vulkan 1.0"}},
+    {ACT_RENDER_SCALE, ROW_SEGMENTED, 56.0f, "Internal Resolution", "Geometric render buffer scaling", 4, {"480p", "720p HD", "1080p FHD", "1440p 2K"}},
+    {ACT_TARGET_FPS, ROW_SEGMENTED, 56.0f, "Target Framerate", "Engine frame limiter & target cap", 5, {"30", "60", "90", "120", "144"}},
+    {ACT_DISPLAY_REFRESH, ROW_SEGMENTED, 56.0f, "Display Refresh Rate", "Panel hardware sync frequency", 4, {"60 Hz", "90 Hz", "120 Hz", "144 Hz"}},
+    {ACT_BATTERY_SAVER, ROW_SWITCH, 50.0f, "Battery Saver / Cool Mode", "Cap at 30 FPS to minimize heat and battery drain", 0, {}},
+    {ACT_SECTION_HEADER, ROW_SECTION, 36.0f, "DISPLAY & SCREEN", "Ultrawide presentation and orientation", 0, {}},
+    {ACT_FULLSCREEN, ROW_SWITCH, 50.0f, "Ultrawide Fullscreen", "Native Hor+ FOV expansion (no black bars)", 0, {}},
+    {ACT_ORIENTATION, ROW_SEGMENTED, 56.0f, "Screen Orientation", "Lock or allow sensor rotation", 3, {"Auto Sensor", "Landscape", "Reverse"}},
+    {ACT_PERF_HUD, ROW_SEGMENTED, 56.0f, "Performance Monitor HUD", "On-screen real-time statistics overlay", 3, {"Off", "FPS Only", "Full Stats"}},
+    {ACT_SECTION_HEADER, ROW_SECTION, 36.0f, "HARDWARE TELEMETRY", "Driver specifications and active device", 0, {}},
+    {ACT_DEVICE_INFO_CARD, ROW_INFO_CARD, 76.0f, "Hardware Telemetry", "", 0, {}},
+};
+
+static const MenuRowDef kModsRows[] = {
+    {ACT_SECTION_HEADER, ROW_SECTION, 36.0f, "NVIDIA SHIELD REMASTER PACK", "Official authentic Shield TV port enhancements", 0, {}},
+    {ACT_SHIELD_TEXTURES, ROW_SWITCH, 50.0f, "Shield HD Textures", "1080p AI Remastered UI, characters & galaxy world", 0, {}},
+    {ACT_SHIELD_CUTSCENES, ROW_SWITCH, 50.0f, "Shield 60FPS Cutscenes", "H.264 MP4 hardware video stream playback", 0, {}},
+    {ACT_SHIELD_CONTROLS, ROW_SWITCH, 50.0f, "Shield Calibrated Curves", "NVIDIA Shield controller ray surfing & stick curves", 0, {}},
+    {ACT_CLASSIC_GAMEPAD, ROW_SWITCH, 50.0f, "Modern Gamepad ABXY Prompts", "Replace Wii Remote icons with Xbox/Shield buttons", 0, {}},
+    {ACT_SECTION_HEADER, ROW_SECTION, 36.0f, "GAMEPLAY SANDBOX & CHEATS", "Speed modifiers and player capabilities", 0, {}},
+    {ACT_GAME_SPEED, ROW_SEGMENTED, 56.0f, "Game Speed (Fast-Forward)", "Real-time physics and animation multiplier", 5, {"1.0x", "1.5x", "2.0x", "3.0x", "4.0x"}},
+    {ACT_FLY_MODE, ROW_SWITCH, 50.0f, "Fly Mode", "Hold A to ascend smoothly, hold Z to descend", 0, {}},
+    {ACT_SKIP_CUTSCENES, ROW_SWITCH, 50.0f, "Cutscene Prevention", "Instantly bypass non-interactive cutscenes", 0, {}},
+    {ACT_INFINITE_HEALTH, ROW_SWITCH, 50.0f, "Infinite Health (God Mode)", "Invincible against enemies, fire & black holes", 0, {}},
+    {ACT_INFINITE_LIVES, ROW_SWITCH, 50.0f, "Infinite Lives (99)", "Lock Mario life pouch to 99 lives", 0, {}},
+    {ACT_INFINITE_STARBITS, ROW_SWITCH, 50.0f, "Infinite Star Bits (999)", "Max out Star Bits pouch to 999", 0, {}},
+    {ACT_SECTION_HEADER, ROW_SECTION, 36.0f, "RIIVOLUTION MODDING", "SD card patches and game replacements", 0, {}},
+    {ACT_RIIVOLUTION, ROW_SWITCH, 50.0f, "Enable Riivolution Mods", "Load XML patch files from /sdcard/GalaxyData/mods", 0, {}},
+    {ACT_RELOAD_MODS, ROW_SINGLE_BTN, 48.0f, "Scan & Reload Mod Directory", "Scans /sdcard/GalaxyData/mods", 0, {}},
+};
+
+static const MenuRowDef kSaveRows[] = {
+    {ACT_SECTION_HEADER, ROW_SECTION, 36.0f, "INSTANT QUICK STATE", "Direct memory snapshot with zero latency", 0, {}},
+    {ACT_QUICK_CARDS, ROW_QUICK_CARDS, 56.0f, "QUICK SAVE NOW", "QUICK LOAD NOW", 0, {}},
+    {ACT_SECTION_HEADER, ROW_SECTION, 36.0f, "MULTI-SLOT SAVE ANYWHERE", "Isolated NAND saves with rollback protection", 0, {}},
+    {ACT_SELECT_SLOT, ROW_SEGMENTED, 56.0f, "Selected Save Slot", "Choose active save destination", 4, {"Slot 1", "Slot 2", "Slot 3", "Quick"}},
+    {ACT_SLOT_ACTIONS, ROW_DUAL_BTN, 48.0f, "Save to Slot", "Reload Slot", 0, {}},
+    {ACT_SECTION_HEADER, ROW_SECTION, 36.0f, "SAVE DATA MIGRATION", "External backup and Dolphin compatibility", 0, {}},
+    {ACT_SD_BACKUP_ACTIONS, ROW_DUAL_BTN, 48.0f, "Export to SD", "Import from SD", 0, {}},
+    {ACT_STORAGE_INFO_CARD, ROW_INFO_CARD, 104.0f, "NAND Save Information", "", 0, {}},
+    {ACT_SECTION_HEADER, ROW_SECTION, 36.0f, "LANGUAGE & SYSTEM", "Localization, console logs and launcher", 0, {}},
+    {ACT_LANGUAGE, ROW_SEGMENTED, 56.0f, "Game Language", "Select text and audio localization", 6, {"Auto", "EN", "ES", "FR", "DE", "IT"}},
+    {ACT_VIEW_LOGS, ROW_SINGLE_BTN, 48.0f, "View System Logs Console", "Open full-screen in-game diagnostic log viewer", 0, {}},
+    {ACT_EXIT_LAUNCHER, ROW_SINGLE_BTN, 48.0f, "Exit to Setup Launcher", "Return to main game launcher screen", 0, {}},
+};
+
+inline const MenuRowDef* getTabRows(int tab, size_t& outCount) {
+    switch (tab) {
+        case 0: outCount = sizeof(kControlsRows) / sizeof(kControlsRows[0]); return kControlsRows;
+        case 1: outCount = sizeof(kGraphicsRows) / sizeof(kGraphicsRows[0]); return kGraphicsRows;
+        case 2: outCount = sizeof(kModsRows) / sizeof(kModsRows[0]); return kModsRows;
+        default: outCount = sizeof(kSaveRows) / sizeof(kSaveRows[0]); return kSaveRows;
+    }
+}
+
+inline float getTabContentHeight(int tab, float uiScale) {
+    size_t count = 0;
+    const MenuRowDef* rows = getTabRows(tab, count);
+    float total = 16.0f * uiScale;
+    for (size_t i = 0; i < count; i++) {
+        total += rows[i].heightDp * uiScale + 6.0f * uiScale;
+    }
+    return total + 24.0f * uiScale;
 }
 
 const char* kVS = R"(#version 300 es
@@ -325,6 +501,8 @@ void Settings::load(const std::string& path) {
                 graphicsBackend = (int)val;
             }
             else if (!strcmp(key, "relative_pointer")) relativePointer = (val > 0.5f);
+            else if (!strcmp(key, "perf_hud")) perfHudMode = std::max(0, std::min(2, (int)val));
+            else if (!strcmp(key, "full_touch_mode")) fullTouchMode = (val > 0.5f);
             else if (!strcmp(key, "screen_orientation")) screenOrientationChoice = std::max(0, std::min(2, (int)val));
         }
     }
@@ -427,78 +605,131 @@ void UIOverlay::closeSettings() {
     }
 }
 
-static void copyDirRecursive(const std::string& src, const std::string& dst) {
+static bool copyFileVerified(const std::string& src, const std::string& dst) {
+    struct stat st;
+    if (stat(src.c_str(), &st) != 0 || st.st_size <= 0) return false;
+
+    FILE* in = fopen(src.c_str(), "rb");
+    if (!in) return false;
+
+    std::string tmpDst = dst + ".tmp";
+    FILE* out = fopen(tmpDst.c_str(), "wb");
+    if (!out) {
+        fclose(in);
+        return false;
+    }
+
+    char buf[16384];
+    size_t n;
+    size_t total = 0;
+    bool writeErr = false;
+    while ((n = fread(buf, 1, sizeof(buf), in)) > 0) {
+        if (fwrite(buf, 1, n, out) != n) {
+            writeErr = true;
+            break;
+        }
+        total += n;
+    }
+    fflush(out);
+    int fd = fileno(out);
+    if (fd >= 0) fsync(fd);
+    fclose(out);
+    fclose(in);
+
+    if (writeErr || total != (size_t)st.st_size) {
+        unlink(tmpDst.c_str());
+        return false;
+    }
+
+    if (rename(tmpDst.c_str(), dst.c_str()) != 0) {
+        unlink(tmpDst.c_str());
+        return false;
+    }
+    return true;
+}
+
+static bool copyDirVerified(const std::string& src, const std::string& dst) {
     mkdir(dst.c_str(), 0770);
     DIR* dir = opendir(src.c_str());
-    if (!dir) return;
+    if (!dir) return false;
     struct dirent* entry;
+    bool success = true;
     while ((entry = readdir(dir)) != nullptr) {
         if (!strcmp(entry->d_name, ".") || !strcmp(entry->d_name, "..")) continue;
+        if (strstr(entry->d_name, ".tmp") || strstr(entry->d_name, "_rollback") || strstr(entry->d_name, "_staging")) continue;
+
         std::string sPath = src + "/" + entry->d_name;
         std::string dPath = dst + "/" + entry->d_name;
         struct stat st;
         if (stat(sPath.c_str(), &st) == 0) {
             if (S_ISDIR(st.st_mode)) {
-                copyDirRecursive(sPath, dPath);
-            } else if (S_ISREG(st.st_mode)) {
-                FILE* in = fopen(sPath.c_str(), "rb");
-                FILE* out = fopen(dPath.c_str(), "wb");
-                if (in && out) {
-                    char buf[8192];
-                    size_t bytes;
-                    while ((bytes = fread(buf, 1, sizeof(buf), in)) > 0) {
-                        fwrite(buf, 1, bytes, out);
-                    }
+                if (!copyDirVerified(sPath, dPath)) {
+                    success = false;
+                    break;
                 }
-                if (in) fclose(in);
-                if (out) fclose(out);
+            } else if (S_ISREG(st.st_mode)) {
+                if (!copyFileVerified(sPath, dPath)) {
+                    success = false;
+                    break;
+                }
             }
         }
     }
     closedir(dir);
+    return success;
+}
+
+static bool validateSaveDir(const std::string& dir) {
+    struct stat st;
+    if (stat(dir.c_str(), &st) != 0 || !S_ISDIR(st.st_mode)) return false;
+
+    // Check directly or recursively for valid GameData.bin
+    std::string directGameData = dir + "/GameData.bin";
+    if (stat(directGameData.c_str(), &st) == 0 && st.st_size >= 512) return true;
+
+    DIR* d = opendir(dir.c_str());
+    if (!d) return false;
+    struct dirent* entry;
+    bool found = false;
+    while ((entry = readdir(d)) != nullptr) {
+        if (!strcmp(entry->d_name, ".") || !strcmp(entry->d_name, "..")) continue;
+        std::string sub = dir + "/" + entry->d_name;
+        if (stat(sub.c_str(), &st) == 0) {
+            if (S_ISDIR(st.st_mode)) {
+                if (validateSaveDir(sub)) {
+                    found = true;
+                    break;
+                }
+            } else if (strstr(entry->d_name, "GameData.bin") && st.st_size >= 512) {
+                found = true;
+                break;
+            }
+        }
+    }
+    closedir(d);
+    return found;
 }
 
 void UIOverlay::triggerSaveAnywhere() {
     port_trigger_quick_save();
-    if (!mSavePath.empty()) {
-        size_t lastSlash = mSavePath.find_last_of('/');
-        if (lastSlash != std::string::npos) {
-            std::string nandDir = mSavePath.substr(0, lastSlash);
-            mkdir("/sdcard/GalaxyData", 0775);
-            mkdir("/sdcard/GalaxyData/saves", 0775);
-            copyDirRecursive(nandDir, "/sdcard/GalaxyData/saves/current");
-        }
-    }
+    mPendingSaveSlot = 0; // 0 = general quick save anywhere
+    mPendingSaveStartGen = port_get_save_generation();
+    mPendingSaveWaitFrames = 0;
     if (mSettings.haptics) port_android_vibrate(50);
-    showToast("Game Progress Saved Anywhere! (Mirrored to /sdcard/GalaxyData/saves)");
-    LOGI("Save anywhere requested and triggered from Mobile UI");
+    showToast("Saving game progress anywhere...");
+    LOGI("Save anywhere requested; waiting for game sequence to commit");
 }
 
 void UIOverlay::triggerSaveSlot(int slot) {
     port_trigger_quick_save();
-    if (mSavePath.empty()) return;
-    size_t lastSlash = mSavePath.find_last_of('/');
-    if (lastSlash == std::string::npos) return;
-    std::string nandDir = mSavePath.substr(0, lastSlash);
-    std::string slotSuffix = (slot == 4) ? "_quick" : ("_slot" + std::to_string(slot));
-    std::string slotDir = nandDir + slotSuffix;
-    copyDirRecursive(nandDir, slotDir);
-
-    mkdir("/sdcard/GalaxyData", 0775);
-    mkdir("/sdcard/GalaxyData/saves", 0775);
-    std::string pubSlot = "/sdcard/GalaxyData/saves/" + ((slot == 4) ? std::string("quick") : ("slot" + std::to_string(slot)));
-    copyDirRecursive(nandDir, pubSlot);
-    copyDirRecursive(nandDir, "/sdcard/GalaxyData/saves/current");
-
+    mPendingSaveSlot = slot;
+    mPendingSaveStartGen = port_get_save_generation();
+    mPendingSaveWaitFrames = 0;
     if (mSettings.haptics) port_android_vibrate(50);
-    char msg[96];
-    if (slot == 4) {
-        snprintf(msg, sizeof(msg), "Quick Saved Anywhere! (GalaxyData/saves)");
-    } else {
-        snprintf(msg, sizeof(msg), "Saved to Slot %d! (GalaxyData/saves)", slot);
-    }
+    char msg[64];
+    snprintf(msg, sizeof(msg), "Saving to Slot %d...", slot);
     showToast(msg);
-    LOGI("NAND saved to slot %d: %s and mirrored to %s", slot, slotDir.c_str(), pubSlot.c_str());
+    LOGI("Save to slot %d requested; waiting for game sequence to commit", slot);
 }
 
 void UIOverlay::triggerLoadSlot(int slot) {
@@ -508,33 +739,37 @@ void UIOverlay::triggerLoadSlot(int slot) {
     std::string nandDir = mSavePath.substr(0, lastSlash);
     std::string slotSuffix = (slot == 4) ? "_quick" : ("_slot" + std::to_string(slot));
     std::string slotDir = nandDir + slotSuffix;
-    struct stat st;
-    if (stat(slotDir.c_str(), &st) != 0 || !S_ISDIR(st.st_mode)) {
+
+    if (!validateSaveDir(slotDir)) {
         std::string pubSlot = "/sdcard/GalaxyData/saves/" + ((slot == 4) ? std::string("quick") : ("slot" + std::to_string(slot)));
-        if (stat(pubSlot.c_str(), &st) == 0 && S_ISDIR(st.st_mode)) {
+        if (validateSaveDir(pubSlot)) {
             slotDir = pubSlot;
         } else {
             char msg[64];
-            if (slot == 4) {
-                snprintf(msg, sizeof(msg), "Quick Save slot is empty!");
-            } else {
-                snprintf(msg, sizeof(msg), "Slot %d is empty!", slot);
-            }
+            snprintf(msg, sizeof(msg), (slot == 4) ? "Quick Save slot is empty!" : "Slot %d is empty or corrupted!", slot);
             showToast(msg);
             return;
         }
     }
-    copyDirRecursive(slotDir, nandDir);
-    port_trigger_quick_load(slot);
-    if (mSettings.haptics) port_android_vibrate(75);
-    char msg[64];
-    if (slot == 4) {
-        snprintf(msg, sizeof(msg), "Quick Save Loaded & Stage Reloaded!");
+
+    // Create rollback buffer of live NAND
+    std::string rollbackDir = nandDir + "_rollback";
+    copyDirVerified(nandDir, rollbackDir);
+
+    // Verified restore
+    if (copyDirVerified(slotDir, nandDir) && validateSaveDir(nandDir)) {
+        port_trigger_quick_load(slot);
+        if (mSettings.haptics) port_android_vibrate(75);
+        char msg[64];
+        snprintf(msg, sizeof(msg), (slot == 4) ? "Quick Save Loaded & Stage Reloaded!" : "Slot %d Loaded & Stage Reloaded!", slot);
+        showToast(msg);
+        LOGI("NAND verified restored from slot %d: %s", slot, slotDir.c_str());
     } else {
-        snprintf(msg, sizeof(msg), "Slot %d Loaded & Stage Reloaded!", slot);
+        // Rollback immediately
+        copyDirVerified(rollbackDir, nandDir);
+        showToast("Slot restore failed! Preserved current save.");
+        LOGE("Failed to restore slot %d; rolled back to previous state", slot);
     }
-    showToast(msg);
-    LOGI("NAND restored from slot %d: %s", slot, slotDir.c_str());
 }
 
 void UIOverlay::showToast(const std::string& msg) {
@@ -662,6 +897,54 @@ void UIOverlay::update(PortPadState& pad, int& spinFrames) {
             mSettingsOpen = false;
             mDirty = true;
             LOGI("layout edit: opened by debug.petari.editlayout");
+        }
+    }
+
+    // Handle pending transactional save completion
+    if (mPendingSaveSlot >= 0) {
+        mPendingSaveWaitFrames++;
+        bool committed = (port_get_save_generation() > mPendingSaveStartGen) ||
+                         (mPendingSaveWaitFrames > 6 && !port_is_save_in_progress());
+
+        if (committed || mPendingSaveWaitFrames > 120) {
+            int slot = mPendingSaveSlot;
+            mPendingSaveSlot = -1;
+
+            if (!mSavePath.empty()) {
+                size_t lastSlash = mSavePath.find_last_of('/');
+                if (lastSlash != std::string::npos) {
+                    std::string nandDir = mSavePath.substr(0, lastSlash);
+                    mkdir("/sdcard/GalaxyData", 0775);
+                    mkdir("/sdcard/GalaxyData/saves", 0775);
+
+                    if (slot == 0) {
+                        copyDirVerified(nandDir, "/sdcard/GalaxyData/saves/current");
+                        showToast("Progress Saved Anywhere! (Verified)");
+                    } else {
+                        std::string slotSuffix = (slot == 4) ? "_quick" : ("_slot" + std::to_string(slot));
+                        std::string slotDir = nandDir + slotSuffix;
+                        std::string slotStaging = slotDir + "_staging";
+
+                        if (copyDirVerified(nandDir, slotStaging) && validateSaveDir(slotStaging)) {
+                            std::string slotOld = slotDir + "_old";
+                            rename(slotDir.c_str(), slotOld.c_str());
+                            rename(slotStaging.c_str(), slotDir.c_str());
+
+                            std::string pubSlot = "/sdcard/GalaxyData/saves/" + ((slot == 4) ? std::string("quick") : ("slot" + std::to_string(slot)));
+                            copyDirVerified(slotDir, pubSlot);
+                            copyDirVerified(slotDir, "/sdcard/GalaxyData/saves/current");
+
+                            char msg[96];
+                            snprintf(msg, sizeof(msg), (slot == 4) ? "Quick Saved Anywhere! (Verified)" : "Saved to Slot %d! (Verified)", slot);
+                            showToast(msg);
+                            LOGI("NAND verified saved to slot %d: %s", slot, slotDir.c_str());
+                        } else {
+                            showToast("Save snapshot failed verification!");
+                            LOGE("Save snapshot verification failed for slot %d", slot);
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -836,25 +1119,26 @@ UIOverlay::ButtonLayout UIOverlay::buttonLayout(int screenW, int screenH) const 
 
     ButtonLayout l{};
 
-    // A (Jump) - primary action, the pad anchor
-    l.ax = baseX + mSettings.btnAOffsetX;
-    l.ay = baseY + mSettings.btnAOffsetY;
-    l.ar = 54.0f * scale;
+    // Nintendo Switch Diamond Geometry:
+    // B (Bottom): Primary Jump button where thumb naturally rests
+    l.bx = baseX - 36.0f * scale + mSettings.btnBOffsetX;
+    l.by = baseY + 24.0f * scale + mSettings.btnBOffsetY;
+    l.br = 52.0f * scale;
 
-    // B (Shoot Star Bit) - left of A, elevated comfortably
-    l.bx = baseX - 118.0f * scale + mSettings.btnBOffsetX;
-    l.by = baseY - 14.0f * scale + mSettings.btnBOffsetY;
-    l.br = 45.0f * scale;
+    // A (Right): Jump & Talk / Select
+    l.ax = baseX + 42.0f * scale + mSettings.btnAOffsetX;
+    l.ay = baseY - 42.0f * scale + mSettings.btnAOffsetY;
+    l.ar = 50.0f * scale;
 
-    // Z (Crouch) - upper left of A, far enough to press Z+A with two fingers
-    l.zx = baseX - 98.0f * scale + mSettings.btnZOffsetX;
-    l.zy = baseY - 132.0f * scale + mSettings.btnZOffsetY;
+    // Y / SPIN (Left): Spin Attack (Nintendo Switch Spin on Y)
+    l.spinX = baseX - 114.0f * scale + mSettings.btnSpinOffsetX;
+    l.spinY = baseY - 42.0f * scale + mSettings.btnSpinOffsetY;
+    l.spinR = 50.0f * scale;
+
+    // ZL / Z (Upper-Left): Crouch / Ground Pound
+    l.zx = baseX - 105.0f * scale + mSettings.btnZOffsetX;
+    l.zy = baseY - 134.0f * scale + mSettings.btnZOffsetY;
     l.zr = 44.0f * scale;
-
-    // SPIN - above A, shifted slightly right for a natural thumb roll
-    l.spinX = baseX + 34.0f * scale + mSettings.btnSpinOffsetX;
-    l.spinY = baseY - 128.0f * scale + mSettings.btnSpinOffsetY;
-    l.spinR = 48.0f * scale;
 
     return l;
 }
@@ -1068,13 +1352,13 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
         return true;
     }
 
-    // Handle Material 3 Side Sheet Drawer Touches (Tabbed & Scrollable)
+    // Handle Modern Side Sheet Drawer Touches (Tabbed & Scrollable)
     if (mSettingsOpen || mDrawerAnim > 0.05f) {
-        float padX = 22.0f * uiScale;
+        float padX = 20.0f * uiScale;
         float contentW = drawerW - padX * 2.0f;
-        float contentTop = mPlusEdition ? (112.0f * uiScale) : (68.0f * uiScale);
-        float contentBottom = h - 56.0f * uiScale;
-        float totalContentH = (mSettingsTab == 0 || !mPlusEdition) ? (1540.0f * uiScale) : (mSettingsTab == 1 ? (760.0f * uiScale) : (580.0f * uiScale));
+        float contentTop = 106.0f * uiScale;
+        float contentBottom = h - 54.0f * uiScale;
+        float totalContentH = getTabContentHeight(mSettingsTab, uiScale);
         float maxScroll = std::max(0.0f, totalContentH - (contentBottom - contentTop));
 
         // 1. Move Gesture for Smooth Scrolling
@@ -1101,355 +1385,258 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
                 if (!mDrawerIsScrolling && action != AMOTION_EVENT_ACTION_CANCEL) {
                     float px = AMotionEvent_getX(event, pointerIndex);
                     float py = AMotionEvent_getY(event, pointerIndex);
-                    float contentRelY = py - contentTop + mDrawerScrollY;
+                    float tapRelY = py - contentTop + mDrawerScrollY;
 
-                    if (mSettingsTab == 0 || !mPlusEdition) {
-                        // General Tab items
-                        // Row 0: Quick Save / Quick Load Anywhere Action Buttons
-                        if (contentRelY >= 0.0f && contentRelY <= 52.0f * uiScale) {
+                    size_t count = 0;
+                    const MenuRowDef* rows = getTabRows(mSettingsTab, count);
+                    float curY = 8.0f * uiScale;
+                    for (size_t i = 0; i < count; i++) {
+                        const MenuRowDef& r = rows[i];
+                        float rowH = r.heightDp * uiScale;
+                        if (tapRelY >= curY && tapRelY < curY + rowH) {
+                            // Hit row r!
                             float midX = drawerX + padX + contentW * 0.5f;
-                            if (px < midX) {
-                                triggerSaveSlot(4);
-                            } else {
-                                triggerLoadSlot(4);
-                            }
-                        }
-                        // Row 1: Visibility Switch
-                        else if (contentRelY >= 54.0f * uiScale && contentRelY <= 102.0f * uiScale) {
-                            mSettings.showControls = !mSettings.showControls;
-                        }
-                        // Row 2: Camera D-Pad Switch
-                        else if (contentRelY >= 104.0f * uiScale && contentRelY <= 152.0f * uiScale) {
-                            mSettings.showDpad = !mSettings.showDpad;
-                        }
-                        // Row 3: D-Pad Position Segmented
-                        else if (contentRelY >= 156.0f * uiScale && contentRelY <= 208.0f * uiScale) {
-                            float midX = drawerX + padX + contentW * 0.5f;
-                            if (px < midX) {
-                                mSettings.dpadOnRight = false;
-                                mSettings.dpadOffsetX = 0.0f;
-                                mSettings.dpadOffsetY = 0.0f;
-                            } else {
-                                mSettings.dpadOnRight = true;
-                                mSettings.dpadOffsetX = 0.0f;
-                                mSettings.dpadOffsetY = 0.0f;
-                            }
-                        }
-                        // Row 4: Fullscreen Switch
-                        else if (contentRelY >= 212.0f * uiScale && contentRelY <= 260.0f * uiScale) {
-                            mSettings.fullscreen = !mSettings.fullscreen;
-                        }
-                        // Row 5: Full Touch Mode Switch
-                        else if (contentRelY >= 262.0f * uiScale && contentRelY <= 310.0f * uiScale) {
-                            mSettings.fullTouchMode = !mSettings.fullTouchMode;
-                        }
-                        // Row 6: Joystick Mode Segmented
-                        else if (contentRelY >= 314.0f * uiScale && contentRelY <= 368.0f * uiScale) {
-                            float midX = drawerX + padX + contentW * 0.5f;
-                            if (px < midX) mSettings.dynamicStick = true;
-                            else mSettings.dynamicStick = false;
-                        }
-                        // Row 7: Controls Opacity Segmented
-                        else if (contentRelY >= 372.0f * uiScale && contentRelY <= 426.0f * uiScale) {
-                            float segW = contentW / 4.0f;
-                            int idx = (int)((px - (drawerX + padX)) / segW);
-                            if (idx <= 0) mSettings.opacity = 0.25f;
-                            else if (idx == 1) mSettings.opacity = 0.50f;
-                            else if (idx == 2) mSettings.opacity = 0.75f;
-                            else mSettings.opacity = 1.00f;
-                        }
-                        // Row 8: Button Size Segmented
-                        else if (contentRelY >= 430.0f * uiScale && contentRelY <= 484.0f * uiScale) {
-                            float segW = contentW / 3.0f;
-                            int idx = (int)((px - (drawerX + padX)) / segW);
-                            if (idx <= 0) mSettings.scale = 0.85f;
-                            else if (idx == 1) mSettings.scale = 1.00f;
-                            else mSettings.scale = 1.25f;
-                        }
-                        // Row 9: Layout Reposition / Reset
-                        else if (contentRelY >= 488.0f * uiScale && contentRelY <= 544.0f * uiScale) {
-                            float splitX = drawerX + padX + contentW * 0.56f;
-                            if (px < splitX) {
-                                mSettingsOpen = false;
-                                mEditLayoutMode = true;
-                                LOGI("layout edit: opened from the settings drawer");
-                            } else {
-                                clearLayoutOffsets();
-                            }
-                        }
-                        // Row 10: View System Logs
-                        else if (contentRelY >= 548.0f * uiScale && contentRelY <= 600.0f * uiScale) {
-                            mSettingsOpen = false;
-                            mLogViewerOpen = true;
-                            mDirty = true;
-                        }
-                        // Row 11: Hardware Monitor HUD
-                        else if (contentRelY >= 602.0f * uiScale && contentRelY < 660.0f * uiScale) {
-                            float segW = contentW / 3.0f;
-                            int idx = (int)((px - (drawerX + padX)) / segW);
-                            if (idx <= 0) mSettings.perfHudMode = 0; // Off
-                            else if (idx == 1) mSettings.perfHudMode = 1; // FPS
-                            else mSettings.perfHudMode = 2; // Full Stats
-                        }
-                        // Row 12: Target Frame Rate
-                        else if (contentRelY >= 660.0f * uiScale && contentRelY < 718.0f * uiScale) {
-                            float segW = contentW / 5.0f;
                             float relX = px - (drawerX + padX);
-                            int idx = std::max(0, std::min(4, (int)(relX / segW)));
-                            if (idx == 0) {
-                                mSettings.targetFps = 30;
-                                mSettings.batterySaver = true;
-                                showToast("Target FPS: 30 FPS (Battery Saver)");
-                            } else if (idx == 1) {
-                                mSettings.targetFps = 60;
-                                mSettings.batterySaver = false;
-                                showToast("Target FPS: 60 FPS (Native Standard)");
-                            } else if (idx == 2) {
-                                mSettings.targetFps = 90;
-                                mSettings.batterySaver = false;
-                                showToast("Target FPS: 90 FPS (Smooth Refresh)");
-                            } else if (idx == 3) {
-                                mSettings.targetFps = 120;
-                                mSettings.batterySaver = false;
-                                showToast("Target FPS: 120 FPS (Ultra Smooth)");
-                            } else {
-                                mSettings.targetFps = 144;
-                                mSettings.batterySaver = false;
-                                showToast("Target FPS: 144 FPS (Max Refresh)");
-                            }
-                            if (!mSavePath.empty()) mSettings.save(mSavePath);
-                            mDirty = true;
-                        }
-                        // Row 13: Graphics Backend
-                        else if (contentRelY >= 718.0f * uiScale && contentRelY < 776.0f * uiScale) {
-                            float midX = drawerX + padX + contentW * 0.5f;
-                            if (px < midX) {
-                                mSettings.graphicsBackend = 0; // OpenGL ES 3.2
-                                showToast("Backend: OpenGL ES 3.2 (Active & Stable)");
-                            } else {
-                                mSettings.graphicsBackend = 1; // Vulkan 1.0
-                                showToast("Backend: Vulkan 1.0 (Core Engine)");
-                            }
-                        }
-                        // Row 14: Game Speed Multiplier (Turbo / Fast-Forward)
-                        else if (contentRelY >= 776.0f * uiScale && contentRelY < 834.0f * uiScale) {
-                            float segW = contentW / 5.0f;
-                            int idx = (int)((px - (drawerX + padX)) / segW);
-                            mSettings.gameSpeed = std::max(1, std::min(5, idx + 1));
-                            applyGameSpeed(mSettings.gameSpeed);
-                            showToast(mSettings.gameSpeed == 1 ? "Game Speed: 1.0x (Normal)" :
-                                      mSettings.gameSpeed == 2 ? "Game Speed: 1.5x" :
-                                      mSettings.gameSpeed == 3 ? "Game Speed: 2.0x (Fast)" :
-                                      mSettings.gameSpeed == 4 ? "Game Speed: 3.0x" : "Game Speed: 4.0x (Turbo)");
-                        }
-                        // Row 15: Game Language
-                        else if (contentRelY >= 834.0f * uiScale && contentRelY < 892.0f * uiScale) {
-                            float segW = contentW / 6.0f;
-                            int idx = (int)((px - (drawerX + padX)) / segW);
-                            mSettings.languageChoice = std::max(0, std::min(5, idx));
-                            applyLanguage(mSettings.languageChoice);
-                            showToast(mSettings.languageChoice == 0 ? "Language: System Auto" :
-                                      mSettings.languageChoice == 1 ? "Language: English" :
-                                      mSettings.languageChoice == 2 ? "Language: Español" :
-                                      mSettings.languageChoice == 3 ? "Language: Français" :
-                                      mSettings.languageChoice == 4 ? "Language: Deutsch" : "Language: Italiano");
-                        }
-                        // Row 16: Render Resolution
-                        else if (contentRelY >= 892.0f * uiScale && contentRelY < 950.0f * uiScale) {
-                            float segW = contentW / 4.0f;
-                            int idx = (int)((px - (drawerX + padX)) / segW);
-                            mSettings.renderScale = std::max(0, std::min(3, idx));
-                            showToast(mSettings.renderScale == 0 ? "Resolution: 480p (Max Performance)" :
-                                      mSettings.renderScale == 1 ? "Resolution: 720p (HD Balanced)" :
-                                      mSettings.renderScale == 2 ? "Resolution: 1080p (Full HD)" : "Resolution: 1440p (2K Ultra)");
-                        }
-                        // Row 16b: Display Refresh Rate & Framerate
-                        else if (contentRelY >= 950.0f * uiScale && contentRelY < 1008.0f * uiScale) {
-                            float segW = contentW / 4.0f;
-                            int idx = (int)((px - (drawerX + padX)) / segW);
-                            int fps = (idx == 0) ? 60 : (idx == 1) ? 90 : (idx == 2) ? 120 : 144;
-                            mSettings.targetFps = fps;
-                            mSettings.batterySaver = false;
-                            applyTargetFps(fps);
-                            if (!mSavePath.empty()) mSettings.save(mSavePath);
-                            mDirty = true;
-                            showToast(fps == 60 ? "Framerate: 60 Hz (Standard)" :
-                                      fps == 90 ? "Framerate: 90 Hz (Smooth High-Refresh)" :
-                                      fps == 120 ? "Framerate: 120 Hz (Ultra Smooth Native Pacing)" :
-                                      "Framerate: 144 Hz (Extreme Refresh Rate)");
-                        }
-                        // Row 17: Vibration Haptics
-                        else if (contentRelY >= 1008.0f * uiScale && contentRelY < 1062.0f * uiScale) {
-                            mSettings.haptics = !mSettings.haptics;
-                            showToast(mSettings.haptics ? "Vibration Haptics: ON" : "Vibration Haptics: OFF");
-                        }
-                        // Row 18: Battery Saver Switch
-                        else if (contentRelY >= 1062.0f * uiScale && contentRelY < 1116.0f * uiScale) {
-                            mSettings.batterySaver = !mSettings.batterySaver;
-                            if (mSettings.batterySaver) {
-                                mSettings.targetFps = 30;
-                                applyTargetFps(30);
-                            } else if (mSettings.targetFps <= 30) {
-                                mSettings.targetFps = 60;
-                                applyTargetFps(60);
-                            } else {
-                                applyTargetFps(mSettings.targetFps);
-                            }
-                            if (!mSavePath.empty()) mSettings.save(mSavePath);
-                            mDirty = true;
-                            showToast(mSettings.batterySaver ? "Battery Saver: ON (30 FPS Limit)" : "Battery Saver: OFF (Performance Mode)");
-                        }
-                        // Row 19: Gyroscope Star Pointer Switch
-                        else if (contentRelY >= 1116.0f * uiScale && contentRelY < 1170.0f * uiScale) {
-                            mSettings.gyroAiming = !mSettings.gyroAiming;
-                            showToast(mSettings.gyroAiming ? "Gyro Aiming: ON (Tilt Device to Aim)" : "Gyro Aiming: OFF");
-                        }
-                        // Row 19b: Gyro Invert X / Invert Y Buttons
-                        else if (contentRelY >= 1170.0f * uiScale && contentRelY < 1220.0f * uiScale) {
-                            float midX = drawerX + padX + contentW * 0.5f;
-                            if (px < midX) {
-                                mSettings.gyroInvertX = !mSettings.gyroInvertX;
-                                showToast(mSettings.gyroInvertX ? "Gyro Invert Horizontal (X): ON" : "Gyro Invert Horizontal (X): OFF");
-                            } else {
-                                mSettings.gyroInvertY = !mSettings.gyroInvertY;
-                                showToast(mSettings.gyroInvertY ? "Gyro Invert Vertical (Y): ON" : "Gyro Invert Vertical (Y): OFF");
-                            }
-                        }
-                        // Row 19c: Relative Pointer Switch (Issue #11)
-                        else if (contentRelY >= 1220.0f * uiScale && contentRelY < 1274.0f * uiScale) {
-                            mSettings.relativePointer = !mSettings.relativePointer;
-                            showToast(mSettings.relativePointer ? "Relative Pointer: ON (Trackpad mode)" : "Relative Pointer: OFF (Direct touch)");
-                        }
-                        // Row 19d: Screen Orientation Choice (Issues #18 & #19)
-                        else if (contentRelY >= 1274.0f * uiScale && contentRelY < 1334.0f * uiScale) {
-                            float segW = contentW / 3.0f;
-                            int idx = (int)((px - (drawerX + padX)) / segW);
-                            mSettings.screenOrientationChoice = std::max(0, std::min(2, idx));
-                            showToast(mSettings.screenOrientationChoice == 0 ? "Orientation: Auto Sensor (Flips 180°)" :
-                                      mSettings.screenOrientationChoice == 1 ? "Orientation: Fixed Landscape" : "Orientation: Fixed Reverse Landscape");
-                        }
-                        // Row 20: Save Backup (Export / Import)
-                        else if (contentRelY >= 1334.0f * uiScale && contentRelY < 1394.0f * uiScale) {
-                            float midX = drawerX + padX + contentW * 0.5f;
-                            if (px < midX) {
-                                exportSave();
-                            } else {
-                                importSave();
-                            }
-                        }
-                        // Row 22: Return to Setup / Launcher Button
-                        else if (contentRelY >= 1468.0f * uiScale && contentRelY < 1548.0f * uiScale) {
-                            mSettingsOpen = false;
-                            port_android_exit_to_launcher();
-                            return true;
-                        }
-                    } else if (mSettingsTab == 1) {
-                        // Mod Manager Tab items
-                        // Row 1: NVIDIA Shield HD Textures
-                        if (contentRelY >= 48.0f * uiScale && contentRelY <= 100.0f * uiScale) {
-                            mSettings.modShieldTextures = !mSettings.modShieldTextures;
-                            showToast(mSettings.modShieldTextures ? "Shield HD Textures: ENABLED (1080p)" : "Shield HD Textures: DISABLED");
-                        }
-                        // Row 2: NVIDIA Shield 60FPS Cutscenes
-                        else if (contentRelY >= 102.0f * uiScale && contentRelY <= 154.0f * uiScale) {
-                            mSettings.modShieldCutscenes = !mSettings.modShieldCutscenes;
-                            showToast(mSettings.modShieldCutscenes ? "Shield 60FPS Cutscenes: ENABLED" : "Shield 60FPS Cutscenes: DISABLED");
-                        }
-                        // Row 3: Shield Controller Curves
-                        else if (contentRelY >= 156.0f * uiScale && contentRelY <= 208.0f * uiScale) {
-                            mSettings.modShieldControls = !mSettings.modShieldControls;
-                            showToast(mSettings.modShieldControls ? "Shield Calibrated Analog: ENABLED" : "Shield Calibrated Analog: OFF");
-                        }
-                        // Row 4: Classic Gamepad ABXY Prompts
-                        else if (contentRelY >= 210.0f * uiScale && contentRelY <= 262.0f * uiScale) {
-                            mSettings.modClassicGamepadUI = !mSettings.modClassicGamepadUI;
-                            showToast(mSettings.modClassicGamepadUI ? "Gamepad ABXY Prompts: ENABLED" : "Gamepad ABXY Prompts: DISABLED");
-                        }
-                        // Row 5: Fly Mode Switch
-                        else if (contentRelY >= 264.0f * uiScale && contentRelY <= 316.0f * uiScale) {
-                            mSettings.modFly = !mSettings.modFly;
-                            showToast(mSettings.modFly ? "Fly Mode: ON (Hold A/Z)" : "Fly Mode: OFF");
-                        }
-                        // Row 6: Cutscene Prevention Switch
-                        else if (contentRelY >= 318.0f * uiScale && contentRelY <= 370.0f * uiScale) {
-                            mSettings.modSkipCutscenes = !mSettings.modSkipCutscenes;
-                            showToast(mSettings.modSkipCutscenes ? "Skip Cutscenes: ON" : "Skip Cutscenes: OFF");
-                        }
-                        // Row 7: Infinite Health Switch
-                        else if (contentRelY >= 372.0f * uiScale && contentRelY <= 424.0f * uiScale) {
-                            mSettings.modInfiniteHealth = !mSettings.modInfiniteHealth;
-                            showToast(mSettings.modInfiniteHealth ? "Infinite Health: ON (God Mode)" : "Infinite Health: OFF");
-                        }
-                        // Row 8: Infinite Lives Switch
-                        else if (contentRelY >= 426.0f * uiScale && contentRelY <= 478.0f * uiScale) {
-                            mSettings.modInfiniteLives = !mSettings.modInfiniteLives;
-                            showToast(mSettings.modInfiniteLives ? "Infinite Lives (99): ON" : "Infinite Lives: OFF");
-                        }
-                        // Row 9: Infinite Star Bits Switch
-                        else if (contentRelY >= 480.0f * uiScale && contentRelY <= 532.0f * uiScale) {
-                            mSettings.modInfiniteStarBits = !mSettings.modInfiniteStarBits;
-                            showToast(mSettings.modInfiniteStarBits ? "Infinite Star Bits (999): ON" : "Infinite Star Bits: OFF");
-                        }
-                        // Row 10: Turbo Game Speed Multiplier
-                        else if (contentRelY >= 534.0f * uiScale && contentRelY < 592.0f * uiScale) {
-                            float segW = contentW / 5.0f;
-                            int idx = (int)((px - (drawerX + padX)) / segW);
-                            mSettings.gameSpeed = std::max(1, std::min(5, idx + 1));
-                            applyGameSpeed(mSettings.gameSpeed);
-                            showToast(mSettings.gameSpeed == 1 ? "Game Speed: 1.0x (Normal)" :
-                                      mSettings.gameSpeed == 2 ? "Game Speed: 1.5x" :
-                                      mSettings.gameSpeed == 3 ? "Game Speed: 2.0x (Fast)" :
-                                      mSettings.gameSpeed == 4 ? "Game Speed: 3.0x" : "Game Speed: 4.0x (Turbo)");
-                        }
-                        // Row 11: Riivolution Mods Switch
-                        else if (contentRelY >= 594.0f * uiScale && contentRelY <= 646.0f * uiScale) {
-                            mSettings.modRiivolution = !mSettings.modRiivolution;
-                            showToast(mSettings.modRiivolution ? "Riivolution Mods: ON (/sdcard/GalaxyData/mods)" : "Riivolution Mods: OFF");
-                        }
-                        // Row 12: Scan & Reload Mods Button
-                        else if (contentRelY >= 648.0f * uiScale && contentRelY <= 704.0f * uiScale) {
-                            mkdir("/sdcard/GalaxyData", 0775);
-                            mkdir("/sdcard/GalaxyData/mods", 0775);
-                            showToast("Scanned /sdcard/GalaxyData/mods: Active!");
-                        }
-                    } else {
-                        // mSettingsTab == 2: Save Anywhere Tab items
-                        // Row 0: Dual Instant Quick Cards (Quick Save / Quick Load Anywhere)
-                        if (contentRelY >= 8.0f * uiScale && contentRelY <= 64.0f * uiScale) {
-                            float midX = drawerX + padX + contentW * 0.5f;
-                            if (px < midX) {
-                                triggerSaveSlot(4);
-                            } else {
-                                triggerLoadSlot(4);
-                            }
-                        }
-                        // Row 1: Save Slot Selector
-                        else if (contentRelY >= 76.0f * uiScale && contentRelY < 136.0f * uiScale) {
-                            float segW = contentW / 4.0f;
-                            int idx = (int)((px - (drawerX + padX)) / segW);
-                            mCurrentSlot = std::max(1, std::min(4, idx + 1));
-                        }
-                        // Row 2: Slot Save / Reload Buttons
-                        else if (contentRelY >= 144.0f * uiScale && contentRelY < 204.0f * uiScale) {
-                            float midX = drawerX + padX + contentW * 0.5f;
-                            if (px < midX) {
-                                triggerSaveSlot(mCurrentSlot);
-                            } else {
-                                triggerLoadSlot(mCurrentSlot);
-                            }
-                        }
-                        // Row 3: SD Card Save Data Sync & Backup (Export / Import)
-                        else if (contentRelY >= 212.0f * uiScale && contentRelY < 272.0f * uiScale) {
-                            float midX = drawerX + padX + contentW * 0.5f;
-                            if (px < midX) {
-                                exportSave();
-                            } else {
-                                importSave();
-                            }
-                        }
-                    }
 
-                    if (!mSavePath.empty()) mSettings.save(mSavePath);
+                            switch (r.action) {
+                            case ACT_SHOW_CONTROLS:
+                                mSettings.showControls = !mSettings.showControls;
+                                showToast(mSettings.showControls ? "On-Screen Controls: ON" : "On-Screen Controls: HIDDEN");
+                                break;
+                            case ACT_LAYOUT_BUTTONS:
+                                if (px < midX) {
+                                    mSettingsOpen = false;
+                                    mEditLayoutMode = true;
+                                    LOGI("layout edit: opened from settings");
+                                } else {
+                                    clearLayoutOffsets();
+                                    showToast("Controls layout reset to defaults");
+                                }
+                                break;
+                            case ACT_CONTROLS_OPACITY: {
+                                int idx = std::max(0, std::min(3, (int)(relX / (contentW / 4.0f))));
+                                if (idx == 0) mSettings.opacity = 0.25f;
+                                else if (idx == 1) mSettings.opacity = 0.50f;
+                                else if (idx == 2) mSettings.opacity = 0.75f;
+                                else mSettings.opacity = 1.00f;
+                                break;
+                            }
+                            case ACT_BUTTON_SIZE: {
+                                int idx = std::max(0, std::min(2, (int)(relX / (contentW / 3.0f))));
+                                if (idx == 0) mSettings.scale = 0.85f;
+                                else if (idx == 1) mSettings.scale = 1.00f;
+                                else mSettings.scale = 1.25f;
+                                break;
+                            }
+                            case ACT_JOYSTICK_MODE:
+                                mSettings.dynamicStick = (px < midX);
+                                showToast(mSettings.dynamicStick ? "Joystick: Dynamic Anchor" : "Joystick: Fixed Anchor");
+                                break;
+                            case ACT_SHOW_DPAD:
+                                mSettings.showDpad = !mSettings.showDpad;
+                                showToast(mSettings.showDpad ? "Camera D-Pad: ON" : "Camera D-Pad: OFF");
+                                break;
+                            case ACT_DPAD_SIDE:
+                                mSettings.dpadOnRight = (px >= midX);
+                                mSettings.dpadOffsetX = 0.0f;
+                                mSettings.dpadOffsetY = 0.0f;
+                                showToast(mSettings.dpadOnRight ? "Camera D-Pad: Right Side" : "Camera D-Pad: Left Side");
+                                break;
+                            case ACT_GYRO_AIMING:
+                                mSettings.gyroAiming = !mSettings.gyroAiming;
+                                showToast(mSettings.gyroAiming ? "Gyro Aiming: ON (Tilt device to aim)" : "Gyro Aiming: OFF");
+                                break;
+                            case ACT_GYRO_INVERT_BUTTONS:
+                                if (px < midX) {
+                                    mSettings.gyroInvertX = !mSettings.gyroInvertX;
+                                    showToast(mSettings.gyroInvertX ? "Gyro Invert Horizontal (X): ON" : "Gyro Invert Horizontal (X): OFF");
+                                } else {
+                                    mSettings.gyroInvertY = !mSettings.gyroInvertY;
+                                    showToast(mSettings.gyroInvertY ? "Gyro Invert Vertical (Y): ON" : "Gyro Invert Vertical (Y): OFF");
+                                }
+                                break;
+                            case ACT_RELATIVE_POINTER:
+                                mSettings.relativePointer = !mSettings.relativePointer;
+                                showToast(mSettings.relativePointer ? "Relative Pointer: ON (Trackpad mode)" : "Relative Pointer: OFF (Direct mode)");
+                                break;
+                            case ACT_FULL_TOUCH_MODE:
+                                mSettings.fullTouchMode = !mSettings.fullTouchMode;
+                                showToast(mSettings.fullTouchMode ? "Full Touch Mode: ON" : "Full Touch Mode: OFF");
+                                break;
+                            case ACT_HAPTICS:
+                                mSettings.haptics = !mSettings.haptics;
+                                showToast(mSettings.haptics ? "Vibration Haptics: ON" : "Vibration Haptics: OFF");
+                                break;
+                            // Graphics Tab
+                            case ACT_GRAPHICS_BACKEND:
+                                if (px < midX) {
+                                    mSettings.graphicsBackend = 0;
+                                    showToast("Backend: OpenGL ES 3.2 (Active)");
+                                } else {
+                                    mSettings.graphicsBackend = 1;
+                                    showToast("Backend: Vulkan 1.0 (Core Engine)");
+                                }
+                                break;
+                            case ACT_RENDER_SCALE: {
+                                int idx = std::max(0, std::min(3, (int)(relX / (contentW / 4.0f))));
+                                mSettings.renderScale = idx;
+                                showToast(idx == 0 ? "Resolution: 480p Native (Fastest)" :
+                                          idx == 1 ? "Resolution: 720p HD (Balanced)" :
+                                          idx == 2 ? "Resolution: 1080p FHD (Sharp)" : "Resolution: 1440p 2K (Ultra HD)");
+                                break;
+                            }
+                            case ACT_TARGET_FPS: {
+                                int idx = std::max(0, std::min(4, (int)(relX / (contentW / 5.0f))));
+                                int fps = (idx == 0) ? 30 : (idx == 1) ? 60 : (idx == 2) ? 90 : (idx == 3) ? 120 : 144;
+                                mSettings.targetFps = fps;
+                                mSettings.batterySaver = (fps <= 30);
+                                applyTargetFps(fps);
+                                showToast(("Target Framerate: " + std::to_string(fps) + " FPS").c_str());
+                                break;
+                            }
+                            case ACT_DISPLAY_REFRESH: {
+                                int idx = std::max(0, std::min(3, (int)(relX / (contentW / 4.0f))));
+                                int fps = (idx == 0) ? 60 : (idx == 1) ? 90 : (idx == 2) ? 120 : 144;
+                                mSettings.targetFps = fps;
+                                mSettings.batterySaver = false;
+                                applyTargetFps(fps);
+                                showToast(("Display Refresh Rate: " + std::to_string(fps) + " Hz").c_str());
+                                break;
+                            }
+                            case ACT_BATTERY_SAVER:
+                                mSettings.batterySaver = !mSettings.batterySaver;
+                                if (mSettings.batterySaver) {
+                                    mSettings.targetFps = 30;
+                                    applyTargetFps(30);
+                                } else {
+                                    mSettings.targetFps = 60;
+                                    applyTargetFps(60);
+                                }
+                                showToast(mSettings.batterySaver ? "Battery Saver: ON (30 FPS Lock)" : "Battery Saver: OFF (Performance Mode)");
+                                break;
+                            case ACT_FULLSCREEN:
+                                mSettings.fullscreen = !mSettings.fullscreen;
+                                showToast(mSettings.fullscreen ? "Fullscreen Ultrawide: ON (Hor+ FOV)" : "Fullscreen: OFF (Standard 16:9)");
+                                break;
+                            case ACT_ORIENTATION: {
+                                int idx = std::max(0, std::min(2, (int)(relX / (contentW / 3.0f))));
+                                mSettings.screenOrientationChoice = idx;
+                                showToast(idx == 0 ? "Orientation: Auto Sensor (Flips 180°)" :
+                                          idx == 1 ? "Orientation: Fixed Landscape" : "Orientation: Fixed Reverse Landscape");
+                                break;
+                            }
+                            case ACT_PERF_HUD: {
+                                int idx = std::max(0, std::min(2, (int)(relX / (contentW / 3.0f))));
+                                mSettings.perfHudMode = idx;
+                                showToast(idx == 0 ? "Performance HUD: OFF" : idx == 1 ? "Performance HUD: FPS Only" : "Performance HUD: Full Hardware Stats");
+                                break;
+                            }
+                            // Mods Tab
+                            case ACT_SHIELD_TEXTURES:
+                                mSettings.modShieldTextures = !mSettings.modShieldTextures;
+                                showToast(mSettings.modShieldTextures ? "Shield HD Textures: ENABLED (1080p)" : "Shield HD Textures: DISABLED");
+                                break;
+                            case ACT_SHIELD_CUTSCENES:
+                                mSettings.modShieldCutscenes = !mSettings.modShieldCutscenes;
+                                showToast(mSettings.modShieldCutscenes ? "Shield 60FPS Cutscenes: ENABLED" : "Shield 60FPS Cutscenes: DISABLED");
+                                break;
+                            case ACT_SHIELD_CONTROLS:
+                                mSettings.modShieldControls = !mSettings.modShieldControls;
+                                showToast(mSettings.modShieldControls ? "Shield Calibrated Analog: ENABLED" : "Shield Calibrated Analog: OFF");
+                                break;
+                            case ACT_CLASSIC_GAMEPAD:
+                                mSettings.modClassicGamepadUI = !mSettings.modClassicGamepadUI;
+                                showToast(mSettings.modClassicGamepadUI ? "Modern Gamepad ABXY Prompts: ENABLED" : "Modern Gamepad Prompts: DISABLED");
+                                break;
+                            case ACT_GAME_SPEED: {
+                                int idx = std::max(0, std::min(4, (int)(relX / (contentW / 5.0f))));
+                                mSettings.gameSpeed = idx + 1;
+                                applyGameSpeed(mSettings.gameSpeed);
+                                showToast(mSettings.gameSpeed == 1 ? "Game Speed: 1.0x (Normal)" :
+                                          mSettings.gameSpeed == 2 ? "Game Speed: 1.5x" :
+                                          mSettings.gameSpeed == 3 ? "Game Speed: 2.0x (Fast)" :
+                                          mSettings.gameSpeed == 4 ? "Game Speed: 3.0x" : "Game Speed: 4.0x (Turbo)");
+                                break;
+                            }
+                            case ACT_FLY_MODE:
+                                mSettings.modFly = !mSettings.modFly;
+                                showToast(mSettings.modFly ? "Fly Mode: ON (Hold A to ascend, Z to descend)" : "Fly Mode: OFF");
+                                break;
+                            case ACT_SKIP_CUTSCENES:
+                                mSettings.modSkipCutscenes = !mSettings.modSkipCutscenes;
+                                showToast(mSettings.modSkipCutscenes ? "Skip Cutscenes: ON" : "Skip Cutscenes: OFF");
+                                break;
+                            case ACT_INFINITE_HEALTH:
+                                mSettings.modInfiniteHealth = !mSettings.modInfiniteHealth;
+                                showToast(mSettings.modInfiniteHealth ? "Infinite Health: ON (God Mode)" : "Infinite Health: OFF");
+                                break;
+                            case ACT_INFINITE_LIVES:
+                                mSettings.modInfiniteLives = !mSettings.modInfiniteLives;
+                                showToast(mSettings.modInfiniteLives ? "Infinite Lives (99): ON" : "Infinite Lives: OFF");
+                                break;
+                            case ACT_INFINITE_STARBITS:
+                                mSettings.modInfiniteStarBits = !mSettings.modInfiniteStarBits;
+                                showToast(mSettings.modInfiniteStarBits ? "Infinite Star Bits (999): ON" : "Infinite Star Bits: OFF");
+                                break;
+                            case ACT_RIIVOLUTION:
+                                mSettings.modRiivolution = !mSettings.modRiivolution;
+                                showToast(mSettings.modRiivolution ? "Riivolution Mods: ON (/sdcard/GalaxyData/mods)" : "Riivolution Mods: OFF");
+                                break;
+                            case ACT_RELOAD_MODS:
+                                mkdir("/sdcard/GalaxyData", 0775);
+                                mkdir("/sdcard/GalaxyData/mods", 0775);
+                                showToast("Scanned /sdcard/GalaxyData/mods: Active!");
+                                break;
+                            // Save & System Tab
+                            case ACT_QUICK_CARDS:
+                                if (px < midX) triggerSaveSlot(4);
+                                else triggerLoadSlot(4);
+                                break;
+                            case ACT_SELECT_SLOT: {
+                                int idx = std::max(0, std::min(3, (int)(relX / (contentW / 4.0f))));
+                                mCurrentSlot = idx + 1;
+                                showToast(mCurrentSlot == 4 ? "Active Slot: Quick Slot" : ("Active Slot: Slot " + std::to_string(mCurrentSlot)).c_str());
+                                break;
+                            }
+                            case ACT_SLOT_ACTIONS:
+                                if (px < midX) triggerSaveSlot(mCurrentSlot);
+                                else triggerLoadSlot(mCurrentSlot);
+                                break;
+                            case ACT_SD_BACKUP_ACTIONS:
+                                if (px < midX) exportSave();
+                                else importSave();
+                                break;
+                            case ACT_LANGUAGE: {
+                                int idx = std::max(0, std::min(5, (int)(relX / (contentW / 6.0f))));
+                                mSettings.languageChoice = idx;
+                                applyLanguage(mSettings.languageChoice);
+                                showToast(mSettings.languageChoice == 0 ? "Language: System Auto" :
+                                          mSettings.languageChoice == 1 ? "Language: English" :
+                                          mSettings.languageChoice == 2 ? "Language: Español" :
+                                          mSettings.languageChoice == 3 ? "Language: Français" :
+                                          mSettings.languageChoice == 4 ? "Language: Deutsch" : "Language: Italiano");
+                                break;
+                            }
+                            case ACT_VIEW_LOGS:
+                                mSettingsOpen = false;
+                                mLogViewerOpen = true;
+                                mDirty = true;
+                                break;
+                            case ACT_EXIT_LAUNCHER:
+                                mSettingsOpen = false;
+                                if (!mSavePath.empty()) mSettings.save(mSavePath);
+                                port_android_exit_to_launcher();
+                                return true;
+                            default:
+                                break;
+                            }
+
+                            if (!mSavePath.empty()) mSettings.save(mSavePath);
+                            mDirty = true;
+                            break;
+                        }
+                        curY += rowH + 6.0f * uiScale;
+                    }
                 }
                 mDrawerScrollPointerId = -1;
                 mDrawerIsScrolling = false;
@@ -1473,22 +1660,22 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
             }
 
             // Close [X] button at top-right of drawer
-            float closeBtnX = drawerX + drawerW - 36.0f * uiScale;
-            float closeBtnY = 44.0f * uiScale;
+            float closeBtnX = drawerX + drawerW - 32.0f * uiScale;
+            float closeBtnY = 32.0f * uiScale;
             float dx = px - closeBtnX;
             float dy = py - closeBtnY;
-            if (dx * dx + dy * dy <= 26.0f * uiScale * 26.0f * uiScale) {
+            if (dx * dx + dy * dy <= 28.0f * uiScale * 28.0f * uiScale) {
                 mSettingsOpen = false;
                 if (!mSavePath.empty()) mSettings.save(mSavePath);
                 mDirty = true;
                 return true;
             }
 
-            // Tab Bar Tap (General vs Mod Manager vs Save Anywhere) - only in Plus Edition
-            if (mPlusEdition && py >= 58.0f * uiScale && py <= 104.0f * uiScale) {
-                float segW = contentW / 3.0f;
+            // Tab Bar Tap (Controls | Graphics | Mods | Save/Sys)
+            if (py >= 52.0f * uiScale && py <= 98.0f * uiScale) {
+                float segW = contentW / 4.0f;
                 int newTab = (int)((px - (drawerX + padX)) / segW);
-                newTab = std::max(0, std::min(2, newTab));
+                newTab = std::max(0, std::min(3, newTab));
                 if (newTab != mSettingsTab) {
                     mSettingsTab = newTab;
                     mDrawerScrollY = 0.0f;
@@ -1498,7 +1685,7 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
                 return true;
             }
 
-            // Fixed [ Done ] button at bottom
+            // Fixed [ Close Menu ] button at bottom
             if (py >= contentBottom) {
                 mSettingsOpen = false;
                 if (!mSavePath.empty()) mSettings.save(mSavePath);
@@ -1834,7 +2021,9 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
             mFingerDownOnA = true;
         }
         else if (role == TouchRole::BTN_B) {
-            touchButtons |= 0x0400; // WPAD_BUTTON_B
+            // Nintendo Switch: B is Jump (also handles cancel/shoot)
+            touchButtons |= 0x0800; // WPAD_BUTTON_A (Jump)
+            touchButtons |= 0x0400; // WPAD_BUTTON_B (Cancel / Shoot)
             if (!mBtnBPressed && mSettings.haptics) port_android_vibrate(18);
             mBtnBPressed = true;
             mFingerDownOnB = true;
@@ -1942,6 +2131,12 @@ void UIOverlay::generateVertices(int screenW, int screenH, std::vector<UIVertex>
         if (fabsf(mDrawerAnim - target) < 0.001f) {
             mDrawerAnim = target;
         }
+        mDirty = true;
+    }
+
+    if (mSaveToastTimer > 0.0f) {
+        mSaveToastTimer -= dt;
+        if (mSaveToastTimer < 0.0f) mSaveToastTimer = 0.0f;
         mDirty = true;
     }
 
@@ -2081,7 +2276,7 @@ void UIOverlay::generateVertices(int screenW, int screenH, std::vector<UIVertex>
         }
     };
 
-    auto drawSegmentedGroup = [&](float x, float y, float grpW, float grpH, const char** labels, int count, int activeIdx) {
+    auto drawSegmentedGroup = [&](float x, float y, float grpW, float grpH, const char* const* labels, int count, int activeIdx) {
         float r = 12.0f * uiScale;
         // Group container: Surface Container High (#26282E) with outline
         drawRoundRect(x, y, x + grpW, y + grpH, r, rgba(0.149f, 0.157f, 0.180f, 0.95f));
@@ -2194,32 +2389,32 @@ void UIOverlay::generateVertices(int screenW, int screenH, std::vector<UIVertex>
             // High-contrast clean glyph / typography
             Color glyphCol = pressed ? rgba(1.0f, 1.0f, 1.0f, hudOp * 1.0f) : rgba(0.92f, 0.95f, 1.0f, hudOp * 0.92f);
 
-            if (specialGlyph == 1) { // SPIN: Procedural Cyclone glyph + clean micro-label
-                float iconR = pr * 0.44f;
+            if (specialGlyph == 1) { // SPIN (Y): Procedural Cyclone glyph + "Y • SPIN"
+                float iconR = pr * 0.40f;
                 drawCyclone(cx, cy - 5.0f * scale, iconR, glyphCol, 0.0f);
-                drawText("SPIN", cx, cy + pr * 0.58f, 0.26f * scale, glyphCol, 1);
+                drawText("Y • SPIN", cx, cy + pr * 0.58f, 0.22f * scale, glyphCol, 1);
             } else if (specialGlyph == 2) { // PLUS (+): Modern precision cross
                 float armLen = pr * 0.38f;
                 float thick = 2.4f * scale;
                 drawLine(cx - armLen, cy, cx + armLen, cy, thick, glyphCol);
                 drawLine(cx, cy - armLen, cx, cy + armLen, thick, glyphCol);
-            } else { // Standard typography (A, B, Z)
+            } else { // Standard typography (A, B, ZL)
                 float textSize = (r > 48.0f * scale) ? (0.64f * scale) : (0.54f * scale);
                 drawText(label, cx, cy + 11.0f * scale, textSize, glyphCol, 1);
             }
         };
 
-        // Button A (Jump) - Luminous Electric Cyan (#38BDF8)
+        // Button B (Primary Jump) - Luminous Amber Gold (#F59E0B) - Nintendo Switch Jump
+        drawModernButton(bl.bx, bl.by, bl.br, "B", 0xF59E0B, mBtnBPressed);
+
+        // Button A (Jump / Interact) - Luminous Electric Cyan (#38BDF8)
         drawModernButton(bl.ax, bl.ay, bl.ar, "A", 0x38BDF8, mBtnAPressed);
 
-        // Button B (Star Bit Shoot) - Luminous Star Amber (#FBBF24)
-        drawModernButton(bl.bx, bl.by, bl.br, "B", 0xFBBF24, mBtnBPressed);
+        // Button Y (Spin Attack) - Luminous Emerald Mint (#34D399) with Cyclone Glyph
+        drawModernButton(bl.spinX, bl.spinY, bl.spinR, "Y", 0x34D399, mBtnSpinPressed, 1);
 
-        // Button SPIN - Luminous Emerald Mint (#34D399) with Cyclone Glyph
-        drawModernButton(bl.spinX, bl.spinY, bl.spinR, "SPIN", 0x34D399, mBtnSpinPressed, 1);
-
-        // Button Z (Crouch) - Luminous Lavender Violet (#A78BFA)
-        drawModernButton(bl.zx, bl.zy, bl.zr, "Z", 0xA78BFA, mBtnZPressed);
+        // Button ZL (Crouch / Ground Pound) - Luminous Lavender Violet (#A78BFA)
+        drawModernButton(bl.zx, bl.zy, bl.zr, "ZL", 0xA78BFA, mBtnZPressed);
 
         // Button + (Pause) - Minimalist Pearl Slate (#E2E8F0) with Vector Cross
         drawModernButton(w - 65.0f * scale, 65.0f * scale, 34.0f * scale, "+", 0x94A3B8, mBtnPlusPressed, 2);
@@ -2399,22 +2594,22 @@ void UIOverlay::generateVertices(int screenW, int screenH, std::vector<UIVertex>
     }
 
     // -------------------------------------------------------------
-    // Material 3 Side Sheet Navigation Drawer (Tabbed & Scrollable)
+    // Modern In-App Navigation Drawer (4-Tab Glassmorphic System)
     // -------------------------------------------------------------
     if (mDrawerAnim > 0.001f) {
         // Scrim backdrop (smoothly fades with animation)
-        drawRoundRect(0, 0, w, h, 0.0f, rgba(0.0f, 0.0f, 0.0f, mDrawerAnim * 0.52f));
+        drawRoundRect(0, 0, w, h, 0.0f, rgba(0.0f, 0.0f, 0.0f, mDrawerAnim * 0.58f));
 
-        // Side Sheet container: Surface Container (#1B1D23) with 28dp rounded right corners
-        drawRoundRect(drawerX - 60.0f, 0.0f, drawerX + drawerW, h, 28.0f * uiScale, rgba(0.106f, 0.114f, 0.137f, 0.98f));
-        // Right edge outline border
-        drawRoundRect(drawerX + drawerW - 2.0f, 0.0f, drawerX + drawerW, h, 0.0f, rgba(0.267f, 0.278f, 0.310f, 0.55f));
+        // Side Sheet container: Surface Container (#12141A) with 26dp rounded right corners
+        drawRoundRect(drawerX - 60.0f, 0.0f, drawerX + drawerW, h, 26.0f * uiScale, rgba(0.07f, 0.08f, 0.11f, 0.98f));
+        // Right edge luminous hairline border
+        drawRoundRect(drawerX + drawerW - 1.5f, 0.0f, drawerX + drawerW, h, 0.0f, rgba(0.25f, 0.30f, 0.42f, 0.60f));
 
-        float padX = 22.0f * uiScale;
+        float padX = 20.0f * uiScale;
         float contentW = drawerW - padX * 2.0f;
-        float contentTop = mPlusEdition ? (112.0f * uiScale) : (68.0f * uiScale);
-        float contentBottom = h - 56.0f * uiScale;
-        float totalContentH = (mSettingsTab == 0 || !mPlusEdition) ? (1540.0f * uiScale) : (mSettingsTab == 1 ? (760.0f * uiScale) : (580.0f * uiScale));
+        float contentTop = 106.0f * uiScale;
+        float contentBottom = h - 54.0f * uiScale;
+        float totalContentH = getTabContentHeight(mSettingsTab, uiScale);
         float maxScroll = std::max(0.0f, totalContentH - (contentBottom - contentTop));
 
         // Smooth scroll damping
@@ -2427,484 +2622,249 @@ void UIOverlay::generateVertices(int screenW, int screenH, std::vector<UIVertex>
         mDrawerScrollY = std::max(0.0f, std::min(mDrawerScrollY, maxScroll));
         mDrawerScrollTarget = std::max(0.0f, std::min(mDrawerScrollTarget, maxScroll));
 
-        float swW = 50.0f * uiScale, swH = 28.0f * uiScale;
+        float swW = 48.0f * uiScale, swH = 26.0f * uiScale;
+
+        // Active tab theme colors:
+        // Tab 0: Electric Cyan
+        // Tab 1: Lavender Violet
+        // Tab 2: Emerald Mint
+        // Tab 3: Amber Gold
+        Color themeColor = (mSettingsTab == 0) ? rgba(0.20f, 0.85f, 1.0f, 1.0f) :
+                           (mSettingsTab == 1) ? rgba(0.70f, 0.55f, 1.0f, 1.0f) :
+                           (mSettingsTab == 2) ? rgba(0.25f, 0.90f, 0.65f, 1.0f) :
+                                                 rgba(1.0f, 0.78f, 0.25f, 1.0f);
 
         // ---------------------------------------------------------
-        // A. Scrollable Content Layer
+        // A. Scrollable Content Layer (Table-Driven)
         // ---------------------------------------------------------
-        if (mSettingsTab == 0 || !mPlusEdition) {
-            // General Tab Settings Items
-            auto renderRow = [&](float relY, float rowH, auto func) {
-                float drawY = contentTop + relY - mDrawerScrollY;
-                if (drawY + rowH >= contentTop - 12.0f && drawY <= contentBottom + 12.0f) {
-                    func(drawY);
+        size_t rowCount = 0;
+        const MenuRowDef* rows = getTabRows(mSettingsTab, rowCount);
+        float curY = 8.0f * uiScale;
+
+        for (size_t i = 0; i < rowCount; i++) {
+            const MenuRowDef& r = rows[i];
+            float rowH = r.heightDp * uiScale;
+            float drawY = contentTop + curY - mDrawerScrollY;
+            curY += rowH + 6.0f * uiScale;
+
+            if (drawY + rowH < contentTop - 15.0f || drawY > contentBottom + 15.0f) {
+                continue;
+            }
+
+            float rowX0 = drawerX + padX;
+            float rowX1 = drawerX + drawerW - padX;
+
+            if (r.type == ROW_SECTION) {
+                // Section Header with Glowing Vertical Pill Accent
+                drawRoundRect(rowX0, drawY + 8.0f * uiScale, rowX0 + 3.5f * uiScale, drawY + 26.0f * uiScale, 2.0f * uiScale, themeColor);
+                drawText(r.title, rowX0 + 10.0f * uiScale, drawY + 19.0f * uiScale, 0.33f * uiScale, themeColor, 0);
+                if (r.subtitle && r.subtitle[0]) {
+                    drawText(r.subtitle, rowX0 + 10.0f * uiScale, drawY + 31.0f * uiScale, 0.24f * uiScale, rgba(0.60f, 0.66f, 0.76f, 0.80f), 0);
                 }
-            };
+            }
+            else if (r.type == ROW_SWITCH) {
+                // Frosted card backing
+                drawRoundRect(rowX0, drawY + 2.0f, rowX1, drawY + rowH - 2.0f, 12.0f * uiScale, rgba(0.12f, 0.14f, 0.18f, 0.75f));
+                drawRoundRect(rowX0, drawY + 2.0f, rowX1, drawY + rowH - 2.0f, 12.0f * uiScale, rgba(0.22f, 0.26f, 0.35f, 0.40f));
 
-            // Row 0: Quick Save & Quick Load Anywhere Action Buttons
-            renderRow(8.0f * uiScale, 48.0f * uiScale, [&](float y) {
+                // Title & Subtitle
+                drawText(r.title, rowX0 + 12.0f * uiScale, drawY + 19.0f * uiScale, 0.36f * uiScale, rgba(0.92f, 0.93f, 0.96f, 1.0f), 0);
+                if (r.subtitle && r.subtitle[0]) {
+                    drawText(r.subtitle, rowX0 + 12.0f * uiScale, drawY + 33.0f * uiScale, 0.25f * uiScale, rgba(0.68f, 0.72f, 0.80f, 0.85f), 0);
+                }
+
+                // Switch state retrieval
+                bool swOn = false;
+                switch (r.action) {
+                case ACT_SHOW_CONTROLS: swOn = mSettings.showControls; break;
+                case ACT_SHOW_DPAD: swOn = mSettings.showDpad; break;
+                case ACT_GYRO_AIMING: swOn = mSettings.gyroAiming; break;
+                case ACT_RELATIVE_POINTER: swOn = mSettings.relativePointer; break;
+                case ACT_FULL_TOUCH_MODE: swOn = mSettings.fullTouchMode; break;
+                case ACT_HAPTICS: swOn = mSettings.haptics; break;
+                case ACT_BATTERY_SAVER: swOn = mSettings.batterySaver; break;
+                case ACT_FULLSCREEN: swOn = mSettings.fullscreen; break;
+                case ACT_SHIELD_TEXTURES: swOn = mSettings.modShieldTextures; break;
+                case ACT_SHIELD_CUTSCENES: swOn = mSettings.modShieldCutscenes; break;
+                case ACT_SHIELD_CONTROLS: swOn = mSettings.modShieldControls; break;
+                case ACT_CLASSIC_GAMEPAD: swOn = mSettings.modClassicGamepadUI; break;
+                case ACT_FLY_MODE: swOn = mSettings.modFly; break;
+                case ACT_SKIP_CUTSCENES: swOn = mSettings.modSkipCutscenes; break;
+                case ACT_INFINITE_HEALTH: swOn = mSettings.modInfiniteHealth; break;
+                case ACT_INFINITE_LIVES: swOn = mSettings.modInfiniteLives; break;
+                case ACT_INFINITE_STARBITS: swOn = mSettings.modInfiniteStarBits; break;
+                case ACT_RIIVOLUTION: swOn = mSettings.modRiivolution; break;
+                default: break;
+                }
+
+                drawM3Switch(rowX1 - swW - 10.0f * uiScale, drawY + (rowH - swH) * 0.5f, swW, swH, swOn);
+            }
+            else if (r.type == ROW_SEGMENTED) {
+                drawText(r.title, rowX0 + 2.0f * uiScale, drawY + 14.0f * uiScale, 0.35f * uiScale, rgba(0.88f, 0.90f, 0.95f, 1.0f), 0);
+
+                int activeIdx = 0;
+                switch (r.action) {
+                case ACT_CONTROLS_OPACITY:
+                    activeIdx = (fabsf(mSettings.opacity - 0.25f) < 0.12f) ? 0 : (fabsf(mSettings.opacity - 0.50f) < 0.12f) ? 1 : (fabsf(mSettings.opacity - 0.75f) < 0.12f) ? 2 : 3;
+                    break;
+                case ACT_BUTTON_SIZE:
+                    activeIdx = (fabsf(mSettings.scale - 0.85f) < 0.08f) ? 0 : (fabsf(mSettings.scale - 1.25f) < 0.08f) ? 2 : 1;
+                    break;
+                case ACT_JOYSTICK_MODE:
+                    activeIdx = mSettings.dynamicStick ? 0 : 1;
+                    break;
+                case ACT_DPAD_SIDE:
+                    activeIdx = mSettings.dpadOnRight ? 1 : 0;
+                    break;
+                case ACT_GRAPHICS_BACKEND:
+                    activeIdx = (mSettings.graphicsBackend == 1) ? 1 : 0;
+                    break;
+                case ACT_RENDER_SCALE:
+                    activeIdx = std::max(0, std::min(3, mSettings.renderScale));
+                    break;
+                case ACT_TARGET_FPS:
+                    activeIdx = (mSettings.targetFps >= 144) ? 4 : (mSettings.targetFps >= 120) ? 3 : (mSettings.targetFps >= 90) ? 2 : (mSettings.targetFps >= 60) ? 1 : 0;
+                    break;
+                case ACT_DISPLAY_REFRESH:
+                    activeIdx = (mSettings.targetFps >= 144) ? 3 : (mSettings.targetFps >= 120) ? 2 : (mSettings.targetFps >= 90) ? 1 : 0;
+                    break;
+                case ACT_ORIENTATION:
+                    activeIdx = std::max(0, std::min(2, mSettings.screenOrientationChoice));
+                    break;
+                case ACT_PERF_HUD:
+                    activeIdx = std::max(0, std::min(2, mSettings.perfHudMode));
+                    break;
+                case ACT_GAME_SPEED:
+                    activeIdx = std::max(0, std::min(4, mSettings.gameSpeed - 1));
+                    break;
+                case ACT_SELECT_SLOT:
+                    activeIdx = std::max(0, std::min(3, mCurrentSlot - 1));
+                    break;
+                case ACT_LANGUAGE:
+                    activeIdx = std::max(0, std::min(5, mSettings.languageChoice));
+                    break;
+                default: break;
+                }
+
+                drawSegmentedGroup(rowX0, drawY + 22.0f * uiScale, contentW, 32.0f * uiScale, r.optLabels, r.optCount, activeIdx);
+            }
+            else if (r.type == ROW_DUAL_BTN) {
+                float bW = (contentW - 8.0f * uiScale) * 0.5f;
+                float btnY = drawY + 4.0f * uiScale;
+                float btnH = rowH - 8.0f * uiScale;
+                float b0_x0 = rowX0;
+                float b0_x1 = b0_x0 + bW;
+                float b1_x0 = b0_x1 + 8.0f * uiScale;
+                float b1_x1 = rowX1;
+
+                if (r.action == ACT_LAYOUT_BUTTONS) {
+                    drawRoundRect(b0_x0, btnY, b0_x1, btnY + btnH, 12.0f * uiScale, rgba(0.14f, 0.24f, 0.40f, 0.95f));
+                    drawRoundRect(b0_x0, btnY, b0_x1, btnY + btnH, 12.0f * uiScale, rgba(0.35f, 0.65f, 0.98f, 0.60f));
+                    drawText("Reposition Layout", (b0_x0 + b0_x1) * 0.5f, btnY + btnH * 0.62f, 0.33f * uiScale, rgba(0.85f, 0.94f, 1.0f, 1.0f), 1);
+
+                    drawRoundRect(b1_x0, btnY, b1_x1, btnY + btnH, 12.0f * uiScale, rgba(0.35f, 0.15f, 0.18f, 0.95f));
+                    drawRoundRect(b1_x0, btnY, b1_x1, btnY + btnH, 12.0f * uiScale, rgba(0.85f, 0.30f, 0.35f, 0.60f));
+                    drawText("Reset Defaults", (b1_x0 + b1_x1) * 0.5f, btnY + btnH * 0.62f, 0.33f * uiScale, rgba(1.0f, 0.85f, 0.85f, 1.0f), 1);
+                }
+                else if (r.action == ACT_GYRO_INVERT_BUTTONS) {
+                    Color c0 = mSettings.gyroInvertX ? rgba(0.043f, 0.341f, 0.816f, 0.95f) : rgba(0.16f, 0.18f, 0.24f, 0.85f);
+                    Color c1 = mSettings.gyroInvertY ? rgba(0.043f, 0.341f, 0.816f, 0.95f) : rgba(0.16f, 0.18f, 0.24f, 0.85f);
+                    drawRoundRect(b0_x0, btnY, b0_x1, btnY + btnH, 12.0f * uiScale, c0);
+                    drawText(mSettings.gyroInvertX ? "Invert X: ON" : "Invert X: OFF", (b0_x0 + b0_x1) * 0.5f, btnY + btnH * 0.62f, 0.32f * uiScale, rgba(1.0f, 1.0f, 1.0f, 1.0f), 1);
+
+                    drawRoundRect(b1_x0, btnY, b1_x1, btnY + btnH, 12.0f * uiScale, c1);
+                    drawText(mSettings.gyroInvertY ? "Invert Y: ON" : "Invert Y: OFF", (b1_x0 + b1_x1) * 0.5f, btnY + btnH * 0.62f, 0.32f * uiScale, rgba(1.0f, 1.0f, 1.0f, 1.0f), 1);
+                }
+                else if (r.action == ACT_SLOT_ACTIONS) {
+                    drawRoundRect(b0_x0, btnY, b0_x1, btnY + btnH, 12.0f * uiScale, rgba(0.06f, 0.38f, 0.28f, 0.95f));
+                    drawRoundRect(b0_x0, btnY, b0_x1, btnY + btnH, 12.0f * uiScale, rgba(0.25f, 0.85f, 0.65f, 0.65f));
+                    char sTxt[32];
+                    if (mCurrentSlot == 4) snprintf(sTxt, sizeof(sTxt), "Save Quick Slot");
+                    else snprintf(sTxt, sizeof(sTxt), "Save to Slot %d", mCurrentSlot);
+                    drawText(sTxt, (b0_x0 + b0_x1) * 0.5f, btnY + btnH * 0.62f, 0.33f * uiScale, rgba(1.0f, 1.0f, 1.0f, 1.0f), 1);
+
+                    drawRoundRect(b1_x0, btnY, b1_x1, btnY + btnH, 12.0f * uiScale, rgba(0.12f, 0.28f, 0.55f, 0.95f));
+                    drawRoundRect(b1_x0, btnY, b1_x1, btnY + btnH, 12.0f * uiScale, rgba(0.35f, 0.65f, 0.98f, 0.65f));
+                    char rTxt[32];
+                    if (mCurrentSlot == 4) snprintf(rTxt, sizeof(rTxt), "Reload Quick Slot");
+                    else snprintf(rTxt, sizeof(rTxt), "Reload Slot %d", mCurrentSlot);
+                    drawText(rTxt, (b1_x0 + b1_x1) * 0.5f, btnY + btnH * 0.62f, 0.33f * uiScale, rgba(1.0f, 1.0f, 1.0f, 1.0f), 1);
+                }
+                else if (r.action == ACT_SD_BACKUP_ACTIONS) {
+                    drawRoundRect(b0_x0, btnY, b0_x1, btnY + btnH, 12.0f * uiScale, rgba(0.18f, 0.22f, 0.30f, 0.95f));
+                    drawRoundRect(b0_x0, btnY, b0_x1, btnY + btnH, 12.0f * uiScale, rgba(0.40f, 0.55f, 0.75f, 0.60f));
+                    drawText("Export to SD", (b0_x0 + b0_x1) * 0.5f, btnY + btnH * 0.62f, 0.33f * uiScale, rgba(0.90f, 0.94f, 1.0f, 1.0f), 1);
+
+                    drawRoundRect(b1_x0, btnY, b1_x1, btnY + btnH, 12.0f * uiScale, rgba(0.18f, 0.25f, 0.24f, 0.95f));
+                    drawRoundRect(b1_x0, btnY, b1_x1, btnY + btnH, 12.0f * uiScale, rgba(0.40f, 0.75f, 0.60f, 0.60f));
+                    drawText("Import from SD", (b1_x0 + b1_x1) * 0.5f, btnY + btnH * 0.62f, 0.33f * uiScale, rgba(0.90f, 1.0f, 0.94f, 1.0f), 1);
+                }
+            }
+            else if (r.type == ROW_SINGLE_BTN) {
+                float btnY = drawY + 4.0f * uiScale;
+                float btnH = rowH - 8.0f * uiScale;
+
+                if (r.action == ACT_VIEW_LOGS) {
+                    drawRoundRect(rowX0, btnY, rowX1, btnY + btnH, 12.0f * uiScale, rgba(0.12f, 0.24f, 0.40f, 0.95f));
+                    drawRoundRect(rowX0, btnY, rowX1, btnY + btnH, 12.0f * uiScale, rgba(0.35f, 0.65f, 0.98f, 0.55f));
+                    drawText("View System Logs Console", (rowX0 + rowX1) * 0.5f, btnY + btnH * 0.62f, 0.35f * uiScale, rgba(0.88f, 0.95f, 1.0f, 1.0f), 1);
+                }
+                else if (r.action == ACT_EXIT_LAUNCHER) {
+                    drawRoundRect(rowX0, btnY, rowX1, btnY + btnH, 12.0f * uiScale, rgba(0.38f, 0.12f, 0.15f, 0.95f));
+                    drawRoundRect(rowX0, btnY, rowX1, btnY + btnH, 12.0f * uiScale, rgba(0.85f, 0.25f, 0.30f, 0.60f));
+                    drawText("Exit to Setup Launcher", (rowX0 + rowX1) * 0.5f, btnY + btnH * 0.62f, 0.35f * uiScale, rgba(1.0f, 0.88f, 0.88f, 1.0f), 1);
+                }
+                else if (r.action == ACT_RELOAD_MODS) {
+                    drawRoundRect(rowX0, btnY, rowX1, btnY + btnH, 12.0f * uiScale, rgba(0.16f, 0.22f, 0.30f, 0.95f));
+                    drawRoundRect(rowX0, btnY, rowX1, btnY + btnH, 12.0f * uiScale, rgba(0.38f, 0.55f, 0.80f, 0.60f));
+                    drawText("SCAN & RELOAD MOD DIRECTORY", (rowX0 + rowX1) * 0.5f, btnY + btnH * 0.62f, 0.33f * uiScale, rgba(0.88f, 0.94f, 1.0f, 1.0f), 1);
+                }
+            }
+            else if (r.type == ROW_QUICK_CARDS) {
                 float bW = (contentW - 10.0f * uiScale) * 0.5f;
-                float btnY = y + 4.0f * uiScale;
-
-                // Quick Save (Green)
-                float sX0 = drawerX + padX;
+                float btnY = drawY + 4.0f * uiScale;
+                float btnH = rowH - 8.0f * uiScale;
+                float sX0 = rowX0;
                 float sX1 = sX0 + bW;
-                drawRoundRect(sX0, btnY, sX1, btnY + 40.0f * uiScale, 14.0f * uiScale, rgba(0.06f, 0.42f, 0.32f, 0.95f));
-                drawRoundRect(sX0, btnY, sX1, btnY + 40.0f * uiScale, 14.0f * uiScale, rgba(0.25f, 0.85f, 0.65f, 0.60f));
-                drawCircle(sX0 + 18.0f * uiScale, btnY + 20.0f * uiScale, 5.0f * uiScale, rgba(0.35f, 0.98f, 0.75f, 1.0f));
-                drawText("QUICK SAVE", (sX0 + sX1) * 0.5f + 6.0f * uiScale, btnY + 25.0f * uiScale, 0.35f * uiScale, rgba(1.0f, 1.0f, 1.0f, 1.0f), 1);
-
-                // Quick Load (Blue)
                 float lX0 = sX1 + 10.0f * uiScale;
-                float lX1 = lX0 + bW;
-                drawRoundRect(lX0, btnY, lX1, btnY + 40.0f * uiScale, 14.0f * uiScale, rgba(0.12f, 0.28f, 0.55f, 0.95f));
-                drawRoundRect(lX0, btnY, lX1, btnY + 40.0f * uiScale, 14.0f * uiScale, rgba(0.35f, 0.65f, 0.98f, 0.60f));
-                drawCircle(lX0 + 18.0f * uiScale, btnY + 20.0f * uiScale, 5.0f * uiScale, rgba(0.45f, 0.80f, 1.0f, 1.0f));
-                drawText("QUICK LOAD", (lX0 + lX1) * 0.5f + 6.0f * uiScale, btnY + 25.0f * uiScale, 0.35f * uiScale, rgba(1.0f, 1.0f, 1.0f, 1.0f), 1);
-            });
+                float lX1 = rowX1;
 
-            // Row 1: Visibility Switch
-            renderRow(62.0f * uiScale, 46.0f * uiScale, [&](float y) {
-                drawText("On-Screen Controls", drawerX + padX, y + 20.0f * uiScale, 0.40f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
-                drawText("Show HUD buttons", drawerX + padX, y + 36.0f * uiScale, 0.29f * uiScale, rgba(0.761f, 0.776f, 0.812f, 0.85f), 0);
-                drawM3Switch(drawerX + drawerW - padX - swW, y + 10.0f * uiScale, swW, swH, mSettings.showControls);
-            });
+                // Quick Save Card
+                drawRoundRect(sX0, btnY, sX1, btnY + btnH, 14.0f * uiScale, rgba(0.05f, 0.38f, 0.28f, 0.95f));
+                drawRoundRect(sX0, btnY, sX1, btnY + btnH, 14.0f * uiScale, rgba(0.25f, 0.85f, 0.65f, 0.70f));
+                drawCircle(sX0 + 18.0f * uiScale, btnY + btnH * 0.5f, 5.0f * uiScale, rgba(0.35f, 0.98f, 0.75f, 1.0f));
+                drawText("QUICK SAVE NOW", (sX0 + sX1) * 0.5f + 6.0f * uiScale, btnY + btnH * 0.62f, 0.33f * uiScale, rgba(1.0f, 1.0f, 1.0f, 1.0f), 1);
 
-            // Row 2: Camera D-Pad Switch
-            renderRow(112.0f * uiScale, 46.0f * uiScale, [&](float y) {
-                drawText("Camera D-Pad", drawerX + padX, y + 20.0f * uiScale, 0.40f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
-                drawText("Limited camera rotation & reset", drawerX + padX, y + 36.0f * uiScale, 0.29f * uiScale, rgba(0.761f, 0.776f, 0.812f, 0.85f), 0);
-                drawM3Switch(drawerX + drawerW - padX - swW, y + 10.0f * uiScale, swW, swH, mSettings.showDpad);
-            });
+                // Quick Load Card
+                drawRoundRect(lX0, btnY, lX1, btnY + btnH, 14.0f * uiScale, rgba(0.10f, 0.26f, 0.52f, 0.95f));
+                drawRoundRect(lX0, btnY, lX1, btnY + btnH, 14.0f * uiScale, rgba(0.35f, 0.68f, 0.98f, 0.70f));
+                drawCircle(lX0 + 18.0f * uiScale, btnY + btnH * 0.5f, 5.0f * uiScale, rgba(0.45f, 0.82f, 1.0f, 1.0f));
+                drawText("QUICK LOAD NOW", (lX0 + lX1) * 0.5f + 6.0f * uiScale, btnY + btnH * 0.62f, 0.33f * uiScale, rgba(1.0f, 1.0f, 1.0f, 1.0f), 1);
+            }
+            else if (r.type == ROW_INFO_CARD) {
+                float cardH = rowH - 6.0f * uiScale;
+                drawRoundRect(rowX0, drawY + 3.0f * uiScale, rowX1, drawY + 3.0f * uiScale + cardH, 12.0f * uiScale, rgba(0.10f, 0.12f, 0.16f, 0.92f));
+                drawRoundRect(rowX0, drawY + 3.0f * uiScale, rowX1, drawY + 3.0f * uiScale + cardH, 12.0f * uiScale, rgba(0.22f, 0.28f, 0.38f, 0.50f));
 
-            // Row 3: D-Pad Position Segmented Button
-            renderRow(162.0f * uiScale, 54.0f * uiScale, [&](float y) {
-                drawText("D-Pad Position", drawerX + padX, y + 14.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
-                const char* dpadSideOpts[2] = {"Left Side", "Right Side"};
-                drawSegmentedGroup(drawerX + padX, y + 22.0f * uiScale, contentW, 34.0f * uiScale, dpadSideOpts, 2, mSettings.dpadOnRight ? 1 : 0);
-            });
+                if (r.action == ACT_DEVICE_INFO_CARD) {
+                    char gpuLine[128], resLine[128], apiLine[128];
+                    snprintf(gpuLine, sizeof(gpuLine), "GPU: %s", mGpuRendererName.empty() ? "OpenGL ES 3.2" : mGpuRendererName.c_str());
+                    const char* resStr = (mSettings.renderScale == 0) ? "480p" : (mSettings.renderScale == 1) ? "720p" : (mSettings.renderScale == 2) ? "1080p" : "1440p";
+                    snprintf(resLine, sizeof(resLine), "Display: %dx%d (%s Target • Hor+)", (int)w, (int)h, resStr);
+                    snprintf(apiLine, sizeof(apiLine), "Active Engine: %s • Native ARM64", (mActiveBackend == 1) ? "Vulkan 1.0" : "OpenGL ES 3.2 (fallback)");
 
-            // Row 4: Fullscreen Switch
-            renderRow(220.0f * uiScale, 46.0f * uiScale, [&](float y) {
-                drawText("Fullscreen", drawerX + padX, y + 20.0f * uiScale, 0.40f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
-                drawText("Native ultrawide (expand Hor+ FOV)", drawerX + padX, y + 36.0f * uiScale, 0.29f * uiScale, rgba(0.761f, 0.776f, 0.812f, 0.85f), 0);
-                drawM3Switch(drawerX + drawerW - padX - swW, y + 10.0f * uiScale, swW, swH, mSettings.fullscreen);
-            });
-
-            // Row 5: Full Touch Mode Switch
-            renderRow(270.0f * uiScale, 46.0f * uiScale, [&](float y) {
-                drawText("Full Touch Mode", drawerX + padX, y + 20.0f * uiScale, 0.40f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
-                drawText("Tap to jump/advance, flick to spin", drawerX + padX, y + 36.0f * uiScale, 0.29f * uiScale, rgba(0.761f, 0.776f, 0.812f, 0.85f), 0);
-                drawM3Switch(drawerX + drawerW - padX - swW, y + 10.0f * uiScale, swW, swH, mSettings.fullTouchMode);
-            });
-
-            // Row 6: Joystick Mode Segmented Button
-            renderRow(320.0f * uiScale, 54.0f * uiScale, [&](float y) {
-                drawText("Joystick Mode", drawerX + padX, y + 14.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
-                const char* joyOpts[2] = {"Dynamic", "Fixed"};
-                drawSegmentedGroup(drawerX + padX, y + 22.0f * uiScale, contentW, 34.0f * uiScale, joyOpts, 2, mSettings.dynamicStick ? 0 : 1);
-            });
-
-            // Row 7: Controls Opacity Segmented Button
-            renderRow(378.0f * uiScale, 54.0f * uiScale, [&](float y) {
-                drawText("Controls Opacity", drawerX + padX, y + 14.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
-                const char* opOpts[4] = {"25%", "50%", "75%", "100%"};
-                int opIdx = (fabsf(mSettings.opacity - 0.25f) < 0.12f) ? 0 : (fabsf(mSettings.opacity - 0.50f) < 0.12f) ? 1 : (fabsf(mSettings.opacity - 0.75f) < 0.12f) ? 2 : 3;
-                drawSegmentedGroup(drawerX + padX, y + 22.0f * uiScale, contentW, 34.0f * uiScale, opOpts, 4, opIdx);
-            });
-
-            // Row 8: Button Size Segmented Button
-            renderRow(436.0f * uiScale, 54.0f * uiScale, [&](float y) {
-                drawText("Button Size", drawerX + padX, y + 14.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
-                const char* scOpts[3] = {"Small", "Medium", "Large"};
-                int scIdx = (fabsf(mSettings.scale - 0.85f) < 0.08f) ? 0 : (fabsf(mSettings.scale - 1.25f) < 0.08f) ? 2 : 1;
-                drawSegmentedGroup(drawerX + padX, y + 22.0f * uiScale, contentW, 34.0f * uiScale, scOpts, 3, scIdx);
-            });
-
-            // Row 9: Layout Reposition & Reset Buttons
-            renderRow(494.0f * uiScale, 54.0f * uiScale, [&](float y) {
-                drawText("Controls Layout", drawerX + padX, y + 14.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
-                float btnY = y + 22.0f * uiScale;
-                float b1X0 = drawerX + padX;
-                float b1X1 = drawerX + padX + contentW * 0.56f - 4.0f * uiScale;
-                float b2X0 = drawerX + padX + contentW * 0.56f + 4.0f * uiScale;
-                float b2X1 = drawerX + drawerW - padX;
-                drawRoundRect(b1X0, btnY, b1X1, btnY + 34.0f * uiScale, 14.0f * uiScale, rgba(0.18f, 0.23f, 0.31f, 0.95f));
-                drawText("Reposition", (b1X0 + b1X1) * 0.5f, btnY + 22.0f * uiScale, 0.36f * uiScale, rgba(0.659f, 0.780f, 0.980f, 1.0f), 1);
-                drawRoundRect(b2X0, btnY, b2X1, btnY + 34.0f * uiScale, 14.0f * uiScale, rgba(0.35f, 0.15f, 0.17f, 0.95f));
-                drawText("Reset", (b2X0 + b2X1) * 0.5f, btnY + 22.0f * uiScale, 0.36f * uiScale, rgba(1.0f, 0.72f, 0.72f, 1.0f), 1);
-            });
-
-            // Row 10: View System Logs Button
-            renderRow(552.0f * uiScale, 48.0f * uiScale, [&](float y) {
-                float btnY = y + 8.0f * uiScale;
-                float bX0 = drawerX + padX;
-                float bX1 = drawerX + drawerW - padX;
-                drawRoundRect(bX0, btnY, bX1, btnY + 36.0f * uiScale, 14.0f * uiScale, rgba(0.12f, 0.28f, 0.44f, 0.95f));
-                drawRoundRect(bX0, btnY, bX1, btnY + 36.0f * uiScale, 14.0f * uiScale, rgba(0.38f, 0.74f, 0.98f, 0.50f));
-                drawText("View System Logs", (bX0 + bX1) * 0.5f, btnY + 23.0f * uiScale, 0.38f * uiScale, rgba(0.85f, 0.94f, 1.0f, 1.0f), 1);
-            });
-
-            // Row 11: Hardware Monitor HUD Segmented Button
-            renderRow(606.0f * uiScale, 54.0f * uiScale, [&](float y) {
-                drawText("Hardware Monitor HUD", drawerX + padX, y + 14.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
-                const char* hudOpts[3] = {"Off", "FPS", "Full Stats"};
-                int hudIdx = std::max(0, std::min(2, mSettings.perfHudMode));
-                drawSegmentedGroup(drawerX + padX, y + 22.0f * uiScale, contentW, 34.0f * uiScale, hudOpts, 3, hudIdx);
-            });
-
-            // Row 12: Target Frame Rate Segmented Button
-            renderRow(664.0f * uiScale, 54.0f * uiScale, [&](float y) {
-                drawText("Target Frame Rate", drawerX + padX, y + 14.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
-                const char* fpsOpts[5] = {"30", "60", "90", "120", "144"};
-                int fpsIdx = (mSettings.targetFps >= 144) ? 4 : (mSettings.targetFps >= 120) ? 3 : (mSettings.targetFps >= 90) ? 2 : (mSettings.targetFps >= 60) ? 1 : 0;
-                drawSegmentedGroup(drawerX + padX, y + 22.0f * uiScale, contentW, 34.0f * uiScale, fpsOpts, 5, fpsIdx);
-            });
-
-            // Row 13: Graphics Backend Segmented Button
-            renderRow(722.0f * uiScale, 54.0f * uiScale, [&](float y) {
-                drawText("Graphics Backend", drawerX + padX, y + 14.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
-                const char* backendOpts[2] = {"OpenGL ES 3.2", "Vulkan 1.0"};
-                int bkIdx = (mSettings.graphicsBackend == 1) ? 1 : 0;
-                drawSegmentedGroup(drawerX + padX, y + 22.0f * uiScale, contentW, 34.0f * uiScale, backendOpts, 2, bkIdx);
-            });
-
-            // Row 14: Game Speed Multiplier (Fast-Forward / Turbo)
-            renderRow(776.0f * uiScale, 54.0f * uiScale, [&](float y) {
-                drawText("Game / Dialogue Speed", drawerX + padX, y + 14.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
-                const char* spdOpts[5] = {"1.0x", "1.5x", "2.0x", "3.0x", "4.0x"};
-                int spdIdx = std::max(0, std::min(4, mSettings.gameSpeed - 1));
-                drawSegmentedGroup(drawerX + padX, y + 22.0f * uiScale, contentW, 34.0f * uiScale, spdOpts, 5, spdIdx);
-            });
-
-            // Row 15: Game Language Selector
-            renderRow(834.0f * uiScale, 54.0f * uiScale, [&](float y) {
-                drawText("Game Language", drawerX + padX, y + 14.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
-                const char* langOpts[6] = {"Auto", "EN", "ES", "FR", "DE", "IT"};
-                int langIdx = std::max(0, std::min(5, mSettings.languageChoice));
-                drawSegmentedGroup(drawerX + padX, y + 22.0f * uiScale, contentW, 34.0f * uiScale, langOpts, 6, langIdx);
-            });
-
-            // Row 16: Render Resolution Segmented Button
-            renderRow(892.0f * uiScale, 54.0f * uiScale, [&](float y) {
-                drawText("Render Resolution", drawerX + padX, y + 14.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
-                const char* resOpts[4] = {"480p", "720p", "1080p", "1440p"};
-                int resIdx = std::max(0, std::min(3, mSettings.renderScale));
-                drawSegmentedGroup(drawerX + padX, y + 22.0f * uiScale, contentW, 34.0f * uiScale, resOpts, 4, resIdx);
-            });
-
-            // Row 16b: Display Refresh & Framerate Pacing
-            renderRow(950.0f * uiScale, 54.0f * uiScale, [&](float y) {
-                drawText("Display Refresh & Target FPS", drawerX + padX, y + 14.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
-                const char* fpsOpts[4] = {"60 Hz", "90 Hz", "120 Hz", "144 Hz"};
-                int fpsIdx = (mSettings.targetFps >= 144) ? 3 : (mSettings.targetFps >= 120) ? 2 : (mSettings.targetFps >= 90) ? 1 : 0;
-                drawSegmentedGroup(drawerX + padX, y + 22.0f * uiScale, contentW, 34.0f * uiScale, fpsOpts, 4, fpsIdx);
-            });
-
-            // Row 17: Vibration Haptics Switch
-            renderRow(1008.0f * uiScale, 46.0f * uiScale, [&](float y) {
-                drawText("Vibration Haptics", drawerX + padX, y + 20.0f * uiScale, 0.40f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
-                drawText("Tactile feedback on button presses", drawerX + padX, y + 36.0f * uiScale, 0.29f * uiScale, rgba(0.761f, 0.776f, 0.812f, 0.85f), 0);
-                drawM3Switch(drawerX + drawerW - padX - swW, y + 10.0f * uiScale, swW, swH, mSettings.haptics);
-            });
-
-            // Row 18: Battery Saver Switch
-            renderRow(1062.0f * uiScale, 48.0f * uiScale, [&](float y) {
-                drawText("Battery Saver / Cool Mode", drawerX + padX, y + 18.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
-                drawText("30 FPS lock, minimizes thermal load", drawerX + padX, y + 34.0f * uiScale, 0.28f * uiScale, rgba(0.761f, 0.776f, 0.812f, 0.85f), 0);
-                drawM3Switch(drawerX + drawerW - padX - swW, y + 10.0f * uiScale, swW, swH, mSettings.batterySaver);
-            });
-
-            // Row 19: Gyroscope Star Pointer Switch
-            renderRow(1116.0f * uiScale, 48.0f * uiScale, [&](float y) {
-                drawText("Gyro Star Pointer Aiming", drawerX + padX, y + 18.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
-                drawText("Tilt phone to steer Star Pointer", drawerX + padX, y + 34.0f * uiScale, 0.28f * uiScale, rgba(0.761f, 0.776f, 0.812f, 0.85f), 0);
-                drawM3Switch(drawerX + drawerW - padX - swW, y + 10.0f * uiScale, swW, swH, mSettings.gyroAiming);
-            });
-
-            // Row 19b: Gyro Invert Axes
-            renderRow(1170.0f * uiScale, 46.0f * uiScale, [&](float y) {
-                float b1X0 = drawerX + padX;
-                float b1X1 = drawerX + padX + contentW * 0.5f - 4.0f * uiScale;
-                float b2X0 = drawerX + padX + contentW * 0.5f + 4.0f * uiScale;
-                float b2X1 = drawerX + drawerW - padX;
-
-                Color c1 = mSettings.gyroInvertX ? rgba(0.043f, 0.341f, 0.816f, 0.95f) : rgba(0.18f, 0.20f, 0.25f, 0.85f);
-                Color c2 = mSettings.gyroInvertY ? rgba(0.043f, 0.341f, 0.816f, 0.95f) : rgba(0.18f, 0.20f, 0.25f, 0.85f);
-                drawRoundRect(b1X0, y + 8.0f * uiScale, b1X1, y + 38.0f * uiScale, 10.0f * uiScale, c1);
-                drawText(mSettings.gyroInvertX ? "Invert X: ON" : "Invert X: OFF", (b1X0 + b1X1) * 0.5f, y + 25.0f * uiScale, 0.32f * uiScale, rgba(1.0f, 1.0f, 1.0f, 1.0f), 1);
-
-                drawRoundRect(b2X0, y + 8.0f * uiScale, b2X1, y + 38.0f * uiScale, 10.0f * uiScale, c2);
-                drawText(mSettings.gyroInvertY ? "Invert Y: ON" : "Invert Y: OFF", (b2X0 + b2X1) * 0.5f, y + 25.0f * uiScale, 0.32f * uiScale, rgba(1.0f, 1.0f, 1.0f, 1.0f), 1);
-            });
-
-            // Row 19c: Relative Pointer Switch (Issue #11)
-            renderRow(1222.0f * uiScale, 48.0f * uiScale, [&](float y) {
-                drawText("Relative Star Pointer (Trackpad)", drawerX + padX, y + 18.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
-                drawText("Drag anywhere to steer pointer without blocking view", drawerX + padX, y + 34.0f * uiScale, 0.28f * uiScale, rgba(0.761f, 0.776f, 0.812f, 0.85f), 0);
-                drawM3Switch(drawerX + drawerW - padX - swW, y + 10.0f * uiScale, swW, swH, mSettings.relativePointer);
-            });
-
-            // Row 19d: Screen Orientation Segmented Button (Issues #18 & #19)
-            renderRow(1276.0f * uiScale, 56.0f * uiScale, [&](float y) {
-                drawText("Screen Orientation", drawerX + padX, y + 14.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
-                const char* orientOpts[3] = {"Auto Sensor", "Landscape", "Reverse"};
-                drawSegmentedGroup(drawerX + padX, y + 22.0f * uiScale, contentW, 34.0f * uiScale, orientOpts, 3, mSettings.screenOrientationChoice);
-            });
-
-            // Row 20: Save Data Backup (Downloads)
-            renderRow(1338.0f * uiScale, 56.0f * uiScale, [&](float y) {
-                drawText("Save Data Backup (Downloads)", drawerX + padX, y + 14.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
-                float btnY = y + 22.0f * uiScale;
-                float b1X0 = drawerX + padX;
-                float b1X1 = drawerX + padX + contentW * 0.5f - 4.0f * uiScale;
-                float b2X0 = drawerX + padX + contentW * 0.5f + 4.0f * uiScale;
-                float b2X1 = drawerX + drawerW - padX;
-                drawRoundRect(b1X0, btnY, b1X1, btnY + 32.0f * uiScale, 12.0f * uiScale, rgba(0.12f, 0.28f, 0.44f, 0.95f));
-                drawText("Export Save", (b1X0 + b1X1) * 0.5f, btnY + 21.0f * uiScale, 0.34f * uiScale, rgba(0.85f, 0.94f, 1.0f, 1.0f), 1);
-                drawRoundRect(b2X0, btnY, b2X1, btnY + 32.0f * uiScale, 12.0f * uiScale, rgba(0.18f, 0.34f, 0.24f, 0.95f));
-                drawText("Import Save", (b2X0 + b2X1) * 0.5f, btnY + 21.0f * uiScale, 0.34f * uiScale, rgba(0.85f, 1.0f, 0.90f, 1.0f), 1);
-            });
-
-            // Row 21: Realtime Hardware & Device Info Card
-            renderRow(1400.0f * uiScale, 64.0f * uiScale, [&](float y) {
-                float cardX0 = drawerX + padX;
-                float cardX1 = drawerX + drawerW - padX;
-                float cardH = 60.0f * uiScale;
-                drawRoundRect(cardX0, y, cardX1, y + cardH, 12.0f * uiScale, rgba(0.10f, 0.12f, 0.16f, 0.90f));
-                drawRoundRect(cardX0 + 1.0f, y + 1.0f, cardX1 - 1.0f, y + cardH - 1.0f, 11.0f * uiScale, rgba(0.20f, 0.25f, 0.34f, 0.50f));
-
-                char gpuLine[128], resLine[128], apiLine[128];
-                snprintf(gpuLine, sizeof(gpuLine), "GPU: %s", mGpuRendererName.empty() ? "OpenGL ES 3.2" : mGpuRendererName.c_str());
-                const char* resStr = (mSettings.renderScale == 0) ? "480p" : (mSettings.renderScale == 1) ? "720p" : (mSettings.renderScale == 2) ? "1080p" : "1440p";
-                snprintf(resLine, sizeof(resLine), "Display: %dx%d (%s Target • Hor+)", (int)w, (int)h, resStr);
-                snprintf(apiLine, sizeof(apiLine), "Active Engine: %s • Native ARM64", (mActiveBackend == 1) ? "Vulkan 1.0" : "OpenGL ES 3.2 (fallback)");
-
-                drawText(gpuLine, cardX0 + 12.0f * uiScale, y + 18.0f * uiScale, 0.28f * uiScale, rgba(0.40f, 0.75f, 1.0f, 0.95f), 0);
-                drawText(resLine, cardX0 + 12.0f * uiScale, y + 34.0f * uiScale, 0.26f * uiScale, rgba(0.80f, 0.84f, 0.90f, 0.85f), 0);
-                drawText(apiLine, cardX0 + 12.0f * uiScale, y + 49.0f * uiScale, 0.24f * uiScale, rgba(0.55f, 0.60f, 0.68f, 0.80f), 0);
-            });
-
-            // Row 22: Return to Setup / Launcher Button
-            renderRow(1472.0f * uiScale, 52.0f * uiScale, [&](float y) {
-                float bX0 = drawerX + padX;
-                float bX1 = drawerX + drawerW - padX;
-                float btnY = y + 4.0f * uiScale;
-                drawRoundRect(bX0, btnY, bX1, btnY + 40.0f * uiScale, 14.0f * uiScale, rgba(0.40f, 0.12f, 0.15f, 0.95f));
-                drawRoundRect(bX0, btnY, bX1, btnY + 40.0f * uiScale, 14.0f * uiScale, rgba(0.90f, 0.25f, 0.30f, 0.60f));
-                drawText("Exit to Setup Launcher", (bX0 + bX1) * 0.5f, btnY + 25.0f * uiScale, 0.38f * uiScale, rgba(1.0f, 0.88f, 0.88f, 1.0f), 1);
-            });
-        }
-        else if (mSettingsTab == 1) {
-            // Mod Manager Tab Content
-            auto renderRow = [&](float relY, float rowH, auto func) {
-                float drawY = contentTop + relY - mDrawerScrollY;
-                if (drawY + rowH >= contentTop - 12.0f && drawY <= contentBottom + 12.0f) {
-                    func(drawY);
+                    drawText(gpuLine, rowX0 + 12.0f * uiScale, drawY + 20.0f * uiScale, 0.28f * uiScale, rgba(0.40f, 0.75f, 1.0f, 0.95f), 0);
+                    drawText(resLine, rowX0 + 12.0f * uiScale, drawY + 37.0f * uiScale, 0.26f * uiScale, rgba(0.80f, 0.84f, 0.90f, 0.85f), 0);
+                    drawText(apiLine, rowX0 + 12.0f * uiScale, drawY + 54.0f * uiScale, 0.24f * uiScale, rgba(0.55f, 0.60f, 0.68f, 0.80f), 0);
                 }
-            };
-
-            // Section 1: NVIDIA SHIELD REMASTER PACK
-            renderRow(4.0f * uiScale, 36.0f * uiScale, [&](float y) {
-                drawText("NVIDIA Shield Remaster Pack", drawerX + padX, y + 16.0f * uiScale, 0.38f * uiScale, rgba(0.38f, 0.78f, 0.98f, 1.0f), 0);
-                drawText("Authentic 1080p AI assets from Shield TV port", drawerX + padX, y + 32.0f * uiScale, 0.27f * uiScale, rgba(0.68f, 0.75f, 0.88f, 0.85f), 0);
-            });
-
-            // Mod 1: NVIDIA Shield HD Textures
-            renderRow(44.0f * uiScale, 50.0f * uiScale, [&](float y) {
-                drawText("Shield HD Textures", drawerX + padX, y + 18.0f * uiScale, 0.39f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
-                drawText("1080p AI Remastered UI, characters & HUD", drawerX + padX, y + 34.0f * uiScale, 0.27f * uiScale, rgba(0.761f, 0.776f, 0.812f, 0.85f), 0);
-                drawM3Switch(drawerX + drawerW - padX - swW, y + 10.0f * uiScale, swW, swH, mSettings.modShieldTextures);
-            });
-
-            // Mod 2: NVIDIA Shield 60FPS Cutscenes
-            renderRow(96.0f * uiScale, 50.0f * uiScale, [&](float y) {
-                drawText("Shield 60FPS Cutscenes", drawerX + padX, y + 18.0f * uiScale, 0.39f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
-                drawText("H.264 MP4 hardware video stream", drawerX + padX, y + 34.0f * uiScale, 0.27f * uiScale, rgba(0.761f, 0.776f, 0.812f, 0.85f), 0);
-                drawM3Switch(drawerX + drawerW - padX - swW, y + 10.0f * uiScale, swW, swH, mSettings.modShieldCutscenes);
-            });
-
-            // Mod 3: Shield Controller Curves
-            renderRow(148.0f * uiScale, 50.0f * uiScale, [&](float y) {
-                drawText("Calibrated Analog Curves", drawerX + padX, y + 18.0f * uiScale, 0.39f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
-                drawText("smg_controller.ini ray surfing & pointer damping", drawerX + padX, y + 34.0f * uiScale, 0.27f * uiScale, rgba(0.761f, 0.776f, 0.812f, 0.85f), 0);
-                drawM3Switch(drawerX + drawerW - padX - swW, y + 10.0f * uiScale, swW, swH, mSettings.modShieldControls);
-            });
-
-            // Mod 4: Classic Gamepad ABXY Prompts
-            renderRow(200.0f * uiScale, 50.0f * uiScale, [&](float y) {
-                drawText("Modern Gamepad ABXY UI", drawerX + padX, y + 18.0f * uiScale, 0.39f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
-                drawText("Replaces Wii Remote icons with Xbox/Shield buttons", drawerX + padX, y + 34.0f * uiScale, 0.27f * uiScale, rgba(0.761f, 0.776f, 0.812f, 0.85f), 0);
-                drawM3Switch(drawerX + drawerW - padX - swW, y + 10.0f * uiScale, swW, swH, mSettings.modClassicGamepadUI);
-            });
-
-            // Section 2: GAMEPLAY & CHEAT MODS
-            renderRow(254.0f * uiScale, 36.0f * uiScale, [&](float y) {
-                drawText("Gameplay & Cheats", drawerX + padX, y + 16.0f * uiScale, 0.38f * uiScale, rgba(0.40f, 0.85f, 0.65f, 1.0f), 0);
-                drawText("Developer sandbox & flight utilities", drawerX + padX, y + 32.0f * uiScale, 0.27f * uiScale, rgba(0.68f, 0.75f, 0.88f, 0.85f), 0);
-            });
-
-            // Mod 5: Fly Mode Switch
-            renderRow(292.0f * uiScale, 50.0f * uiScale, [&](float y) {
-                drawText("Fly Mode", drawerX + padX, y + 18.0f * uiScale, 0.39f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
-                drawText("Hold A to ascend, hold Z to descend", drawerX + padX, y + 34.0f * uiScale, 0.27f * uiScale, rgba(0.761f, 0.776f, 0.812f, 0.85f), 0);
-                drawM3Switch(drawerX + drawerW - padX - swW, y + 10.0f * uiScale, swW, swH, mSettings.modFly);
-            });
-
-            // Mod 6: Cutscene Prevention
-            renderRow(344.0f * uiScale, 50.0f * uiScale, [&](float y) {
-                drawText("Cutscene Prevention", drawerX + padX, y + 18.0f * uiScale, 0.39f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
-                drawText("Instantly skip dialogues & cinematic scenes", drawerX + padX, y + 34.0f * uiScale, 0.27f * uiScale, rgba(0.761f, 0.776f, 0.812f, 0.85f), 0);
-                drawM3Switch(drawerX + drawerW - padX - swW, y + 10.0f * uiScale, swW, swH, mSettings.modSkipCutscenes);
-            });
-
-            // Mod 7: Infinite Health
-            renderRow(396.0f * uiScale, 50.0f * uiScale, [&](float y) {
-                drawText("Infinite Health", drawerX + padX, y + 18.0f * uiScale, 0.39f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
-                drawText("Invincible; escape black holes automatically", drawerX + padX, y + 34.0f * uiScale, 0.27f * uiScale, rgba(0.761f, 0.776f, 0.812f, 0.85f), 0);
-                drawM3Switch(drawerX + drawerW - padX - swW, y + 10.0f * uiScale, swW, swH, mSettings.modInfiniteHealth);
-            });
-
-            // Mod 8: Infinite Lives (99)
-            renderRow(448.0f * uiScale, 50.0f * uiScale, [&](float y) {
-                drawText("Infinite Lives (99)", drawerX + padX, y + 18.0f * uiScale, 0.39f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
-                drawText("Lock Mario's life counter to 99 lives", drawerX + padX, y + 34.0f * uiScale, 0.27f * uiScale, rgba(0.761f, 0.776f, 0.812f, 0.85f), 0);
-                drawM3Switch(drawerX + drawerW - padX - swW, y + 10.0f * uiScale, swW, swH, mSettings.modInfiniteLives);
-            });
-
-            // Mod 9: Infinite Star Bits (999)
-            renderRow(500.0f * uiScale, 50.0f * uiScale, [&](float y) {
-                drawText("Infinite Star Bits (999)", drawerX + padX, y + 18.0f * uiScale, 0.39f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
-                drawText("Max out Star Bits pouch to 999", drawerX + padX, y + 34.0f * uiScale, 0.27f * uiScale, rgba(0.761f, 0.776f, 0.812f, 0.85f), 0);
-                drawM3Switch(drawerX + drawerW - padX - swW, y + 10.0f * uiScale, swW, swH, mSettings.modInfiniteStarBits);
-            });
-
-            // Mod 10: Turbo Game Speed
-            renderRow(552.0f * uiScale, 54.0f * uiScale, [&](float y) {
-                drawText("Turbo Game Speed", drawerX + padX, y + 14.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
-                const char* spdOpts[5] = {"1.0x", "1.5x", "2.0x", "3.0x", "4.0x"};
-                drawSegmentedGroup(drawerX + padX, y + 20.0f * uiScale, contentW, 32.0f * uiScale, spdOpts, 5, mSettings.gameSpeed - 1);
-            });
-
-            // Section 3: EXTERNAL RIIVOLUTION MODS
-            renderRow(610.0f * uiScale, 36.0f * uiScale, [&](float y) {
-                drawText("Riivolution Modding System", drawerX + padX, y + 16.0f * uiScale, 0.38f * uiScale, rgba(0.95f, 0.75f, 0.35f, 1.0f), 0);
-                drawText("Load custom XML mods from /sdcard/GalaxyData/mods", drawerX + padX, y + 32.0f * uiScale, 0.27f * uiScale, rgba(0.68f, 0.75f, 0.88f, 0.85f), 0);
-            });
-
-            // Mod 11: Riivolution Switch
-            renderRow(648.0f * uiScale, 50.0f * uiScale, [&](float y) {
-                drawText("Enable Riivolution Mods", drawerX + padX, y + 18.0f * uiScale, 0.39f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
-                drawText("Patch game files on the fly from SD card", drawerX + padX, y + 34.0f * uiScale, 0.27f * uiScale, rgba(0.761f, 0.776f, 0.812f, 0.85f), 0);
-                drawM3Switch(drawerX + drawerW - padX - swW, y + 10.0f * uiScale, swW, swH, mSettings.modRiivolution);
-            });
-
-            // Mod 12: Scan & Reload Mods Button
-            renderRow(700.0f * uiScale, 48.0f * uiScale, [&](float y) {
-                float bX0 = drawerX + padX;
-                float bX1 = drawerX + drawerW - padX;
-                drawRoundRect(bX0, y + 4.0f * uiScale, bX1, y + 42.0f * uiScale, 14.0f * uiScale, rgba(0.18f, 0.22f, 0.30f, 0.95f));
-                drawRoundRect(bX0, y + 4.0f * uiScale, bX1, y + 42.0f * uiScale, 14.0f * uiScale, rgba(0.35f, 0.50f, 0.75f, 0.65f));
-                drawText("SCAN & RELOAD MOD DIRECTORY", (bX0 + bX1) * 0.5f, y + 26.0f * uiScale, 0.34f * uiScale, rgba(0.85f, 0.92f, 1.0f, 1.0f), 1);
-            });
-        }
-        else {
-            // Save Anywhere Tab Content
-            auto renderRow = [&](float relY, float rowH, auto func) {
-                float drawY = contentTop + relY - mDrawerScrollY;
-                if (drawY + rowH >= contentTop - 12.0f && drawY <= contentBottom + 12.0f) {
-                    func(drawY);
+                else if (r.action == ACT_STORAGE_INFO_CARD) {
+                    drawText("NAND SAVE SYSTEM & STORAGE", rowX0 + 12.0f * uiScale, drawY + 20.0f * uiScale, 0.31f * uiScale, rgba(1.0f, 0.78f, 0.25f, 0.95f), 0);
+                    drawText("Directory: /sdcard/GalaxyData/saves", rowX0 + 12.0f * uiScale, drawY + 38.0f * uiScale, 0.26f * uiScale, rgba(0.85f, 0.88f, 0.94f, 0.90f), 0);
+                    drawText("Dual persistent snapshot system with CRC32 integrity.", rowX0 + 12.0f * uiScale, drawY + 56.0f * uiScale, 0.25f * uiScale, rgba(0.78f, 0.82f, 0.88f, 0.85f), 0);
+                    drawText("Reloading a slot instantly respawns in active galaxy.", rowX0 + 12.0f * uiScale, drawY + 74.0f * uiScale, 0.25f * uiScale, rgba(0.78f, 0.82f, 0.88f, 0.85f), 0);
+                    drawText("100% interoperable with Dolphin Wii saves.", rowX0 + 12.0f * uiScale, drawY + 92.0f * uiScale, 0.24f * uiScale, rgba(0.55f, 0.65f, 0.80f, 0.75f), 0);
                 }
-            };
-
-            // Section Header
-            renderRow(4.0f * uiScale, 36.0f * uiScale, [&](float y) {
-                drawText("Save & Load Anywhere", drawerX + padX, y + 16.0f * uiScale, 0.38f * uiScale, rgba(0.35f, 0.88f, 0.65f, 1.0f), 0);
-                drawText("Instant state snapshot & NAND save sync", drawerX + padX, y + 32.0f * uiScale, 0.27f * uiScale, rgba(0.68f, 0.75f, 0.88f, 0.85f), 0);
-            });
-
-            // Row 0: Dual Instant Quick Cards (Save Now / Load Now)
-            renderRow(44.0f * uiScale, 56.0f * uiScale, [&](float y) {
-                float bW = (contentW - 12.0f * uiScale) * 0.5f;
-                float btnY = y + 4.0f * uiScale;
-
-                // Quick Save Card (Emerald green)
-                float sX0 = drawerX + padX;
-                float sX1 = sX0 + bW;
-                drawRoundRect(sX0, btnY, sX1, btnY + 48.0f * uiScale, 14.0f * uiScale, rgba(0.05f, 0.40f, 0.30f, 0.95f));
-                drawRoundRect(sX0, btnY, sX1, btnY + 48.0f * uiScale, 14.0f * uiScale, rgba(0.25f, 0.85f, 0.65f, 0.70f));
-                drawCircle(sX0 + 20.0f * uiScale, btnY + 24.0f * uiScale, 6.0f * uiScale, rgba(0.35f, 0.98f, 0.75f, 1.0f));
-                drawText("QUICK SAVE NOW", (sX0 + sX1) * 0.5f + 8.0f * uiScale, btnY + 29.0f * uiScale, 0.34f * uiScale, rgba(1.0f, 1.0f, 1.0f, 1.0f), 1);
-
-                // Quick Load Card (Cyan blue)
-                float lX0 = sX1 + 12.0f * uiScale;
-                float lX1 = lX0 + bW;
-                drawRoundRect(lX0, btnY, lX1, btnY + 48.0f * uiScale, 14.0f * uiScale, rgba(0.10f, 0.28f, 0.55f, 0.95f));
-                drawRoundRect(lX0, btnY, lX1, btnY + 48.0f * uiScale, 14.0f * uiScale, rgba(0.35f, 0.68f, 0.98f, 0.70f));
-                drawCircle(lX0 + 20.0f * uiScale, btnY + 24.0f * uiScale, 6.0f * uiScale, rgba(0.45f, 0.82f, 1.0f, 1.0f));
-                drawText("QUICK LOAD NOW", (lX0 + lX1) * 0.5f + 8.0f * uiScale, btnY + 29.0f * uiScale, 0.34f * uiScale, rgba(1.0f, 1.0f, 1.0f, 1.0f), 1);
-            });
-
-            // Row 1: Save Slot Selector
-            renderRow(112.0f * uiScale, 54.0f * uiScale, [&](float y) {
-                drawText("Selected Slot", drawerX + padX, y + 14.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
-                const char* slotOpts[4] = {"Slot 1", "Slot 2", "Slot 3", "Quick"};
-                drawSegmentedGroup(drawerX + padX, y + 20.0f * uiScale, contentW, 34.0f * uiScale, slotOpts, 4, mCurrentSlot - 1);
-            });
-
-            // Row 2: Slot Save / Reload Action Buttons
-            renderRow(176.0f * uiScale, 52.0f * uiScale, [&](float y) {
-                float bW = (contentW - 12.0f * uiScale) * 0.5f;
-                float btnY = y + 4.0f * uiScale;
-                // Save Button (Green)
-                float sX0 = drawerX + padX;
-                float sX1 = sX0 + bW;
-                drawRoundRect(sX0, btnY, sX1, btnY + 40.0f * uiScale, 12.0f * uiScale, rgba(0.06f, 0.38f, 0.28f, 0.95f));
-                drawRoundRect(sX0, btnY, sX1, btnY + 40.0f * uiScale, 12.0f * uiScale, rgba(0.25f, 0.85f, 0.65f, 0.60f));
-                char sTxt[32];
-                if (mCurrentSlot == 4) snprintf(sTxt, sizeof(sTxt), "Save Quick Slot");
-                else snprintf(sTxt, sizeof(sTxt), "Save to Slot %d", mCurrentSlot);
-                drawText(sTxt, (sX0 + sX1) * 0.5f, btnY + 25.0f * uiScale, 0.34f * uiScale, rgba(1.0f, 1.0f, 1.0f, 1.0f), 1);
-
-                // Reload Button (Blue)
-                float rX0 = sX1 + 12.0f * uiScale;
-                float rX1 = rX0 + bW;
-                drawRoundRect(rX0, btnY, rX1, btnY + 40.0f * uiScale, 12.0f * uiScale, rgba(0.12f, 0.28f, 0.55f, 0.95f));
-                drawRoundRect(rX0, btnY, rX1, btnY + 40.0f * uiScale, 12.0f * uiScale, rgba(0.35f, 0.65f, 0.98f, 0.60f));
-                char rTxt[32];
-                if (mCurrentSlot == 4) snprintf(rTxt, sizeof(rTxt), "Reload Quick Slot");
-                else snprintf(rTxt, sizeof(rTxt), "Reload Slot %d", mCurrentSlot);
-                drawText(rTxt, (rX0 + rX1) * 0.5f, btnY + 25.0f * uiScale, 0.34f * uiScale, rgba(1.0f, 1.0f, 1.0f, 1.0f), 1);
-            });
-
-            // Row 3: SD Card Save Backup / Restore
-            renderRow(238.0f * uiScale, 52.0f * uiScale, [&](float y) {
-                float bW = (contentW - 12.0f * uiScale) * 0.5f;
-                float btnY = y + 4.0f * uiScale;
-
-                float eX0 = drawerX + padX;
-                float eX1 = eX0 + bW;
-                drawRoundRect(eX0, btnY, eX1, btnY + 40.0f * uiScale, 12.0f * uiScale, rgba(0.20f, 0.22f, 0.28f, 0.95f));
-                drawRoundRect(eX0, btnY, eX1, btnY + 40.0f * uiScale, 12.0f * uiScale, rgba(0.40f, 0.50f, 0.70f, 0.60f));
-                drawText("Export to SD", (eX0 + eX1) * 0.5f, btnY + 25.0f * uiScale, 0.33f * uiScale, rgba(0.92f, 0.95f, 1.0f, 1.0f), 1);
-
-                float iX0 = eX1 + 12.0f * uiScale;
-                float iX1 = iX0 + bW;
-                drawRoundRect(iX0, btnY, iX1, btnY + 40.0f * uiScale, 12.0f * uiScale, rgba(0.20f, 0.22f, 0.28f, 0.95f));
-                drawRoundRect(iX0, btnY, iX1, btnY + 40.0f * uiScale, 12.0f * uiScale, rgba(0.40f, 0.50f, 0.70f, 0.60f));
-                drawText("Import from SD", (iX0 + iX1) * 0.5f, btnY + 25.0f * uiScale, 0.33f * uiScale, rgba(0.92f, 0.95f, 1.0f, 1.0f), 1);
-            });
-
-            // Storage Details Card
-            renderRow(300.0f * uiScale, 120.0f * uiScale, [&](float y) {
-                drawRoundRect(drawerX + padX, y + 6.0f * uiScale, drawerX + drawerW - padX, y + 114.0f * uiScale, 14.0f * uiScale, rgba(0.12f, 0.15f, 0.20f, 0.95f));
-                drawRoundRect(drawerX + padX, y + 6.0f * uiScale, drawerX + drawerW - padX, y + 114.0f * uiScale, 14.0f * uiScale, rgba(0.24f, 0.32f, 0.45f, 0.60f));
-                drawText("NAND SAVE SYSTEM & STORAGE", drawerX + padX + 16.0f * uiScale, y + 26.0f * uiScale, 0.32f * uiScale, rgba(0.38f, 0.74f, 0.98f, 0.95f), 0);
-                drawText("Location: /sdcard/GalaxyData/saves", drawerX + padX + 16.0f * uiScale, y + 46.0f * uiScale, 0.27f * uiScale, rgba(0.85f, 0.88f, 0.94f, 0.90f), 0);
-                drawText("Save Anywhere writes star progress and stage state.", drawerX + padX + 16.0f * uiScale, y + 66.0f * uiScale, 0.27f * uiScale, rgba(0.78f, 0.82f, 0.88f, 0.85f), 0);
-                drawText("Reloading a slot respawns Mario directly in the stage.", drawerX + padX + 16.0f * uiScale, y + 86.0f * uiScale, 0.27f * uiScale, rgba(0.78f, 0.82f, 0.88f, 0.85f), 0);
-                drawText("Compatible with Dolphin Wii emulator save files.", drawerX + padX + 16.0f * uiScale, y + 104.0f * uiScale, 0.26f * uiScale, rgba(0.60f, 0.70f, 0.85f, 0.75f), 0);
-            });
+            }
         }
 
         // Scrollbar Thumb (rendered inside content area)
@@ -2916,66 +2876,67 @@ void UIOverlay::generateVertices(int screenW, int screenH, std::vector<UIVertex>
         }
 
         // ---------------------------------------------------------
-        // B. Fixed Top Header & Tab Bar Mask Overlay
+        // B. Fixed Top Header & 4-Tab Dock Overlay
         // ---------------------------------------------------------
-        drawRoundRect(drawerX - 60.0f, 0.0f, drawerX + drawerW, contentTop, 0.0f, rgba(0.106f, 0.114f, 0.137f, 1.0f));
+        drawRoundRect(drawerX - 60.0f, 0.0f, drawerX + drawerW, contentTop, 0.0f, rgba(0.07f, 0.08f, 0.11f, 1.0f));
 
-        // Header Title & Cogwheel
-        drawCogwheel(drawerX + padX + 16.0f * uiScale, 36.0f * uiScale, 15.0f * uiScale, rgba(0.659f, 0.780f, 0.980f, 1.0f), cogRot);
-        drawText(mPlusEdition ? "GalaxyMobile+" : "Settings", drawerX + padX + 40.0f * uiScale, 44.0f * uiScale, 0.54f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
+        // Header Title & Rotating Mario Star / Cogwheel
+        drawCogwheel(drawerX + padX + 14.0f * uiScale, 28.0f * uiScale, 14.0f * uiScale, rgba(0.20f, 0.85f, 1.0f, 1.0f), cogRot);
+        drawText("SUPER MARIO GALAXY", drawerX + padX + 36.0f * uiScale, 26.0f * uiScale, 0.40f * uiScale, rgba(0.95f, 0.96f, 0.98f, 1.0f), 0);
+        drawText("NATIVE ANDROID EDITION • PLUS", drawerX + padX + 36.0f * uiScale, 38.0f * uiScale, 0.23f * uiScale, rgba(0.20f, 0.85f, 1.0f, 0.90f), 0);
 
-        // Close [X] circular tonal button
-        float closeBtnX = drawerX + drawerW - 36.0f * uiScale;
-        float closeBtnY = 36.0f * uiScale;
-        drawCircle(closeBtnX, closeBtnY, 17.0f * uiScale, rgba(0.188f, 0.196f, 0.224f, 0.95f));
-        drawCloseIcon(closeBtnX, closeBtnY, 9.0f * uiScale, rgba(0.761f, 0.776f, 0.812f, 0.95f));
+        // Active Backend Pill Tag
+        const char* backendTag = (mActiveBackend == 1) ? "VULKAN 1.0" : "GLES 3.2";
+        float tagW = 68.0f * uiScale;
+        float tagX = drawerX + drawerW - 60.0f * uiScale - tagW;
+        drawRoundRect(tagX, 18.0f * uiScale, tagX + tagW, 36.0f * uiScale, 9.0f * uiScale, rgba(0.12f, 0.16f, 0.22f, 0.90f));
+        drawRoundRect(tagX, 18.0f * uiScale, tagX + tagW, 36.0f * uiScale, 9.0f * uiScale, rgba(0.30f, 0.45f, 0.65f, 0.50f));
+        drawText(backendTag, tagX + tagW * 0.5f, 29.0f * uiScale, 0.24f * uiScale, rgba(0.70f, 0.85f, 1.0f, 0.95f), 1);
 
-        if (mPlusEdition) {
-            // Material 3 Tab Dock ([ General ]  [ Mod Manager ]  [ Save Anywhere ])
-            float tabBoxY0 = 62.0f * uiScale;
-            float tabBoxY1 = 98.0f * uiScale;
-            drawRoundRect(drawerX + padX, tabBoxY0, drawerX + drawerW - padX, tabBoxY1, 18.0f * uiScale, rgba(0.149f, 0.160f, 0.190f, 0.95f));
-            drawRoundRect(drawerX + padX, tabBoxY0, drawerX + drawerW - padX, tabBoxY1, 18.0f * uiScale, rgba(0.24f, 0.26f, 0.30f, 0.50f));
+        // Close [X] circular button
+        float closeBtnX = drawerX + drawerW - 32.0f * uiScale;
+        float closeBtnY = 27.0f * uiScale;
+        drawCircle(closeBtnX, closeBtnY, 15.0f * uiScale, rgba(0.16f, 0.18f, 0.22f, 0.95f));
+        drawCloseIcon(closeBtnX, closeBtnY, 8.0f * uiScale, rgba(0.76f, 0.80f, 0.88f, 0.95f));
 
-            float tabSegW = contentW / 3.0f;
-            float t0_x0 = drawerX + padX;
-            float t0_x1 = t0_x0 + tabSegW;
-            float t1_x0 = t0_x1;
-            float t1_x1 = t1_x0 + tabSegW;
-            float t2_x0 = t1_x1;
-            float t2_x1 = drawerX + drawerW - padX;
+        // 4 Modern Tab Pills ([ Controls ]  [ Graphics ]  [ Mods ]  [ Save/Sys ])
+        float tabBoxY0 = 54.0f * uiScale;
+        float tabBoxY1 = 92.0f * uiScale;
+        drawRoundRect(drawerX + padX, tabBoxY0, drawerX + drawerW - padX, tabBoxY1, 14.0f * uiScale, rgba(0.12f, 0.14f, 0.18f, 0.95f));
+        drawRoundRect(drawerX + padX, tabBoxY0, drawerX + drawerW - padX, tabBoxY1, 14.0f * uiScale, rgba(0.24f, 0.28f, 0.36f, 0.50f));
 
-            // Highlight Pill
-            float hX0 = (mSettingsTab == 0) ? t0_x0 : (mSettingsTab == 1 ? t1_x0 : t2_x0);
-            float hX1 = (mSettingsTab == 0) ? t0_x1 : (mSettingsTab == 1 ? t1_x1 : t2_x1);
-            drawRoundRect(hX0 + 2.0f * uiScale, tabBoxY0 + 2.0f * uiScale, hX1 - 2.0f * uiScale, tabBoxY1 - 2.0f * uiScale, 16.0f * uiScale, rgba(0.14f, 0.28f, 0.48f, 0.95f));
+        float tabSegW = contentW / 4.0f;
+        const char* tabNames[4] = {"Controls", "Graphics", "Mods", "Save/Sys"};
 
-            // Tab Titles
-            Color col0 = (mSettingsTab == 0) ? rgba(1.0f, 1.0f, 1.0f, 1.0f) : rgba(0.68f, 0.71f, 0.77f, 0.75f);
-            Color col1 = (mSettingsTab == 1) ? rgba(1.0f, 1.0f, 1.0f, 1.0f) : rgba(0.68f, 0.71f, 0.77f, 0.75f);
-            Color col2 = (mSettingsTab == 2) ? rgba(1.0f, 1.0f, 1.0f, 1.0f) : rgba(0.68f, 0.71f, 0.77f, 0.75f);
+        // Highlight Pill for Active Tab
+        float hX0 = drawerX + padX + mSettingsTab * tabSegW;
+        float hX1 = hX0 + tabSegW;
+        drawRoundRect(hX0 + 2.0f * uiScale, tabBoxY0 + 2.0f * uiScale, hX1 - 2.0f * uiScale, tabBoxY1 - 2.0f * uiScale, 12.0f * uiScale, rgba(0.18f, 0.26f, 0.42f, 0.95f));
+        drawRoundRect(hX0 + 2.0f * uiScale, tabBoxY0 + 2.0f * uiScale, hX1 - 2.0f * uiScale, tabBoxY1 - 2.0f * uiScale, 12.0f * uiScale, themeColor);
 
-            drawText("General", (t0_x0 + t0_x1) * 0.5f, tabBoxY0 + 23.0f * uiScale, 0.32f * uiScale, col0, 1);
-            drawText("Mod Manager", (t1_x0 + t1_x1) * 0.5f, tabBoxY0 + 23.0f * uiScale, 0.30f * uiScale, col1, 1);
-            drawText("Save Anywhere", (t2_x0 + t2_x1) * 0.5f, tabBoxY0 + 23.0f * uiScale, 0.28f * uiScale, col2, 1);
-
-            // Divider below tab bar
-            drawRoundRect(drawerX + padX, contentTop - 1.0f, drawerX + drawerW - padX, contentTop, 0.5f, rgba(0.267f, 0.278f, 0.310f, 0.45f));
-        } else {
-            // Divider below header in standard edition
-            drawRoundRect(drawerX + padX, contentTop - 1.0f, drawerX + drawerW - padX, contentTop, 0.5f, rgba(0.267f, 0.278f, 0.310f, 0.45f));
+        for (int t = 0; t < 4; t++) {
+            float tx0 = drawerX + padX + t * tabSegW;
+            float tx1 = tx0 + tabSegW;
+            bool active = (t == mSettingsTab);
+            Color tCol = active ? rgba(1.0f, 1.0f, 1.0f, 1.0f) : rgba(0.65f, 0.70f, 0.78f, 0.75f);
+            drawText(tabNames[t], (tx0 + tx1) * 0.5f, tabBoxY0 + 23.0f * uiScale, 0.30f * uiScale, tCol, 1);
         }
 
+        // Divider below tab bar
+        drawRoundRect(drawerX + padX, contentTop - 1.0f, drawerX + drawerW - padX, contentTop, 0.5f, rgba(0.267f, 0.278f, 0.310f, 0.45f));
+
         // ---------------------------------------------------------
-        // C. Fixed Bottom Bar Mask Overlay & [ Done ] Button
+        // C. Fixed Bottom Bar Mask Overlay & [ Close Menu ] Button
         // ---------------------------------------------------------
-        drawRoundRect(drawerX - 60.0f, contentBottom, drawerX + drawerW, h, 0.0f, rgba(0.106f, 0.114f, 0.137f, 1.0f));
+        drawRoundRect(drawerX - 60.0f, contentBottom, drawerX + drawerW, h, 0.0f, rgba(0.07f, 0.08f, 0.11f, 1.0f));
         drawRoundRect(drawerX + padX, contentBottom, drawerX + drawerW - padX, contentBottom + 1.0f, 0.5f, rgba(0.267f, 0.278f, 0.310f, 0.45f));
 
-        float doneY = h - 48.0f * uiScale;
+        float doneY = h - 46.0f * uiScale;
         float doneX0 = drawerX + padX;
         float doneX1 = drawerX + drawerW - padX;
-        drawRoundRect(doneX0, doneY, doneX1, doneY + 38.0f * uiScale, 19.0f * uiScale, rgba(0.043f, 0.341f, 0.816f, 1.0f));
+        drawRoundRect(doneX0, doneY, doneX1, doneY + 36.0f * uiScale, 18.0f * uiScale, rgba(0.043f, 0.341f, 0.816f, 0.95f));
+        drawRoundRect(doneX0, doneY, doneX1, doneY + 36.0f * uiScale, 18.0f * uiScale, rgba(0.35f, 0.70f, 1.0f, 0.60f));
+        drawText("CLOSE MENU", (doneX0 + doneX1) * 0.5f, doneY + 23.0f * uiScale, 0.36f * uiScale, rgba(1.0f, 1.0f, 1.0f, 1.0f), 1);
     }
 
     // -------------------------------------------------------------

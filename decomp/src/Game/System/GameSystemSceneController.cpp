@@ -106,6 +106,8 @@ void GameSystemSceneController::checkRequestAndChangeScene() {
     mSpine->update();
 }
 
+extern "C" void port_log(const char* fmt, ...);
+
 void GameSystemSceneController::initializeScene() {
     mSceneInitializeState = SceneInitializeState_Init;
 
@@ -118,6 +120,11 @@ void GameSystemSceneController::initializeScene() {
     updateSceneControlInfo();
     MR::setRandomSeedFromStageName();
 
+    port_log("[SCENE] Initializing: scene=%s stage=%s scenario=%d",
+             mCurrSceneControlInfo.mScene ? mCurrSceneControlInfo.mScene : "(null)",
+             mCurrSceneControlInfo.mStage ? mCurrSceneControlInfo.mStage : "(none)",
+             mCurrSceneControlInfo.mScenarioNo);
+
     if (mScenarioSelectScene->isActive()) {
         mScenarioSelectScene->validateScenarioSelect();
     }
@@ -125,9 +132,17 @@ void GameSystemSceneController::initializeScene() {
     MR::resetWPad();
 
     mScene = MR::createScene(mCurrSceneControlInfo.mScene);
-    mScene->initNameObjListExecutor();
-    mScene->initSceneObjHolder();
-    mScene->init();
+    if (!mScene) {
+        port_log("[SCENE] Warning: createScene failed for '%s', falling back to Game", mCurrSceneControlInfo.mScene ? mCurrSceneControlInfo.mScene : "(null)");
+        mScene = MR::createScene("Game");
+    }
+    if (mScene) {
+        mScene->initNameObjListExecutor();
+        mScene->initSceneObjHolder();
+        mScene->init();
+    }
+
+    port_log("[SCENE] Successfully completed initialization for %s", mCurrSceneControlInfo.mScene);
 
     SceneFunction::allocateDrawBufferActorList();
     MR::clearFileLoaderRequestFileInfo(mIsResetProcessing);

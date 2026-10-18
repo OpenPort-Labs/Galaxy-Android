@@ -176,6 +176,9 @@ u32 THPSimplePlayerWrapper::calcNeedMemory() {
 }
 
 bool THPSimplePlayerWrapper::setBuffer(u8* pBuffer) {
+    if (!pBuffer) {
+        return false;
+    }
     if (mOpen && !mPreFetchState) {
         if (mAudioState == 1) {
             return false;

@@ -12,7 +12,9 @@ CameraTargetHolder::CameraTargetHolder() {
 }
 
 void CameraTargetHolder::movement() {
-    mTarget->movement();
+    if (mTarget) {
+        mTarget->movement();
+    }
 }
 
 CameraTargetObj* CameraTargetHolder::get() {
@@ -34,9 +36,11 @@ void CameraTargetHolder::set(const MarioActor* pActor) {
 }
 
 bool CameraTargetHolder::isOnGround() const {
+    if (!mTarget) return true;
     return !mTarget->isJumping() || mTarget->isWaterMode() || mTarget->isOnWaterSurface();
 }
 
 bool CameraTargetHolder::isMoving() const {
+    if (!mTarget) return false;
     return mTarget->getLastMove().length() > ::sMovingThreshold;
 }

@@ -1392,7 +1392,7 @@ layout(location = 0) in vec2 v_uv;
 layout(location = 0) out vec4 outColor;
 layout(set = 0, binding = 0) uniform sampler2D s_target;
 void main() {
-    outColor = texture(s_target, v_uv);
+    outColor = vec4(texture(s_target, v_uv).rgb, 1.0);
 }
 )";
 
@@ -2478,15 +2478,16 @@ VkSampler VkRenderer::getSampler(uint32_t mode0, uint32_t mode1, uint32_t levels
 }
 
 void VkRenderer::uploadTextures(const std::vector<std::shared_ptr<TexImage>>& textures) {
+    struct UploadItem {
+        std::shared_ptr<TexImage> img;
+        VkTexture vt;
+        VkBuffer stagingBuf;
+        VkDeviceMemory stagingMem;
+    };
+    std::vector<UploadItem> pending;
+
     for (const auto& img : textures) {
         if (!img || img->rgba.empty() || img->width == 0 || img->height == 0) continue;
-        // The images live on the TexImage itself, so they are released on the
-        // thread that drops the texture (see queueVkTextureDelete) instead of
-        // piling up in a cache keyed by a pointer that will be reused.
-        //
-        // A texture is only up to date when its handles were made on the device
-        // in use now: after a device loss the old handles are dangling, and
-        // reusing them is what kept killing the replacement device.
         bool sameDevice = (img->vkGeneration == sVkDeviceGeneration);
         if (img->vkImage != 0 && img->vkVersion == img->version && sameDevice) {
             continue;
@@ -2498,7 +2499,6 @@ void VkRenderer::uploadTextures(const std::vector<std::shared_ptr<TexImage>>& te
                 if (img->vkImage) vkDestroyImage(mDevice, (VkImage)img->vkImage, nullptr);
                 if (img->vkMemory) vkFreeMemory(mDevice, (VkDeviceMemory)img->vkMemory, nullptr);
             }
-            // Otherwise the owning device is gone: the handles are just forgotten.
             img->vkView = img->vkImage = img->vkMemory = 0;
         }
 
@@ -2554,7 +2554,6 @@ void VkRenderer::uploadTextures(const std::vector<std::shared_ptr<TexImage>>& te
             continue;
         }
 
-        // Upload texture pixels via host-visible staging buffer
         size_t totalBytes = img->rgba.size() * sizeof(uint32_t);
         VkBuffer stagingBuf = VK_NULL_HANDLE;
         VkDeviceMemory stagingMem = VK_NULL_HANDLE;
@@ -2566,73 +2565,83 @@ void VkRenderer::uploadTextures(const std::vector<std::shared_ptr<TexImage>>& te
                 memcpy(mapped, img->rgba.data(), totalBytes);
                 vkUnmapMemory(mDevice, stagingMem);
             }
+            pending.push_back({img, vt, stagingBuf, stagingMem});
+        } else {
+            vkDestroyImageView(mDevice, vt.view, nullptr);
+            vkFreeMemory(mDevice, vt.memory, nullptr);
+            vkDestroyImage(mDevice, vt.image, nullptr);
+        }
+    }
 
-            vkResetCommandBuffer(mCommandBuffer, 0);
-            VkCommandBufferBeginInfo bi{};
-            bi.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-            bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-            if (vkBeginCommandBuffer(mCommandBuffer, &bi) == VK_SUCCESS) {
-                VkImageMemoryBarrier barrierToDst{};
-                barrierToDst.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-                barrierToDst.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-                barrierToDst.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-                barrierToDst.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-                barrierToDst.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-                barrierToDst.image = vt.image;
-                barrierToDst.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-                barrierToDst.subresourceRange.levelCount = vt.levels;
-                barrierToDst.subresourceRange.layerCount = 1;
-                barrierToDst.srcAccessMask = 0;
-                barrierToDst.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    if (pending.empty()) return;
 
-                vkCmdPipelineBarrier(mCommandBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-                                     VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrierToDst);
+    vkResetCommandBuffer(mCommandBuffer, 0);
+    VkCommandBufferBeginInfo bi{};
+    bi.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    if (vkBeginCommandBuffer(mCommandBuffer, &bi) == VK_SUCCESS) {
+        for (const auto& item : pending) {
+            VkImageMemoryBarrier barrierToDst{};
+            barrierToDst.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+            barrierToDst.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+            barrierToDst.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+            barrierToDst.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            barrierToDst.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            barrierToDst.image = item.vt.image;
+            barrierToDst.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            barrierToDst.subresourceRange.levelCount = item.vt.levels;
+            barrierToDst.subresourceRange.layerCount = 1;
+            barrierToDst.srcAccessMask = 0;
+            barrierToDst.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
 
-                std::vector<VkBufferImageCopy> regions(vt.levels);
-                VkDeviceSize offset = 0;
-                uint32_t w = vt.width, h = vt.height;
-                for (uint32_t l = 0; l < vt.levels; l++) {
-                    regions[l].bufferOffset = offset;
-                    regions[l].imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-                    regions[l].imageSubresource.mipLevel = l;
-                    regions[l].imageSubresource.layerCount = 1;
-                    regions[l].imageExtent = {w, h, 1};
-                    offset += (VkDeviceSize)w * h * 4;
-                    w = w > 1 ? w / 2 : 1;
-                    h = h > 1 ? h / 2 : 1;
-                }
+            vkCmdPipelineBarrier(mCommandBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                                 VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrierToDst);
 
-                vkCmdCopyBufferToImage(mCommandBuffer, stagingBuf, vt.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                                       (uint32_t)regions.size(), regions.data());
-
-                VkImageMemoryBarrier barrierToShader = barrierToDst;
-                barrierToShader.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-                barrierToShader.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-                barrierToShader.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-                barrierToShader.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-
-                vkCmdPipelineBarrier(mCommandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT,
-                                     VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrierToShader);
-
-                if (vkEndCommandBuffer(mCommandBuffer) == VK_SUCCESS) {
-                    VkSubmitInfo si{};
-                    si.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-                    si.commandBufferCount = 1;
-                    si.pCommandBuffers = &mCommandBuffer;
-                    vkQueueSubmit(mQueue, 1, &si, VK_NULL_HANDLE);
-                    vkQueueWaitIdle(mQueue);
-                }
+            std::vector<VkBufferImageCopy> regions(item.vt.levels);
+            VkDeviceSize offset = 0;
+            uint32_t w = item.vt.width, h = item.vt.height;
+            for (uint32_t l = 0; l < item.vt.levels; l++) {
+                regions[l].bufferOffset = offset;
+                regions[l].imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+                regions[l].imageSubresource.mipLevel = l;
+                regions[l].imageSubresource.layerCount = 1;
+                regions[l].imageExtent = {w, h, 1};
+                offset += (VkDeviceSize)w * h * 4;
+                w = w > 1 ? w / 2 : 1;
+                h = h > 1 ? h / 2 : 1;
             }
 
-            vkDestroyBuffer(mDevice, stagingBuf, nullptr);
-            vkFreeMemory(mDevice, stagingMem, nullptr);
+            vkCmdCopyBufferToImage(mCommandBuffer, item.stagingBuf, item.vt.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                                   (uint32_t)regions.size(), regions.data());
+
+            VkImageMemoryBarrier barrierToShader = barrierToDst;
+            barrierToShader.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+            barrierToShader.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            barrierToShader.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            barrierToShader.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+            vkCmdPipelineBarrier(mCommandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                                 VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrierToShader);
         }
 
-        img->vkImage = (uint64_t)vt.image;
-        img->vkMemory = (uint64_t)vt.memory;
-        img->vkView = (uint64_t)vt.view;
-        img->vkVersion = vt.version;
-        img->vkGeneration = sVkDeviceGeneration;
+        if (vkEndCommandBuffer(mCommandBuffer) == VK_SUCCESS) {
+            VkSubmitInfo si{};
+            si.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+            si.commandBufferCount = 1;
+            si.pCommandBuffers = &mCommandBuffer;
+            vkQueueSubmit(mQueue, 1, &si, VK_NULL_HANDLE);
+            vkQueueWaitIdle(mQueue);
+        }
+    }
+
+    for (const auto& item : pending) {
+        vkDestroyBuffer(mDevice, item.stagingBuf, nullptr);
+        vkFreeMemory(mDevice, item.stagingMem, nullptr);
+        item.img->vkImage = (uint64_t)item.vt.image;
+        item.img->vkMemory = (uint64_t)item.vt.memory;
+        item.img->vkView = (uint64_t)item.vt.view;
+        item.img->vkVersion = item.vt.version;
+        item.img->vkGeneration = sVkDeviceGeneration;
     }
 }
 
@@ -2720,7 +2729,9 @@ VkPipeline VkRenderer::getPipeline(const Item& it, const ShaderUid& uid) {
     // a level that introduces thirty programs used to freeze for seconds.
     std::vector<uint32_t> vsSpirv, fsSpirv;
     if (!lookupVulkanShader(uid, vsSpirv, fsSpirv)) {
-        if (mShaderFailed.count(uid)) return VK_NULL_HANDLE;
+        if (mShaderFailed.count(uid)) {
+            return placeholderPipeline(it);
+        }
         requestShader(uid, it);
         return placeholderPipeline(it);
     }

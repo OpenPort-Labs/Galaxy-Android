@@ -32,6 +32,8 @@ import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
@@ -79,12 +81,8 @@ public class MainActivity extends Activity {
     private boolean mIsCooking = false;
     private SharedPreferences mPrefs;
 
-    public static boolean isGameDataReady() {
-        File dataDir = new File("/sdcard/GalaxyData");
-        if (!dataDir.exists()) {
-            dataDir = new File(Environment.getExternalStorageDirectory(), "GalaxyData");
-            if (!dataDir.exists()) return false;
-        }
+    public static boolean checkDataDir(File dataDir) {
+        if (dataDir == null || !dataDir.exists()) return false;
         File sentinel = new File(dataDir, ".installed_ok");
         File fst = new File(dataDir, "sys/fst.bin");
         File files = new File(dataDir, "files");
@@ -92,7 +90,6 @@ public class MainActivity extends Activity {
         if (!fst.exists() || !fst.isFile() || !files.exists() || !files.isDirectory() || !coin.exists()) {
             return false;
         }
-        // Verify Coin.arc is converted to little-endian ARM64 ("CRAR")
         try (java.io.FileInputStream fis = new java.io.FileInputStream(coin)) {
             byte[] header = new byte[4];
             if (fis.read(header) == 4 && header[0] == 'C' && header[1] == 'R' && header[2] == 'A' && header[3] == 'R') {
@@ -103,6 +100,36 @@ public class MainActivity extends Activity {
             }
         } catch (Exception ignored) {}
         return false;
+    }
+
+    public static File findGameDataFolder(android.content.Context context) {
+        List<File> candidates = new ArrayList<>();
+        candidates.add(new File("/sdcard/GalaxyData"));
+        candidates.add(new File(Environment.getExternalStorageDirectory(), "GalaxyData"));
+        if (context != null) {
+            candidates.add(new File(context.getExternalFilesDir(null), "GalaxyData"));
+            candidates.add(new File(context.getFilesDir(), "GalaxyData"));
+        }
+        File storageDir = new File("/storage");
+        if (storageDir.exists() && storageDir.isDirectory()) {
+            File[] mounts = storageDir.listFiles();
+            if (mounts != null) {
+                for (File m : mounts) {
+                    if (m.isDirectory() && !m.getName().equals("emulated") && !m.getName().equals("self")) {
+                        candidates.add(new File(m, "GalaxyData"));
+                        candidates.add(new File(m, "Android/data/com.openport.galaxyandroid/files/GalaxyData"));
+                    }
+                }
+            }
+        }
+        for (File dir : candidates) {
+            if (checkDataDir(dir)) return dir;
+        }
+        return null;
+    }
+
+    public static boolean isGameDataReady() {
+        return findGameDataFolder(null) != null;
     }
 
     @Override
@@ -205,20 +232,20 @@ public class MainActivity extends Activity {
     }
 
     private void refreshGameStatus() {
-        boolean ready = isGameDataReady();
-        if (ready) {
+        File foundDir = findGameDataFolder(this);
+        if (foundDir != null) {
             btnLaunchGame.setVisibility(View.VISIBLE);
             txtGameStatusBadge.setText("READY TO PLAY");
             txtGameStatusBadge.setBackgroundResource(R.drawable.badge_bg_green);
             txtGameStatusBadge.setTextColor(getColor(R.color.success_green));
-            txtGameStatusDetail.setText("Game data verified in /sdcard/GalaxyData. Tap Launch to play!");
+            txtGameStatusDetail.setText("Game data verified: " + foundDir.getAbsolutePath() + ". Tap Launch to play!");
             txtProgressStatus.setText("Ready to play! Tap Launch Game.");
         } else {
             btnLaunchGame.setVisibility(View.GONE);
             txtGameStatusBadge.setText("INSTALLATION NEEDED");
             txtGameStatusBadge.setBackgroundResource(R.drawable.badge_bg_amber);
             txtGameStatusBadge.setTextColor(getColor(R.color.warning_amber));
-            txtGameStatusDetail.setText("Game data not found in /sdcard/GalaxyData. Select a disc below to install.");
+            txtGameStatusDetail.setText("Game data not found in /sdcard/GalaxyData or MicroSD. Select a disc below to install.");
             txtProgressStatus.setText("Awaiting game disc selection...");
         }
     }
@@ -606,6 +633,29 @@ public class MainActivity extends Activity {
             }
         }
 
+        // 3. Scan external MicroSD cards (/storage/*)
+        File storageDir = new File("/storage");
+        if (storageDir.exists() && storageDir.isDirectory()) {
+            File[] mounts = storageDir.listFiles();
+            if (mounts != null) {
+                for (File m : mounts) {
+                    if (m.isDirectory() && !m.getName().equals("emulated") && !m.getName().equals("self")) {
+                        appendLog("[Storage] MicroSD Card detected: " + m.getAbsolutePath());
+                        File[] sFiles = m.listFiles();
+                        if (sFiles != null) {
+                            for (File f : sFiles) {
+                                String name = f.getName().toLowerCase();
+                                if (name.endsWith(".rvz") || name.endsWith(".wbfs") || name.endsWith(".iso")) {
+                                    selectSource(f.getAbsolutePath(), "Detected disc on MicroSD: " + f.getName());
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         appendLog("[Scan] No disc image auto-detected. Use 'Select Disc File' button.");
     }
 
@@ -682,9 +732,19 @@ public class MainActivity extends Activity {
                         if (docId.startsWith("raw:")) {
                             return docId.substring(4);
                         }
-                        if (docId.startsWith("primary:")) {
-                            File f = new File(Environment.getExternalStorageDirectory(), docId.substring(8));
-                            if (f.exists()) return f.getAbsolutePath();
+                        int colon = docId.indexOf(':');
+                        if (colon >= 0) {
+                            String type = docId.substring(0, colon);
+                            String rel = docId.substring(colon + 1);
+                            if ("primary".equalsIgnoreCase(type)) {
+                                File f = new File(Environment.getExternalStorageDirectory(), rel);
+                                if (f.exists()) return f.getAbsolutePath();
+                            } else {
+                                File f = new File("/storage/" + type, rel);
+                                if (f.exists()) return f.getAbsolutePath();
+                                File mnt = new File("/mnt/media_rw/" + type, rel);
+                                if (mnt.exists()) return mnt.getAbsolutePath();
+                            }
                         }
                     }
                 }
@@ -709,7 +769,18 @@ public class MainActivity extends Activity {
         new Thread(() -> {
             try {
                 File outputDir = new File(Environment.getExternalStorageDirectory(), "GalaxyData");
-                if (!outputDir.exists()) outputDir.mkdirs();
+                if (!outputDir.exists() && !outputDir.mkdirs()) {
+                    appendLog("[Storage] Primary storage not directly writable; using app-specific external storage.");
+                    File appExt = getExternalFilesDir(null);
+                    if (appExt != null) {
+                        outputDir = new File(appExt, "GalaxyData");
+                        outputDir.mkdirs();
+                    } else {
+                        outputDir = new File(getFilesDir(), "GalaxyData");
+                        outputDir.mkdirs();
+                    }
+                }
+                appendLog("[Storage] Target installation directory: " + outputDir.getAbsolutePath());
 
                 String testName = !mSelectedDisplayName.isEmpty() ? mSelectedDisplayName : mSelectedSourcePath;
                 String lowerName = testName.toLowerCase();
@@ -754,18 +825,32 @@ public class MainActivity extends Activity {
 
                     final String discPathToExtract = resolvedDiscFile.getAbsolutePath();
                     mHandler.post(() -> txtProgressStatus.setText("Extracting disc partition..."));
-                    boolean extractSuccess = CookerEngine.extractWithNodtool(
-                        this, discPathToExtract, tempExtractionDir.getAbsolutePath(), includeMovies,
-                        new CookerEngine.CookerCallback() {
-                            @Override public void onLog(String line) { appendLog(line); }
-                            @Override public void onProgress(int percent, String message) {
-                                mHandler.post(() -> {
-                                    if (message != null) txtProgressStatus.setText(message);
-                                });
-                            }
-                            @Override public void onFinished(boolean success, String message) {}
+                    CookerEngine.CookerCallback extractCallback = new CookerEngine.CookerCallback() {
+                        @Override public void onLog(String line) { appendLog(line); }
+                        @Override public void onProgress(int percent, String message) {
+                            mHandler.post(() -> {
+                                if (message != null) txtProgressStatus.setText(message);
+                            });
                         }
-                    );
+                        @Override public void onFinished(boolean success, String message) {}
+                    };
+
+                    boolean extractSuccess = false;
+                    try {
+                        appendLog("[Installer] Attempting fast in-process native disc extraction...");
+                        int res = CookerEngine.extractDisc(discPathToExtract, tempExtractionDir.getAbsolutePath(), includeMovies, extractCallback);
+                        extractSuccess = (res == 0);
+                    } catch (Throwable t) {
+                        appendLog("[Installer] In-process extraction exception: " + t.getMessage());
+                        extractSuccess = false;
+                    }
+
+                    if (!extractSuccess) {
+                        appendLog("[Installer] In-process extraction returned non-zero, trying fallback extractor...");
+                        extractSuccess = CookerEngine.extractWithNodtool(
+                            this, discPathToExtract, tempExtractionDir.getAbsolutePath(), includeMovies, extractCallback
+                        );
+                    }
 
                     if (resolvedDiscFile.getAbsolutePath().startsWith(getFilesDir().getAbsolutePath())) {
                         resolvedDiscFile.delete();

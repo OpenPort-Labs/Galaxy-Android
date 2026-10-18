@@ -18,11 +18,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <mutex>
 
 #include "JSystem/JAudio2/JASDSPInterface.hpp"
 #include "port/port.h"
 
 extern "C" u32 port_dsp_varam_base(void);
+
+static std::mutex sMixerMutex;
 
 namespace {
 
@@ -556,6 +559,7 @@ void preparePatterns() {
 }
 
 void renderSubFrame(s16* outL, s16* outR, u16 outputVolume) {
+    if (!outL || !outR || !M.ready || !M.voices) return;
     memset(M.fl, 0, sizeof(M.fl));
     memset(M.fr, 0, sizeof(M.fr));
     scaleInPlace(M.bl, 0x6784, 15);
@@ -611,6 +615,7 @@ void logVoices() {
 // (JASDsp::DSPRES_FILTER, stored as big-endian 16-bit pairs), AFC
 // coefficients (JASDsp::DSPADPCM_FILTER) and the FX line blocks.
 extern "C" void port_dsp_setup(u32 voiceCount, u32 voices, u32 table, u32 afcTable, u32 fxBlocks) {
+    std::lock_guard<std::mutex> lk(sMixerMutex);
     M.voiceCount = voiceCount > 0x100 ? 0x100 : voiceCount;
     M.voices = (Voice*)(uintptr_t)voices;
     M.fx = (JASDsp::FxBuf*)(uintptr_t)fxBlocks;
@@ -631,6 +636,7 @@ extern "C" void port_dsp_setup(u32 voiceCount, u32 voices, u32 table, u32 afcTab
 
 // Command 0x82 (sync frame): render `subFrames` blocks of 0x50 samples.
 extern "C" void port_dsp_mix_frame(u32 subFrames, s16* outL, s16* outR, u16 mixerLevel) {
+    std::lock_guard<std::mutex> lk(sMixerMutex);
     static const bool sLog = getenv("PETARI_DSPLOG") != nullptr;
     static u32 sLogSubFrames = 0;
     if (sLog && M.ready && (sLogSubFrames += subFrames) >= 400) {
@@ -638,9 +644,9 @@ extern "C" void port_dsp_mix_frame(u32 subFrames, s16* outL, s16* outR, u16 mixe
         logVoices();
     }
     for (u32 f = 0; f < subFrames; f++) {
-        if (M.ready) {
+        if (M.ready && outL && outR) {
             renderSubFrame(outL + f * N, outR + f * N, mixerLevel);
-        } else {
+        } else if (outL && outR) {
             memset(outL + f * N, 0, N * 2);
             memset(outR + f * N, 0, N * 2);
         }

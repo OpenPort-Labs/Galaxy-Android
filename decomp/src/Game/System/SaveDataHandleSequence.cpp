@@ -146,10 +146,15 @@ void SaveDataHandleSequence::startSaveTotalMailSize() {
     setNerve(GET_NERVE_ANON(SaveDataHandleSequenceSaveAllWithoutWindow));
 }
 
+extern "C" void port_save_notify_started(void);
+extern "C" void port_save_notify_completed(int success);
+
 void SaveDataHandleSequence::startQuickSaveAnywhere() {
     if (mCurrentUserFile == nullptr) {
+        port_save_notify_completed(0);
         return;
     }
+    port_save_notify_started();
     mWorkUserFile = mCurrentUserFile;
     mCurrentUserFile->updateLastModified();
     mSaveDataHandler->storeUserFile(mCurrentUserFile);
@@ -442,6 +447,7 @@ void SaveDataHandleSequence::exeSaveAllWithoutWindow() {
         }
 
         if (isErr) {
+            port_save_notify_completed(0);
             return;
         }
 
@@ -452,6 +458,7 @@ void SaveDataHandleSequence::exeSaveAllWithoutWindow() {
         _24 = 2;
 
         setNerve(GET_NERVE_ANON(SaveDataHandleSequenceNoOperation));
+        port_save_notify_completed(1);
     }
 }
 

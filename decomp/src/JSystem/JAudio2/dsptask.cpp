@@ -1,5 +1,8 @@
 #include "JSystem/JAudio2/dsptask.hpp"
 #include "JSystem/JAudio2/osdsp.hpp"
+#include <mutex>
+
+static std::mutex sDspSendMutex;
 
 void DspInitWork();
 void DspHandShake(void* pTask);
@@ -269,6 +272,7 @@ void DspBoot(void (*pCallback)(void*)) {
 }
 
 int DSPSendCommands2(u32* pMessages, u32 param_2, void (*pCallback)(u16)) {
+    std::lock_guard<std::mutex> lk(sDspSendMutex);
     s32 i;
     BOOL interruptFlag;
     s32 startWorkStatus;

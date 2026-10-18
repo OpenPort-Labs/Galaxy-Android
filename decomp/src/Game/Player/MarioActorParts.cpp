@@ -57,7 +57,7 @@ void MarioActor::initParts() {
 }
 
 void MarioActor::updateBeeWingAnimation() {
-    if (mPlayerMode != 4) {
+    if (mPlayerMode != PlayerMode_Bee && mMario->getPlayerMode() != PlayerMode_Bee) {
         getJointCtrl("HandR")->setLocalScale(1.0f);
         getJointCtrl("HandL")->setLocalScale(1.0f);
 
@@ -401,8 +401,12 @@ void MarioActor::update2D() {
     GameSceneLayoutHolder* layoutHolder = MR::getGameSceneLayoutHolder();
     layoutHolder->setLifeCount(mHealth);
 
-    if (mMario->getPlayerMode() == 4) {
-        layoutHolder->setBeePowerRatio((f32)mMario->_402 / mConst->getTable()->mAirWalkTime);
+    if (mPlayerMode == PlayerMode_Bee || mMario->getPlayerMode() == PlayerMode_Bee) {
+        f32 airWalkTime = mConst->getTable()->mAirWalkTime;
+        f32 ratio = (airWalkTime > 0.0f) ? ((f32)mMario->_402 / airWalkTime) : 0.0f;
+        if (ratio < 0.0f) ratio = 0.0f;
+        if (ratio > 1.0f) ratio = 1.0f;
+        layoutHolder->setBeePowerRatio(ratio);
     }
 
     if (mMario->isSwimming()) {

@@ -16,6 +16,8 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/system_properties.h>
+#include <signal.h>
+#include <time.h>
 #include <unistd.h>
 
 #include <algorithm>
@@ -235,7 +237,10 @@ std::string findGameData(const std::string& extDir) {
         "/storage/emulated/0/GalaxyData",
         "/storage/emulated/0/GalaxyData/game",
         extDir + "/game",
+        extDir + "/GalaxyData",
+        extDir,
         "/sdcard/Android/data/com.openport.galaxyandroid/files/game",
+        "/sdcard/Android/data/com.openport.galaxyandroid/files/GalaxyData",
         "/sdcard/Android/data/com.galaxy.mobile.plus/files/game",
         "/sdcard/Android/data/com.galaxy.mobile/files/game",
         "/sdcard/Android/data/com.galaxy.quest/files/game",
@@ -254,6 +259,24 @@ std::string findGameData(const std::string& extDir) {
 
     if (const char* envRoot = getenv("PETARI_GAME_ROOT")) {
         candidates.insert(candidates.begin(), envRoot);
+    }
+
+    // Discover external MicroSD card mount points (/storage/XXXX-XXXX)
+    DIR* storageDir = opendir("/storage");
+    if (storageDir) {
+        struct dirent* entry;
+        while ((entry = readdir(storageDir)) != nullptr) {
+            if (entry->d_name[0] != '.' && strcmp(entry->d_name, "emulated") != 0 && strcmp(entry->d_name, "self") != 0) {
+                std::string sd = std::string("/storage/") + entry->d_name;
+                candidates.push_back(sd + "/GalaxyData");
+                candidates.push_back(sd + "/GalaxyData/game");
+                candidates.push_back(sd + "/Android/data/com.openport.galaxyandroid/files/GalaxyData");
+                candidates.push_back(sd + "/Android/data/com.openport.galaxyandroid/files/game");
+                candidates.push_back(sd + "/game");
+                candidates.push_back(sd + "/cooked");
+            }
+        }
+        closedir(storageDir);
     }
 
     for (const auto& path : candidates) {
@@ -709,46 +732,87 @@ int32_t onInput(android_app* app, AInputEvent* event) {
         case AKEYCODE_ENTER:
         case AKEYCODE_NUMPAD_ENTER:
             a->pad.connected = 1;
-            if (down) a->physicalButtons |= 0x0800;  // A
+            if (down) a->physicalButtons |= 0x0800;  // Switch A: Jump / Confirm / Interact
             else a->physicalButtons &= ~0x0800;
             break;
         case AKEYCODE_BUTTON_B:
         case AKEYCODE_BUTTON_2:
         case AKEYCODE_BUTTON_C:
             a->pad.connected = 1;
-            if (down) a->physicalButtons |= 0x0400;  // B
-            else a->physicalButtons &= ~0x0400;
+            if (down) {
+                // Switch B: Jump (primary jump on Switch) and Star Bit Cancel/Shoot
+                a->physicalButtons |= 0x0800; // Jump
+                a->physicalButtons |= 0x0400; // Cancel/Shoot
+            } else {
+                a->physicalButtons &= ~0x0800;
+                a->physicalButtons &= ~0x0400;
+            }
             break;
         case AKEYCODE_BUTTON_X:
         case AKEYCODE_BUTTON_3:
             a->pad.connected = 1;
-            if (down) a->spinFrames = 6;  // Spin (Wiimote shake)
+            if (down) a->spinFrames = 6;  // Switch X: Spin Attack!
             break;
         case AKEYCODE_BUTTON_Y:
         case AKEYCODE_BUTTON_4:
             a->pad.connected = 1;
-            if (down) a->physicalButtons |= 0x1000;  // C
-            else a->physicalButtons &= ~0x1000;
+            if (down) a->spinFrames = 6;  // Switch Y: Spin Attack! (Primary on Switch 3D All-Stars)
             break;
         case AKEYCODE_BUTTON_L1:
         case AKEYCODE_BUTTON_5:
-        case AKEYCODE_BUTTON_L2:
-        case AKEYCODE_BUTTON_7:
-        case AKEYCODE_BUTTON_THUMBL:
-        case AKEYCODE_BUTTON_11:
-        case AKEYCODE_BUTTON_Z:
             a->pad.connected = 1;
-            if (down) a->physicalButtons |= 0x2000;  // Z (crouch / ground pound)
-            else a->physicalButtons &= ~0x2000;
+            if (down) a->physicalButtons |= 0x1000;  // Switch L: Camera snap behind Mario (C button)
+            else a->physicalButtons &= ~0x1000;
             break;
         case AKEYCODE_BUTTON_R1:
         case AKEYCODE_BUTTON_6:
+            a->pad.connected = 1;
+            if (down) {
+                // Switch R: Reset Star Pointer to screen center & camera snap
+                a->pad.pointerX = 0.0f;
+                a->pad.pointerY = 0.0f;
+                a->pad.pointerValid = 1;
+                mobile_ui::get().setPointerPos(0.0f, 0.0f);
+                a->physicalButtons |= 0x1000;
+            } else {
+                a->physicalButtons &= ~0x1000;
+            }
+            break;
+        case AKEYCODE_BUTTON_L2:
+        case AKEYCODE_BUTTON_7:
+        case AKEYCODE_BUTTON_Z:
+            a->pad.connected = 1;
+            if (down) a->physicalButtons |= 0x2000;  // Switch ZL: Crouch / Ground Pound / Backflip
+            else a->physicalButtons &= ~0x2000;
+            break;
         case AKEYCODE_BUTTON_R2:
         case AKEYCODE_BUTTON_8:
+            a->pad.connected = 1;
+            if (down) {
+                // Switch ZR: Star Bit Shoot / Crouch
+                a->physicalButtons |= 0x0400;
+                a->physicalButtons |= 0x2000;
+            } else {
+                a->physicalButtons &= ~0x0400;
+                a->physicalButtons &= ~0x2000;
+            }
+            break;
+        case AKEYCODE_BUTTON_THUMBL:
+        case AKEYCODE_BUTTON_11:
+            a->pad.connected = 1;
+            if (down) a->physicalButtons |= 0x2000;  // L3: Crouch
+            else a->physicalButtons &= ~0x2000;
+            break;
         case AKEYCODE_BUTTON_THUMBR:
         case AKEYCODE_BUTTON_12:
             a->pad.connected = 1;
-            if (down) a->spinFrames = 6;  // Spin (Wiimote shake)
+            if (down) {
+                // Switch R3: Recenter Star Pointer to center of screen
+                a->pad.pointerX = 0.0f;
+                a->pad.pointerY = 0.0f;
+                a->pad.pointerValid = 1;
+                mobile_ui::get().setPointerPos(0.0f, 0.0f);
+            }
             break;
         case AKEYCODE_BUTTON_START:
         case AKEYCODE_BUTTON_10:
@@ -1075,7 +1139,50 @@ static void syncMobileFrameRate(int targetFps, float speed) {
     sLastPresentNs = port_host_time_ns();
 }
 
+static void crashSignalHandler(int sig, siginfo_t* info, void* ucontext) {
+    (void)ucontext;
+    const char* sigName = "UNKNOWN";
+    if (sig == SIGSEGV) sigName = "SIGSEGV (Segmentation Fault)";
+    else if (sig == SIGBUS) sigName = "SIGBUS (Bus Error / Alignment)";
+    else if (sig == SIGFPE) sigName = "SIGFPE (Arithmetic Exception)";
+    else if (sig == SIGILL) sigName = "SIGILL (Illegal Instruction)";
+    else if (sig == SIGABRT) sigName = "SIGABRT (Abort)";
+
+    LOGE("================ FATAL NATIVE CRASH ================");
+    LOGE("Signal: %d (%s) at address %p", sig, sigName, info ? info->si_addr : nullptr);
+
+    FILE* f = fopen("/sdcard/GalaxyData/galaxy_crash.log", "a");
+    if (f) {
+        time_t t = time(nullptr);
+        char* ct = ctime(&t);
+        if (ct) {
+            char* nl = strchr(ct, '\n');
+            if (nl) *nl = '\0';
+        }
+        fprintf(f, "[%s] FATAL SIGNAL %d (%s) at address %p\n", ct ? ct : "unknown time", sig, sigName, info ? info->si_addr : nullptr);
+        fflush(f);
+        fclose(f);
+    }
+    sync();
+
+    signal(sig, SIG_DFL);
+    raise(sig);
+}
+
+static void installCrashHandlers() {
+    struct sigaction sa;
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_sigaction = crashSignalHandler;
+    sa.sa_flags = SA_SIGINFO | SA_RESETHAND;
+    sigaction(SIGSEGV, &sa, nullptr);
+    sigaction(SIGBUS, &sa, nullptr);
+    sigaction(SIGFPE, &sa, nullptr);
+    sigaction(SIGILL, &sa, nullptr);
+    sigaction(SIGABRT, &sa, nullptr);
+}
+
 extern "C" __attribute__((visibility("default"))) void port_android_main(struct android_app* app, uintptr_t windowBase, size_t windowSize) {
+    installCrashHandlers();
     LOGI("==================================================");
     LOGI("GalaxyMobile: Native flat-screen mobile initialized");
     LOGI("==================================================");

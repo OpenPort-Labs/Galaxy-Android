@@ -105,7 +105,9 @@ JKRHeap* JKRHeap::becomeCurrentHeap() {
 }
 
 void JKRHeap::destroy(JKRHeap* pHeap) {
-    pHeap->do_destroy();
+    if (pHeap != nullptr) {
+        pHeap->do_destroy();
+    }
 }
 
 void* JKRHeap::alloc(u32 size, int align, JKRHeap* pHeap) {

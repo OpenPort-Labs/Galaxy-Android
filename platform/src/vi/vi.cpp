@@ -37,7 +37,13 @@ static std::atomic<int> sDisplayRefreshRate{60};
 static void raiseRetrace() {
     int64_t now = port_host_time_ns();
     int64_t last = sRaisedAt.load();
-    if (now - last < 8000000 || !sRaisedAt.compare_exchange_strong(last, now)) {
+    int hz = sDisplayRefreshRate.load();
+    if (hz < 30) hz = 60;
+    // Dynamic interval threshold: prevents double-triggering while allowing full 60/90/120/144Hz pacing
+    int64_t minInterval = (int64_t)(1000000000LL / (hz * 1.5f));
+    if (minInterval < 2000000LL) minInterval = 2000000LL;
+
+    if (now - last < minInterval || !sRaisedAt.compare_exchange_strong(last, now)) {
         return;
     }
     port_irq_raise(PORT_IRQ_VI);

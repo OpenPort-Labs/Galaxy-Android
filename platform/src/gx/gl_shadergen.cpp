@@ -568,15 +568,32 @@ std::string genFragmentShader(const ShaderUid& u) {
         uint32_t ind = u.indCmd[s];
         if (u.numIndStages && ind) {
             uint32_t bt = ind & 3, bias = (ind >> 4) & 7, mtx = (ind >> 9) & 15;
-            if (bt < u.numIndStages && (mtx & 3)) {
-                uint32_t m = (mtx & 3) - 1;
+            if (bt < u.numIndStages && mtx != 0) {
                 const char* bs = (bias & 1) ? "128.0" : "0.0";
                 const char* bt2 = (bias & 2) ? "128.0" : "0.0";
                 const char* bu = (bias & 4) ? "128.0" : "0.0";
-                char b[512];
-                snprintf(b, sizeof(b), "(%s + vec2(dot(indMtx[%u].xyz, ind%u - vec3(%s, %s, %s)), dot(indMtx[%u].xyz, ind%u - vec3(%s, %s, %s))) * texSize[%u].zw)",
-                         uv.c_str(), m * 2, bt, bs, bt2, bu, m * 2 + 1, bt, bs, bt2, bu, map);
-                uv = b;
+                char sExpr[256];
+                char tExpr[256];
+                sExpr[0] = '\0';
+                tExpr[0] = '\0';
+                if (mtx >= 1 && mtx <= 3) {
+                    uint32_t m = mtx - 1;
+                    snprintf(sExpr, sizeof(sExpr), "dot(indMtx[%u].xyz, ind%u - vec3(%s, %s, %s))", m * 2, bt, bs, bt2, bu);
+                    snprintf(tExpr, sizeof(tExpr), "dot(indMtx[%u].xyz, ind%u - vec3(%s, %s, %s))", m * 2 + 1, bt, bs, bt2, bu);
+                } else if (mtx >= 5 && mtx <= 7) {
+                    uint32_t m = mtx - 5;
+                    snprintf(sExpr, sizeof(sExpr), "dot(indMtx[%u].xyz, ind%u - vec3(%s, %s, %s))", m * 2, bt, bs, bt2, bu);
+                    snprintf(tExpr, sizeof(tExpr), "0.0");
+                } else if (mtx >= 9 && mtx <= 11) {
+                    uint32_t m = mtx - 9;
+                    snprintf(sExpr, sizeof(sExpr), "0.0");
+                    snprintf(tExpr, sizeof(tExpr), "dot(indMtx[%u].xyz, ind%u - vec3(%s, %s, %s))", m * 2 + 1, bt, bs, bt2, bu);
+                }
+                if (sExpr[0] != '\0') {
+                    char b[512];
+                    snprintf(b, sizeof(b), "(%s + vec2(%s, %s) * texSize[%u].zw)", uv.c_str(), sExpr, tExpr, map);
+                    uv = b;
+                }
             }
         }
         if (en) {

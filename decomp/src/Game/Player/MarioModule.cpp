@@ -467,8 +467,10 @@ bool MarioModule::checkTrgA() const {
     return mActor->checkButtonType(3, false);
 }
 
+extern "C" int port_input_real_a(void);
+
 bool MarioModule::checkLvlA() const {
-    return mActor->checkButtonType(5, false);
+    return mActor->checkButtonType(5, false) || (port_input_real_a() != 0);
 }
 
 bool MarioModule::checkTrgZ() const {

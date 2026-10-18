@@ -70,7 +70,7 @@ if not JAVAC:
 if not JAVAC:
     JAVAC = "javac"
 
-BUILD_MOBILE = os.path.join(ROOT, "build-mobile")
+BUILD_MOBILE = os.environ.get("BUILD_DIR", os.path.join(ROOT, "build-mobile"))
 OUT = os.path.join(ROOT, "out-mobile")
 # Signing key.  No keystore is committed to the repository: set the GALAXY_*
 # environment variables for a release build, otherwise a throwaway local key is
@@ -435,7 +435,9 @@ def main():
     for d in [gen_dir, classes_dir, dex_dir, apk_dir]:
         shutil.rmtree(d, ignore_errors=True)
 
-    print(f"\n[SUCCESS] Built unified package: {final_apk} ({os.path.getsize(final_apk)} bytes)")
+    v003_apk = os.path.join(OUT, "GalaxyAndroid-v0.0.3.apk")
+    shutil.copyfile(final_apk, v003_apk)
+    print(f"\n[SUCCESS] Built unified package: {final_apk} and {v003_apk} ({os.path.getsize(final_apk)} bytes)")
 
 if __name__ == "__main__":
     main()

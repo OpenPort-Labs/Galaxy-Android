@@ -22,31 +22,41 @@ namespace CameraLocalUtil {
         return pCameraMan->mPoseParam->mWatchPos;
     }
 
+    static const TVec3f sDefaultZeroVec(0.0f, 0.0f, 0.0f);
+    static const TVec3f sDefaultUpVec(0.0f, 1.0f, 0.0f);
+
     const TVec3f& getPos(const CameraMan* pCameraMan) {
+        if (!pCameraMan || !pCameraMan->mPoseParam) return sDefaultZeroVec;
         return pCameraMan->mPoseParam->mPos;
     }
 
     const TVec3f& getUpVec(const CameraMan* pCameraMan) {
+        if (!pCameraMan || !pCameraMan->mPoseParam) return sDefaultUpVec;
         return pCameraMan->mPoseParam->mUpVec;
     }
 
     const TVec3f& getWatchUpVec(const CameraMan* pCameraMan) {
+        if (!pCameraMan || !pCameraMan->mPoseParam) return sDefaultUpVec;
         return pCameraMan->mPoseParam->mWatchUpVec;
     }
 
     f32 getFovy(const CameraMan* pCameraMan) {
+        if (!pCameraMan || !pCameraMan->mPoseParam) return 45.0f;
         return pCameraMan->mPoseParam->mFovy;
     }
 
     const TVec3f& getGlobalOffset(const CameraMan* pCameraMan) {
+        if (!pCameraMan || !pCameraMan->mPoseParam) return sDefaultZeroVec;
         return pCameraMan->mPoseParam->mGlobalOffset;
     }
 
     const TVec3f& getLocalOffset(const CameraMan* pCameraMan) {
+        if (!pCameraMan || !pCameraMan->mPoseParam) return sDefaultZeroVec;
         return pCameraMan->mPoseParam->mLocalOffset;
     }
 
     f32 getRoll(const CameraMan* pCameraMan) {
+        if (!pCameraMan || !pCameraMan->mPoseParam) return 0.0f;
         return pCameraMan->mPoseParam->mRoll;
     }
 

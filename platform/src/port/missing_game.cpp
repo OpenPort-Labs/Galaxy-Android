@@ -60,11 +60,29 @@ __attribute__((weak)) int port_input_real_a(void) { return 0; }
 __attribute__((weak)) int port_input_real_z(void) { return 0; }
 
 static int sQuickSaveRequested = 0;
+static int sSaveInProgress = 0;
+static uint64_t sSaveGeneration = 1;
+
 __attribute__((weak)) void port_trigger_quick_save(void) {
     __atomic_store_n(&sQuickSaveRequested, 1, __ATOMIC_RELEASE);
 }
 __attribute__((weak)) int port_check_quick_save_request(void) {
     return __atomic_exchange_n(&sQuickSaveRequested, 0, __ATOMIC_ACQ_REL);
+}
+__attribute__((weak)) void port_save_notify_started(void) {
+    __atomic_store_n(&sSaveInProgress, 1, __ATOMIC_RELEASE);
+}
+__attribute__((weak)) void port_save_notify_completed(int success) {
+    if (success) {
+        __atomic_add_fetch(&sSaveGeneration, 1, __ATOMIC_ACQ_REL);
+    }
+    __atomic_store_n(&sSaveInProgress, 0, __ATOMIC_RELEASE);
+}
+__attribute__((weak)) int port_is_save_in_progress(void) {
+    return __atomic_load_n(&sSaveInProgress, __ATOMIC_ACQUIRE);
+}
+__attribute__((weak)) uint64_t port_get_save_generation(void) {
+    return __atomic_load_n(&sSaveGeneration, __ATOMIC_ACQUIRE);
 }
 
 static int sQuickLoadRequested = 0;

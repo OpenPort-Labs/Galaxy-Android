@@ -78,7 +78,7 @@ bool GamepadInput::handleMotionEvent(AInputEvent* event, PortPadState& pad, int&
     }
     float starSens = mobile_ui::UIOverlay::get().settings().starStickSensitivity;
     if (mobile_ui::UIOverlay::get().settings().rightStickMode == 0) {
-        pad.rightStickX = std::max(-1.0f, std::min(1.0f, rStickX * starSens));
+        pad.rightStickX = std::max(-1.0f, std::min(1.0f, -rStickX * starSens));
         pad.rightStickY = std::max(-1.0f, std::min(1.0f, rStickY * starSens));
     } else {
         pad.rightStickX = 0.0f;

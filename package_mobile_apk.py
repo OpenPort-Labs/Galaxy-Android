@@ -435,7 +435,7 @@ def main():
     for d in [gen_dir, classes_dir, dex_dir, apk_dir]:
         shutil.rmtree(d, ignore_errors=True)
 
-    v003_apk = os.path.join(OUT, "GalaxyAndroid-v0.0.3.apk")
+    v003_apk = os.path.join(OUT, "GalaxyAndroid-v0.0.3a.apk")
     shutil.copyfile(final_apk, v003_apk)
     print(f"\n[SUCCESS] Built unified package: {final_apk} and {v003_apk} ({os.path.getsize(final_apk)} bytes)")
 

@@ -110,7 +110,7 @@ void TouchInputHandler::updateActivePointers(
                 float dx = px - mTouches[slot].lastX, dy = py - mTouches[slot].lastY;
                 mTouches[slot].lastX = px; mTouches[slot].lastY = py;
                 float sens = 0.055f * settings.starStickSensitivity;
-                pad.rightStickX = std::max(-1.0f, std::min(1.0f, dx * sens));
+                pad.rightStickX = std::max(-1.0f, std::min(1.0f, -dx * sens));
                 pad.rightStickY = std::max(-1.0f, std::min(1.0f, -dy * sens));
             }
         } else if (role == TouchRole::STAR_POINTER && vpW > 0 && vpH > 0) {

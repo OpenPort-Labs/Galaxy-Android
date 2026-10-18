@@ -1317,7 +1317,7 @@ void Renderer::Impl::execute(EfbTarget& efb, const EyeView* eye, EfbTarget* hud,
             int vx, vw, sx, sr;
             float targetAspect = (float)t.width / (float)t.height;
             const float k169 = 16.0f / 9.0f;
-            if (it.hudSafe && targetAspect > k169 + 0.01f) {
+            if (!port_is_fullscreen_aspect() && it.hudSafe && targetAspect > k169 + 0.01f) {
                 float hudW = (float)t.height * k169;
                 float hudOfsX = ((float)t.width - hudW) * 0.5f;
                 float hudFx = hudW / (float)nativeW;

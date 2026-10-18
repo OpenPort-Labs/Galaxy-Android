@@ -1,3 +1,18 @@
+# GalaxyAndroid v0.0.3a — Ultrawide Fullscreen & 360 Camera Precision Patch
+
+Hotfix release delivering true edge-to-edge ultrawide rendering, complete removal of 16:9 2D pillarboxing in fullscreen mode, natural 360 camera touch swiping, and full-screen Star Pointer tracking.
+
+---
+
+### Key Improvements in v0.0.3a
+- **True Ultrawide Fullscreen HUD & Effects**: Removed legacy 16:9 safe zone clamping (`hudSafe`) in Vulkan and OpenGL ES renderers when fullscreen mode is active (`port_is_fullscreen_aspect()`). Title screen bloom/glare, cinematic wipes, and in-game HUD elements now stretch and position properly across modern 19.5:9, 20:9, and 21:9 displays without black bars or cut-off rectangles.
+- **Full-Screen Star Pointer Tracking**: Updated pointer viewport calculations so pointer coordinate normalization spans the entire screen in fullscreen mode. The Star Pointer cursor now reaches the far left and right edges seamlessly.
+- **Natural 360 Camera Swipe Direction**: Inverted horizontal camera swipe input (`CAMERA_SWIPE` and gamepad right stick) so swiping right turns the camera to the right and swiping left turns it to the left.
+- **Smooth Radial Right Analog Deadzone**: Replaced abrupt deadzone cutoffs with smooth radial deadzones and proportional velocity scaling for precise Star Pointer control on external gamepads.
+- **In-Game Settings Drawer Touch Scrolling**: Fixed touch drag gesture propagation in the in-game settings menu drawer so all graphics, audio, and gameplay options can be smoothly scrolled on touch screens.
+
+---
+
 # GalaxyAndroid v0.0.4 — Zero-Stutter, Low-End Hardware Engine & Dual-Stick Update
 
 Major performance and stability release eliminating all Vulkan frame stuttering, introducing zero-syscall persistent memory mapping, on-chip TBDR depth discard, CPU performance core affinity, permanent first-boot shader precompilation, and fully customizable dual-stick controls.

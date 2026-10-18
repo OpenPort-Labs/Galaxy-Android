@@ -75,9 +75,7 @@ void ViewportManager::computeTargetSize(int screenW, int screenH, int scaleChoic
 void ViewportManager::computePointerBounds(int screenW, int screenH, bool fullscreen,
                                           const Rect& vp, Rect& outBounds) {
     if (fullscreen) {
-        int ptrW = (int)lroundf((float)screenH * (16.0f / 9.0f));
-        int ptrX = (screenW - ptrW) / 2;
-        outBounds = {ptrX, vp.y, ptrW, vp.h};
+        outBounds = {0, 0, screenW, screenH};
     } else {
         outBounds = vp;
     }

@@ -17,6 +17,7 @@
 #define LOGW(...) __android_log_print(ANDROID_LOG_WARN, TAG, __VA_ARGS__)
 
 extern "C" int port_is_post_processing_enabled(void);
+extern "C" int port_is_fullscreen_aspect(void);
 
 namespace gpu {
 
@@ -3546,7 +3547,7 @@ bool VkRenderer::render(VkTarget& target, const EyeView* eye, VkTarget* hud, Hud
         int sx, sy, sw, sh;
         float targetAspect = (float)target.width / (float)target.height;
         const float k169 = 16.0f / 9.0f;
-        if (it.hudSafe && targetAspect > k169 + 0.01f) {
+        if (!port_is_fullscreen_aspect() && it.hudSafe && targetAspect > k169 + 0.01f) {
             float hudW = (float)target.height * k169;
             float hudOfsX = ((float)target.width - hudW) * 0.5f;
             float hudFx = hudW / (float)p.nativeW;

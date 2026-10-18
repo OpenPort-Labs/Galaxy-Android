@@ -1391,8 +1391,67 @@ void main() {
 layout(location = 0) in vec2 v_uv;
 layout(location = 0) out vec4 outColor;
 layout(set = 0, binding = 0) uniform sampler2D s_target;
+
+float getLuma(vec3 col) {
+    return dot(col, vec3(0.299, 0.587, 0.114));
+}
+
 void main() {
-    outColor = vec4(texture(s_target, v_uv).rgb, 1.0);
+    ivec2 tSize = textureSize(s_target, 0);
+    vec2 texel = 1.0 / vec2(tSize);
+
+    // Center pixel & 4-tap neighbors
+    vec3 cM = texture(s_target, v_uv).rgb;
+    vec3 cN = texture(s_target, v_uv + vec2(0.0, -texel.y)).rgb;
+    vec3 cS = texture(s_target, v_uv + vec2(0.0,  texel.y)).rgb;
+    vec3 cW = texture(s_target, v_uv + vec2(-texel.x, 0.0)).rgb;
+    vec3 cE = texture(s_target, v_uv + vec2( texel.x, 0.0)).rgb;
+
+    float lM = getLuma(cM);
+    float lN = getLuma(cN);
+    float lS = getLuma(cS);
+    float lW = getLuma(cW);
+    float lE = getLuma(cE);
+
+    float lMin = min(lM, min(min(lN, lS), min(lW, lE)));
+    float lMax = max(lM, max(max(lN, lS), max(lW, lE)));
+    float lRange = lMax - lMin;
+
+    vec3 aaCol = cM;
+    if (lRange >= max(0.05, lMax * 0.125)) {
+        vec2 dir;
+        dir.x = -((lN + lS) - (lW + lE));
+        dir.y =  ((lW + lE) - (lN + lS));
+        float dirReduce = max((lN + lS + lW + lE) * 0.03125, 0.0078125);
+        float rcpDir = 1.0 / (min(abs(dir.x), abs(dir.y)) + dirReduce);
+        dir = clamp(dir * rcpDir, vec2(-8.0), vec2(8.0)) * texel;
+
+        vec3 rgbA = 0.5 * (
+            texture(s_target, v_uv + dir * (1.0/3.0 - 0.5)).rgb +
+            texture(s_target, v_uv + dir * (2.0/3.0 - 0.5)).rgb);
+        vec3 rgbB = rgbA * 0.5 + 0.25 * (
+            texture(s_target, v_uv + dir * -0.5).rgb +
+            texture(s_target, v_uv + dir * 0.5).rgb);
+
+        float lB = getLuma(rgbB);
+        if (lB < lMin || lB > lMax) {
+            aaCol = rgbA;
+        } else {
+            aaCol = rgbB;
+        }
+    }
+
+    // Cosmic Bloom & Nebula Glow
+    vec3 bloomSample = (cN + cS + cW + cE) * 0.25;
+    float bright = max(0.0, getLuma(bloomSample) - 0.70);
+    vec3 bloom = bloomSample * bright * 0.35;
+
+    // Vibrance boost
+    vec3 result = aaCol + bloom;
+    float finalLuma = getLuma(result);
+    result = mix(vec3(finalLuma), result, 1.12);
+
+    outColor = vec4(clamp(result, 0.0, 1.0), 1.0);
 }
 )";
 

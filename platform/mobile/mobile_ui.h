@@ -60,6 +60,10 @@ struct Settings {
     bool modInfiniteHealth = false;
     bool modInfiniteLives = false;
     bool modInfiniteStarBits = false;
+    bool odysseyMoveset = true;   // Dive, Roll, Ground-Pound Jump (Super Mario Odyssey mechanics)
+    int characterChoice = 0;      // 0 = Mario, 1 = Luigi, 2 = Peach (Hover), 3 = Rosalina (Cosmic Pull)
+    bool speedrunHud = false;     // Live Speedrun Telemetry Overlay (XYZ, Speeds, Angle, Stage Timer)
+    bool coopMode = false;        // Local 2P Co-Op Dual Control & Assist Mode
 
     // Game Speed Multiplier (1 = 1x, 2 = 1.5x, 3 = 2x, 4 = 3x, 5 = 4x)
     int gameSpeed = 1;

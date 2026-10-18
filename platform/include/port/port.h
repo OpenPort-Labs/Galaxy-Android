@@ -163,8 +163,40 @@ void port_save_notify_completed(int success);
 int port_is_save_in_progress(void);
 uint64_t port_get_save_generation(void);
 void port_trigger_quick_load(int slot);
-int port_check_quick_load_request(int* slot);
 void port_android_vibrate(int ms);
+
+// Gameplay & Mechanics Enhancements (Odyssey moveset, characters, savestates, practice telemetry)
+int port_get_character_choice(void);
+void port_set_character_choice(int charId);
+int port_is_odyssey_moveset(void);
+void port_set_odyssey_moveset(int enabled);
+int port_is_coop_mode(void);
+void port_set_coop_mode(int enabled);
+
+void port_trigger_savestate_save(void);
+void port_trigger_savestate_load(void);
+int port_check_savestate_save(void);
+int port_check_savestate_load(void);
+int port_savestate_has_data(void);
+
+int port_is_speedrun_hud_enabled(void);
+void port_set_speedrun_hud_enabled(int enabled);
+
+typedef struct PortSpeedrunTelemetry {
+    float posX, posY, posZ;
+    float velH, velY;
+    float angleYaw;
+    int health;
+    int maxHealth;
+    int airState;
+    uint32_t stageTimerMs;
+} PortSpeedrunTelemetry;
+
+void port_update_speedrun_telemetry(const PortSpeedrunTelemetry* t);
+void port_get_speedrun_telemetry(PortSpeedrunTelemetry* t);
+
+int port_is_post_processing_enabled(void);
+void port_set_post_processing_enabled(int enabled);
 
 // Frame-time statistics (platform/src/port/perf.cpp), logged every 10 s.
 void port_perf_frame_begin(void);      // the game thread starts a frame

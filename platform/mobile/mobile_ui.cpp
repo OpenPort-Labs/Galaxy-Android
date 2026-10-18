@@ -151,12 +151,18 @@ enum MenuActionId {
     ACT_FULLSCREEN,
     ACT_ORIENTATION,
     ACT_PERF_HUD,
+    ACT_VULKAN_POSTPROCESS,
     ACT_DEVICE_INFO_CARD,
     // Mods & Enhancements Tab
     ACT_SHIELD_TEXTURES,
     ACT_SHIELD_CUTSCENES,
     ACT_SHIELD_CONTROLS,
     ACT_CLASSIC_GAMEPAD,
+    ACT_CHARACTER_SELECT,
+    ACT_ODYSSEY_MOVESET,
+    ACT_COOP_MODE,
+    ACT_SAVESTATE_ACTIONS,
+    ACT_SPEEDRUN_HUD,
     ACT_GAME_SPEED,
     ACT_FLY_MODE,
     ACT_SKIP_CUTSCENES,
@@ -224,6 +230,8 @@ static const MenuRowDef kGraphicsRows[] = {
     {ACT_TARGET_FPS, ROW_SEGMENTED, 56.0f, "Target Framerate", "Engine frame limiter & target cap", 5, {"30", "60", "90", "120", "144"}},
     {ACT_DISPLAY_REFRESH, ROW_SEGMENTED, 56.0f, "Display Refresh Rate", "Panel hardware sync frequency", 4, {"60 Hz", "90 Hz", "120 Hz", "144 Hz"}},
     {ACT_BATTERY_SAVER, ROW_SWITCH, 50.0f, "Battery Saver / Cool Mode", "Cap at 30 FPS to minimize heat and battery drain", 0, {}},
+    {ACT_SECTION_HEADER, ROW_SECTION, 36.0f, "POST-PROCESSING & SHADERS", "Vulkan cinematic presentation & anti-aliasing", 0, {}},
+    {ACT_VULKAN_POSTPROCESS, ROW_SWITCH, 50.0f, "Vulkan FXAA & Cosmic Bloom", "Single-pass antialiasing, bloom and vibrance", 0, {}},
     {ACT_SECTION_HEADER, ROW_SECTION, 36.0f, "DISPLAY & SCREEN", "Ultrawide presentation and orientation", 0, {}},
     {ACT_FULLSCREEN, ROW_SWITCH, 50.0f, "Ultrawide Fullscreen", "Native Hor+ FOV expansion (no black bars)", 0, {}},
     {ACT_ORIENTATION, ROW_SEGMENTED, 56.0f, "Screen Orientation", "Lock or allow sensor rotation", 3, {"Auto Sensor", "Landscape", "Reverse"}},
@@ -233,6 +241,13 @@ static const MenuRowDef kGraphicsRows[] = {
 };
 
 static const MenuRowDef kModsRows[] = {
+    {ACT_SECTION_HEADER, ROW_SECTION, 36.0f, "HERO SELECT & ODYSSEY MOVESET", "Modern movement, characters & active assist", 0, {}},
+    {ACT_CHARACTER_SELECT, ROW_SEGMENTED, 56.0f, "Playable Character", "Unique movement, float & physics profiles", 4, {"Mario", "Luigi", "Peach", "Rosalina"}},
+    {ACT_ODYSSEY_MOVESET, ROW_SWITCH, 50.0f, "Super Mario Odyssey Moveset", "Air Dive (ZL+Y), Ground Roll, Ground-Pound High Jump", 0, {}},
+    {ACT_COOP_MODE, ROW_SWITCH, 50.0f, "2-Player Co-Op Active Assist", "Controller 2 triggers Co-op Jump & Spin anywhere", 0, {}},
+    {ACT_SECTION_HEADER, ROW_SECTION, 36.0f, "SPEEDRUNNING & PRACTICE TOOLS", "Instant 0ms memory states and telemetry HUD", 0, {}},
+    {ACT_SAVESTATE_ACTIONS, ROW_DUAL_BTN, 48.0f, "Save State (0ms)", "Load State (0ms)", 0, {}},
+    {ACT_SPEEDRUN_HUD, ROW_SWITCH, 50.0f, "Speedrun Practice HUD", "Live position, horizontal/vertical speed, yaw, HP", 0, {}},
     {ACT_SECTION_HEADER, ROW_SECTION, 36.0f, "NVIDIA SHIELD REMASTER PACK", "Official authentic Shield TV port enhancements", 0, {}},
     {ACT_SHIELD_TEXTURES, ROW_SWITCH, 50.0f, "Shield HD Textures", "1080p AI Remastered UI, characters & galaxy world", 0, {}},
     {ACT_SHIELD_CUTSCENES, ROW_SWITCH, 50.0f, "Shield 60FPS Cutscenes", "H.264 MP4 hardware video stream playback", 0, {}},
@@ -517,11 +532,15 @@ void Settings::load(const std::string& path) {
             else if (!strcmp(key, "perf_hud")) perfHudMode = std::max(0, std::min(2, (int)val));
             else if (!strcmp(key, "full_touch_mode")) fullTouchMode = (val > 0.5f);
             else if (!strcmp(key, "screen_orientation")) screenOrientationChoice = std::max(0, std::min(2, (int)val));
+            else if (!strcmp(key, "character_choice")) characterChoice = std::max(0, std::min(3, (int)val));
+            else if (!strcmp(key, "odyssey_moveset")) odysseyMoveset = (val > 0.5f);
+            else if (!strcmp(key, "coop_mode")) coopMode = (val > 0.5f);
+            else if (!strcmp(key, "speedrun_hud")) speedrunHud = (val > 0.5f);
         }
     }
     fclose(f);
-    LOGI("Loaded settings: show=%d, full=%d, touch=%d, hud=%d, backend=%d, relPtr=%d, orient=%d, saver=%d, gyro=%d, invX=%d, invY=%d, starStick=%d, rightStickMode=%d, touchCam=%d, op=%.2f, scale=%.2f, dpad=%d, fly=%d, skip=%d, infHp=%d, infLives=%d, infBits=%d, spd=%d, lang=%d, res=%d, hap=%d",
-         showControls, fullscreen, fullTouchMode, perfHudMode, graphicsBackend, relativePointer ? 1 : 0, screenOrientationChoice, batterySaver ? 1 : 0, gyroAiming ? 1 : 0, gyroInvertX ? 1 : 0, gyroInvertY ? 1 : 0, starStick ? 1 : 0, rightStickMode, touchCamera ? 1 : 0, opacity, scale, showDpad, modFly, modSkipCutscenes, modInfiniteHealth, modInfiniteLives, modInfiniteStarBits, gameSpeed, languageChoice, renderScale, haptics ? 1 : 0);
+    LOGI("Loaded settings: show=%d, full=%d, touch=%d, hud=%d, backend=%d, relPtr=%d, orient=%d, saver=%d, gyro=%d, invX=%d, invY=%d, starStick=%d, rightStickMode=%d, touchCam=%d, op=%.2f, scale=%.2f, dpad=%d, fly=%d, skip=%d, infHp=%d, infLives=%d, infBits=%d, spd=%d, lang=%d, res=%d, hap=%d, hero=%d, odyssey=%d, coop=%d, speedrunHud=%d",
+         showControls, fullscreen, fullTouchMode, perfHudMode, graphicsBackend, relativePointer ? 1 : 0, screenOrientationChoice, batterySaver ? 1 : 0, gyroAiming ? 1 : 0, gyroInvertX ? 1 : 0, gyroInvertY ? 1 : 0, starStick ? 1 : 0, rightStickMode, touchCamera ? 1 : 0, opacity, scale, showDpad, modFly, modSkipCutscenes, modInfiniteHealth, modInfiniteLives, modInfiniteStarBits, gameSpeed, languageChoice, renderScale, haptics ? 1 : 0, characterChoice, odysseyMoveset ? 1 : 0, coopMode ? 1 : 0, speedrunHud ? 1 : 0);
 }
 
 void Settings::save(const std::string& path) const {
@@ -578,6 +597,10 @@ void Settings::save(const std::string& path) const {
     fprintf(f, "haptics=%d\n", haptics ? 1 : 0);
     fprintf(f, "target_fps=%d\n", targetFps);
     fprintf(f, "adaptive_fps=%d\n", adaptiveFps ? 1 : 0);
+    fprintf(f, "character_choice=%d\n", characterChoice);
+    fprintf(f, "odyssey_moveset=%d\n", odysseyMoveset ? 1 : 0);
+    fprintf(f, "coop_mode=%d\n", coopMode ? 1 : 0);
+    fprintf(f, "speedrun_hud=%d\n", speedrunHud ? 1 : 0);
     fclose(f);
     LOGI("Saved settings to %s", path.c_str());
 }
@@ -599,6 +622,10 @@ void UIOverlay::setSavePath(const std::string& path) {
     applyGameSpeed(mSettings.gameSpeed);
     applyLanguage(mSettings.languageChoice);
     applyTargetFps(mSettings.batterySaver ? 30 : mSettings.targetFps);
+    port_set_character_choice(mSettings.characterChoice);
+    port_set_odyssey_moveset(mSettings.odysseyMoveset ? 1 : 0);
+    port_set_coop_mode(mSettings.coopMode ? 1 : 0);
+    port_set_speedrun_hud_enabled(mSettings.speedrunHud ? 1 : 0);
 }
 
 void UIOverlay::reportFramePresented() {
@@ -859,6 +886,11 @@ bool UIOverlay::init() {
     if (rend && rend[0]) {
         mGpuRendererName = rend;
     }
+
+    port_set_character_choice(mSettings.characterChoice);
+    port_set_odyssey_moveset(mSettings.odysseyMoveset ? 1 : 0);
+    port_set_coop_mode(mSettings.coopMode ? 1 : 0);
+    port_set_speedrun_hud_enabled(mSettings.speedrunHud ? 1 : 0);
 
     mInitialized = true;
     LOGI("Mobile UI initialized successfully (Atlas %dx%d, GPU: %s)", mAtlasW, mAtlasH, mGpuRendererName.c_str());
@@ -1603,7 +1635,55 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
                                 showToast(idx == 0 ? "Performance HUD: OFF" : idx == 1 ? "Performance HUD: FPS Only" : "Performance HUD: Full Hardware Stats");
                                 break;
                             }
-                            // Mods Tab
+                            case ACT_VULKAN_POSTPROCESS: {
+                                int cur = port_is_post_processing_enabled();
+                                port_set_post_processing_enabled(cur ? 0 : 1);
+                                showToast(cur ? "Vulkan Post-Processing: OFF" : "Vulkan FXAA & Cosmic Bloom: ENABLED");
+                                break;
+                            }
+                            // Mods Tab - Hero & Moveset
+                            case ACT_CHARACTER_SELECT: {
+                                int idx = std::max(0, std::min(3, (int)(relX / (contentW / 4.0f))));
+                                mSettings.characterChoice = idx;
+                                port_set_character_choice(idx);
+                                const char* names[] = {"Mario (Standard)", "Luigi (High Jump, Slippery)", "Peach (Hover Float)", "Rosalina (Cosmic Pull)"};
+                                showToast(std::string("Playable Hero: ") + names[idx]);
+                                break;
+                            }
+                            case ACT_ODYSSEY_MOVESET: {
+                                mSettings.odysseyMoveset = !mSettings.odysseyMoveset;
+                                port_set_odyssey_moveset(mSettings.odysseyMoveset ? 1 : 0);
+                                showToast(mSettings.odysseyMoveset ? "Odyssey Moveset: ON (Dive ZL+Y, Roll, Jump Boost)" : "Odyssey Moveset: OFF");
+                                break;
+                            }
+                            case ACT_COOP_MODE: {
+                                mSettings.coopMode = !mSettings.coopMode;
+                                port_set_coop_mode(mSettings.coopMode ? 1 : 0);
+                                showToast(mSettings.coopMode ? "2P Co-Op Active Assist: ON" : "2P Co-Op Active Assist: OFF");
+                                break;
+                            }
+                            case ACT_SAVESTATE_ACTIONS: {
+                                if (px < midX) {
+                                    port_trigger_savestate_save();
+                                    if (mSettings.haptics) port_android_vibrate(50);
+                                    showToast("Instant 0ms Savestate Snapshot Saved!");
+                                } else {
+                                    if (port_savestate_has_data()) {
+                                        port_trigger_savestate_load();
+                                        if (mSettings.haptics) port_android_vibrate(75);
+                                        showToast("Instant 0ms Savestate Restored!");
+                                    } else {
+                                        showToast("No savestate in memory! Tap Save State first.");
+                                    }
+                                }
+                                break;
+                            }
+                            case ACT_SPEEDRUN_HUD: {
+                                mSettings.speedrunHud = !mSettings.speedrunHud;
+                                port_set_speedrun_hud_enabled(mSettings.speedrunHud ? 1 : 0);
+                                showToast(mSettings.speedrunHud ? "Speedrun Practice HUD: ON" : "Speedrun Practice HUD: OFF");
+                                break;
+                            }
                             case ACT_SHIELD_TEXTURES:
                                 mSettings.modShieldTextures = !mSettings.modShieldTextures;
                                 showToast(mSettings.modShieldTextures ? "Shield HD Textures: ENABLED (1080p)" : "Shield HD Textures: DISABLED");
@@ -2727,6 +2807,42 @@ void UIOverlay::generateVertices(int screenW, int screenH, std::vector<UIVertex>
     }
 
     // -------------------------------------------------------------
+    // Speedrunning & Practice Telemetry HUD
+    // -------------------------------------------------------------
+    if (mSettings.speedrunHud && !mEditLayoutMode) {
+        PortSpeedrunTelemetry telem{};
+        port_get_speedrun_telemetry(&telem);
+
+        char line1[128];
+        char line2[128];
+        snprintf(line1, sizeof(line1), "POS: [%.1f, %.1f, %.1f]  •  YAW: %.0f°", telem.posX, telem.posY, telem.posZ, telem.angleYaw);
+        uint32_t totalSec = telem.stageTimerMs / 1000;
+        uint32_t min = totalSec / 60;
+        uint32_t sec = totalSec % 60;
+        uint32_t csec = (telem.stageTimerMs % 1000) / 10;
+        snprintf(line2, sizeof(line2), "H-SPD: %.2f  •  V-SPD: %.2f  •  HP: %d/%d  •  %02u:%02u.%02u",
+                 telem.velH, telem.velY, telem.health, telem.maxHealth, min, sec, csec);
+
+        float sTextScale = 0.26f * uiScale;
+        float tw1 = measureText(line1, sTextScale);
+        float tw2 = measureText(line2, sTextScale);
+        float sBoxW = std::max(tw1, tw2) + 24.0f * uiScale;
+        float sBoxH = 40.0f * uiScale;
+        float sBoxX = 16.0f * uiScale;
+        float sBoxY = (mSettings.perfHudMode > 0) ? (46.0f * uiScale) : (14.0f * uiScale);
+
+        // Glassmorphic dark container
+        drawRoundRect(sBoxX, sBoxY, sBoxX + sBoxW, sBoxY + sBoxH, 10.0f * uiScale, rgba(0.04f, 0.08f, 0.14f, 0.88f));
+        drawRoundRect(sBoxX + 1.0f, sBoxY + 1.0f, sBoxX + sBoxW - 1.0f, sBoxY + sBoxH - 1.0f, 9.0f * uiScale, rgba(0.20f, 0.75f, 0.95f, 0.50f));
+
+        // Green indicator dot
+        drawCircle(sBoxX + 9.0f * uiScale, sBoxY + 14.0f * uiScale, 3.0f * uiScale, rgba(0.20f, 0.95f, 0.65f, 1.0f));
+
+        drawText(line1, sBoxX + 16.0f * uiScale, sBoxY + 16.0f * uiScale, sTextScale, rgba(0.85f, 0.95f, 1.0f, 0.95f), 0);
+        drawText(line2, sBoxX + 16.0f * uiScale, sBoxY + 31.0f * uiScale, sTextScale, rgba(1.0f, 0.88f, 0.40f, 0.95f), 0);
+    }
+
+    // -------------------------------------------------------------
     // Material 3 Settings Tab Dock (Pinned to Top-Left Edge)
     // -------------------------------------------------------------
     if (mDrawerAnim < 0.95f) {
@@ -2911,7 +3027,11 @@ void UIOverlay::generateVertices(int screenW, int screenH, std::vector<UIVertex>
                 case ACT_FULL_TOUCH_MODE: swOn = mSettings.fullTouchMode; break;
                 case ACT_HAPTICS: swOn = mSettings.haptics; break;
                 case ACT_BATTERY_SAVER: swOn = mSettings.batterySaver; break;
+                case ACT_VULKAN_POSTPROCESS: swOn = (port_is_post_processing_enabled() != 0); break;
                 case ACT_FULLSCREEN: swOn = mSettings.fullscreen; break;
+                case ACT_ODYSSEY_MOVESET: swOn = mSettings.odysseyMoveset; break;
+                case ACT_COOP_MODE: swOn = mSettings.coopMode; break;
+                case ACT_SPEEDRUN_HUD: swOn = mSettings.speedrunHud; break;
                 case ACT_SHIELD_TEXTURES: swOn = mSettings.modShieldTextures; break;
                 case ACT_SHIELD_CUTSCENES: swOn = mSettings.modShieldCutscenes; break;
                 case ACT_SHIELD_CONTROLS: swOn = mSettings.modShieldControls; break;
@@ -2932,6 +3052,9 @@ void UIOverlay::generateVertices(int screenW, int screenH, std::vector<UIVertex>
 
                 int activeIdx = 0;
                 switch (r.action) {
+                case ACT_CHARACTER_SELECT:
+                    activeIdx = std::max(0, std::min(3, mSettings.characterChoice));
+                    break;
                 case ACT_RIGHT_STICK_MODE:
                     activeIdx = (mSettings.rightStickMode == 1) ? 1 : 0;
                     break;
@@ -3014,6 +3137,16 @@ void UIOverlay::generateVertices(int screenW, int screenH, std::vector<UIVertex>
 
                     drawRoundRect(b1_x0, btnY, b1_x1, btnY + btnH, 12.0f * uiScale, c1);
                     drawText(mSettings.gyroInvertY ? "Invert Y: ON" : "Invert Y: OFF", (b1_x0 + b1_x1) * 0.5f, btnY + btnH * 0.62f, 0.32f * uiScale, rgba(1.0f, 1.0f, 1.0f, 1.0f), 1);
+                }
+
+                else if (r.action == ACT_SAVESTATE_ACTIONS) {
+                    drawRoundRect(b0_x0, btnY, b0_x1, btnY + btnH, 12.0f * uiScale, rgba(0.08f, 0.32f, 0.45f, 0.95f));
+                    drawRoundRect(b0_x0, btnY, b0_x1, btnY + btnH, 12.0f * uiScale, rgba(0.25f, 0.85f, 1.0f, 0.65f));
+                    drawText("Save State (0ms)", (b0_x0 + b0_x1) * 0.5f, btnY + btnH * 0.62f, 0.32f * uiScale, rgba(1.0f, 1.0f, 1.0f, 1.0f), 1);
+
+                    drawRoundRect(b1_x0, btnY, b1_x1, btnY + btnH, 12.0f * uiScale, rgba(0.35f, 0.22f, 0.08f, 0.95f));
+                    drawRoundRect(b1_x0, btnY, b1_x1, btnY + btnH, 12.0f * uiScale, rgba(1.0f, 0.80f, 0.25f, 0.65f));
+                    drawText("Load State (0ms)", (b1_x0 + b1_x1) * 0.5f, btnY + btnH * 0.62f, 0.32f * uiScale, rgba(1.0f, 1.0f, 1.0f, 1.0f), 1);
                 }
                 else if (r.action == ACT_SLOT_ACTIONS) {
                     drawRoundRect(b0_x0, btnY, b0_x1, btnY + btnH, 12.0f * uiScale, rgba(0.06f, 0.38f, 0.28f, 0.95f));

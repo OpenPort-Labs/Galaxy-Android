@@ -1,6 +1,7 @@
 // Definitions the original binary had (or never needed) that the decomp does
 // not provide as out-of-line code.
 #include <string.h>
+#include "port/port.h"
 
 #include "Game/Effect/ParticleEmitter.hpp"
 #include "Game/System/StationedArchiveLoader.hpp"
@@ -97,4 +98,44 @@ __attribute__((weak)) int port_check_quick_load_request(int* slot) {
 }
 
 __attribute__((weak)) void port_android_vibrate(int ms) { (void)ms; }
+
+static int sCharacterChoice = 0;
+__attribute__((weak)) int port_get_character_choice(void) { return __atomic_load_n(&sCharacterChoice, __ATOMIC_ACQUIRE); }
+__attribute__((weak)) void port_set_character_choice(int c) { __atomic_store_n(&sCharacterChoice, c, __ATOMIC_RELEASE); }
+
+static int sOdysseyMoveset = 1;
+__attribute__((weak)) int port_is_odyssey_moveset(void) { return __atomic_load_n(&sOdysseyMoveset, __ATOMIC_ACQUIRE); }
+__attribute__((weak)) void port_set_odyssey_moveset(int e) { __atomic_store_n(&sOdysseyMoveset, e, __ATOMIC_RELEASE); }
+
+static int sCoopMode = 0;
+__attribute__((weak)) int port_is_coop_mode(void) { return __atomic_load_n(&sCoopMode, __ATOMIC_ACQUIRE); }
+__attribute__((weak)) void port_set_coop_mode(int e) { __atomic_store_n(&sCoopMode, e, __ATOMIC_RELEASE); }
+
+static int sSavestateSaveReq = 0;
+static int sSavestateLoadReq = 0;
+static int sSavestateHasData = 0;
+__attribute__((weak)) void port_trigger_savestate_save(void) {
+    __atomic_store_n(&sSavestateHasData, 1, __ATOMIC_RELEASE);
+    __atomic_store_n(&sSavestateSaveReq, 1, __ATOMIC_RELEASE);
+}
+__attribute__((weak)) void port_trigger_savestate_load(void) { __atomic_store_n(&sSavestateLoadReq, 1, __ATOMIC_RELEASE); }
+__attribute__((weak)) int port_check_savestate_save(void) { return __atomic_exchange_n(&sSavestateSaveReq, 0, __ATOMIC_ACQ_REL); }
+__attribute__((weak)) int port_check_savestate_load(void) { return __atomic_exchange_n(&sSavestateLoadReq, 0, __ATOMIC_ACQ_REL); }
+__attribute__((weak)) int port_savestate_has_data(void) { return __atomic_load_n(&sSavestateHasData, __ATOMIC_ACQUIRE); }
+
+static int sSpeedrunHudEnabled = 0;
+__attribute__((weak)) int port_is_speedrun_hud_enabled(void) { return __atomic_load_n(&sSpeedrunHudEnabled, __ATOMIC_ACQUIRE); }
+__attribute__((weak)) void port_set_speedrun_hud_enabled(int e) { __atomic_store_n(&sSpeedrunHudEnabled, e, __ATOMIC_RELEASE); }
+
+static PortSpeedrunTelemetry sTelemetry{};
+__attribute__((weak)) void port_update_speedrun_telemetry(const PortSpeedrunTelemetry* t) {
+    if (t) sTelemetry = *t;
+}
+__attribute__((weak)) void port_get_speedrun_telemetry(PortSpeedrunTelemetry* t) {
+    if (t) *t = sTelemetry;
+}
+
+static int sPostProcessing = 1;
+__attribute__((weak)) int port_is_post_processing_enabled(void) { return __atomic_load_n(&sPostProcessing, __ATOMIC_ACQUIRE); }
+__attribute__((weak)) void port_set_post_processing_enabled(int e) { __atomic_store_n(&sPostProcessing, e, __ATOMIC_RELEASE); }
 }

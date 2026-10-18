@@ -997,6 +997,122 @@ void MarioActor::control() {
     }
 
     control2();
+
+    // =============================================================
+    // Native Port Enhancements: Savestates, Character Profiles & Odyssey Moveset
+    // =============================================================
+    static TVec3f sSavePos(0.0f, 0.0f, 0.0f);
+    static TVec3f sSaveVel(0.0f, 0.0f, 0.0f);
+    static TVec3f sSaveFront(0.0f, 0.0f, 1.0f);
+    static s32 sSaveHealth = 3;
+    static bool sHasSavestate = false;
+
+    if (port_check_savestate_save()) {
+        sSavePos = mPosition;
+        sSaveVel = mVelocity;
+        sSaveFront = mMario ? mMario->mFrontVec : TVec3f(0.0f, 0.0f, 1.0f);
+        sSaveHealth = mHealth;
+        sHasSavestate = true;
+        MR::startSystemSE("SE_SY_STAR_RESULT_COIN");
+    } else if (port_check_savestate_load() && sHasSavestate) {
+        mPosition = sSavePos;
+        mVelocity = sSaveVel;
+        _294 = sSavePos;
+        _270 = sSavePos;
+        if (mMario) {
+            mMario->mPosition = sSavePos;
+            mMario->mVelocity = sSaveVel;
+            mMario->mFrontVec = sSaveFront;
+            mMario->mJumpVec.zero();
+        }
+        mHealth = sSaveHealth;
+        MR::startSystemSE("SE_SY_WARP_IN");
+    }
+
+    // Character Selection Profile (0=Mario, 1=Luigi, 2=Peach, 3=Rosalina)
+    int charChoice = port_get_character_choice();
+    gIsLuigi = (charChoice == 1);
+
+    // Peach: Mid-Air Hover Float (holding Jump while falling)
+    static int sPeachFloatTimer = 0;
+    if (charChoice == 2 && mMario) {
+        bool inAir = !MR::isOnGroundPlayer();
+        if (inAir && isKeepJump() && mVelocity.dot(getGravityVec()) > 0.0f) {
+            if (sPeachFloatTimer < 90) {
+                sPeachFloatTimer++;
+                TVec3f antiGrav = -getGravityVec() * (mVelocity.dot(getGravityVec()) * 0.85f);
+                mVelocity += antiGrav;
+                mMario->mJumpVec += antiGrav;
+            }
+        } else if (MR::isOnGroundPlayer()) {
+            sPeachFloatTimer = 0;
+        }
+    }
+
+    // Rosalina: Cosmic Gravitational Pull for Starbits & Coins
+    if (charChoice == 3) {
+        MR::tryPlayerCoinPull();
+    }
+
+    // Expanded Odyssey Moveset (Dive, Crouch Roll, Ground-Pound Jump)
+    if (port_is_odyssey_moveset() && mMario) {
+        bool jumpTrg = isRequestJump();
+
+        // Mid-Air Forward Dive (Spin while in midair and holding Crouch Z)
+        bool inAir = !MR::isOnGroundPlayer();
+        if (inAir && isRequestSpin() && (checkButtonType(5, false) || checkButtonType(2, false))) {
+            TVec3f front = mMario->mFrontVec;
+            MR::normalizeOrZero(&front);
+            TVec3f up = -getGravityVec();
+            MR::normalizeOrZero(&up);
+
+            mVelocity = (front * 40.0f) + (up * 10.0f);
+            mMario->mJumpVec = up * 8.0f;
+            mMario->mVelocity = mVelocity;
+            MR::startSystemSE("SE_PM_SLIP");
+        }
+
+        // Ground-Pound High Jump (Jump immediately upon landing from HipDrop)
+        if (MR::isPlayerHipDropLand() && jumpTrg) {
+            TVec3f up = -getGravityVec();
+            MR::normalizeOrZero(&up);
+            mVelocity += up * 44.0f;
+            mMario->mJumpVec = up * 44.0f;
+            MR::startSystemSE("SE_PM_TRIPLE_JUMP");
+        }
+
+        // Crouch Roll (Spin while crouching on ground)
+        if (MR::isOnGroundPlayer() && checkButtonType(5, false) && isRequestSpin()) {
+            TVec3f front = mMario->mFrontVec;
+            MR::normalizeOrZero(&front);
+            mVelocity += front * 36.0f;
+            mMario->mVelocity = mVelocity;
+            MR::startSystemSE("SE_PM_SPIN_ATTACK");
+        }
+    }
+
+    // Live Speedrunning Practice Telemetry
+    if (port_is_speedrun_hud_enabled()) {
+        PortSpeedrunTelemetry t{};
+        t.posX = mPosition.x;
+        t.posY = mPosition.y;
+        t.posZ = mPosition.z;
+
+        TVec3f hVel;
+        MR::vecKillElement(mVelocity, getGravityVec(), &hVel);
+        t.velH = hVel.length();
+        t.velY = -mVelocity.dot(getGravityVec());
+
+        if (mMario) {
+            t.angleYaw = atan2f(mMario->mFrontVec.x, mMario->mFrontVec.z) * (180.0f / 3.14159265f);
+        }
+        t.health = mHealth;
+        t.maxHealth = mMaxHealth;
+        t.airState = MR::isOnGroundPlayer() ? 0 : 1;
+        t.stageTimerMs = (uint32_t)(port_host_time_ns() / 1000000ULL);
+        port_update_speedrun_telemetry(&t);
+    }
+
     _294 = mPosition;
 }
 

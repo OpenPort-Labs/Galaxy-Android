@@ -1,4 +1,5 @@
 #include "SaveSyncManager.h"
+#include "DolphinSaveConverter.h"
 
 #include <stdio.h>
 #include <sys/stat.h>
@@ -40,29 +41,34 @@ bool SaveSyncManager::exportSave(const std::string& savePath, std::string& outTo
         return false;
     }
 
-    mkdir("/sdcard/Download", 0770);
-    std::string dstSave1 = "/sdcard/Download/GalaxyAndroid_save.bin";
-    std::string dstSave2 = "/sdcard/Download/GameData.bin";
-
-    FILE* out1 = fopen(dstSave1.c_str(), "wb");
-    FILE* out2 = fopen(dstSave2.c_str(), "wb");
-    if (!out1 && !out2) {
-        fclose(in);
-        outToastMsg = "Cannot write to Downloads folder!";
-        return false;
-    }
-
+    std::vector<uint8_t> data;
     char buf[4096];
     size_t n;
     while ((n = fread(buf, 1, sizeof(buf), in)) > 0) {
-        if (out1) fwrite(buf, 1, n, out1);
-        if (out2) fwrite(buf, 1, n, out2);
+        data.insert(data.end(), buf, buf + n);
     }
     fclose(in);
-    if (out1) fclose(out1);
-    if (out2) fclose(out2);
 
-    outToastMsg = "Exported to Download/GalaxyAndroid_save.bin!";
+    mkdir("/sdcard/Download", 0770);
+    std::string dstSave1 = "/sdcard/Download/GalaxyAndroid_save.bin";
+    std::string dstSave2 = "/sdcard/Download/GameData.bin";
+    std::string dstDolphin = "/sdcard/Download/GameData_Dolphin.bin";
+
+    FILE* out1 = fopen(dstSave1.c_str(), "wb");
+    FILE* out2 = fopen(dstSave2.c_str(), "wb");
+    if (out1) { fwrite(data.data(), 1, data.size(), out1); fclose(out1); }
+    if (out2) { fwrite(data.data(), 1, data.size(), out2); fclose(out2); }
+
+    std::vector<uint8_t> dolphinData;
+    if (DolphinSaveConverter::convertNativeToDolphin(data.data(), data.size(), dolphinData)) {
+        FILE* outDol = fopen(dstDolphin.c_str(), "wb");
+        if (outDol) {
+            fwrite(dolphinData.data(), 1, dolphinData.size(), outDol);
+            fclose(outDol);
+        }
+    }
+
+    outToastMsg = "Exported to Download/ (includes Dolphin save)!";
     return true;
 }
 
@@ -75,15 +81,24 @@ bool SaveSyncManager::importSave(const std::string& savePath, std::string& outTo
     const char* downloadCandidates[] = {
         "/sdcard/Download/GalaxyAndroid_save.bin",
         "/sdcard/Download/GameData.bin",
-        "/sdcard/Download/save.bin"
+        "/sdcard/Download/GameData_Dolphin.bin",
+        "/sdcard/Download/save.bin",
+        "/sdcard/dolphin-emu/Wii/title/00010000/524d4745/data/GameData.bin",
+        "/sdcard/dolphin-emu/Wii/title/00010000/524d4750/data/GameData.bin",
+        "/sdcard/dolphin-emu/Wii/title/00010000/524d474a/data/GameData.bin",
+        "/sdcard/dolphin-emu/Wii/title/00010000/524d474b/data/GameData.bin",
+        "/sdcard/GalaxyData/saves/GameData.bin",
+        "/sdcard/GalaxyData/saves/GameData_Dolphin.bin"
     };
+
     FILE* in = nullptr;
+    const char* matchedPath = nullptr;
     for (const char* path : downloadCandidates) {
         in = fopen(path, "rb");
-        if (in) break;
+        if (in) { matchedPath = path; break; }
     }
     if (!in) {
-        outToastMsg = "Put GalaxyAndroid_save.bin in Downloads!";
+        outToastMsg = "Put GameData.bin in Download or Dolphin folder!";
         return false;
     }
 
@@ -100,6 +115,15 @@ bool SaveSyncManager::importSave(const std::string& savePath, std::string& outTo
         return false;
     }
 
+    bool wasDolphin = false;
+    if (DolphinSaveConverter::isDolphinSave(data.data(), data.size())) {
+        std::vector<uint8_t> nativeData;
+        if (DolphinSaveConverter::convertDolphinToNative(data.data(), data.size(), nativeData)) {
+            data = std::move(nativeData);
+            wasDolphin = true;
+        }
+    }
+
     const char* titles[] = {"524d4750", "524d4745", "524d474a", "524d474b"};
     mkdir((saveRoot + "/title").c_str(), 0770);
     mkdir((saveRoot + "/title/00010000").c_str(), 0770);
@@ -108,16 +132,11 @@ bool SaveSyncManager::importSave(const std::string& savePath, std::string& outTo
         mkdir((saveRoot + "/title/00010000/" + t).c_str(), 0770);
         mkdir(dir.c_str(), 0770);
         FILE* out = fopen((dir + "/GameData.bin").c_str(), "wb");
-        if (out) {
-            fwrite(data.data(), 1, data.size(), out);
-            fclose(out);
-        }
+        if (out) { fwrite(data.data(), 1, data.size(), out); fclose(out); }
         FILE* outOld = fopen((dir + "/save.bin").c_str(), "wb");
-        if (outOld) {
-            fwrite(data.data(), 1, data.size(), outOld);
-            fclose(outOld);
-        }
+        if (outOld) { fwrite(data.data(), 1, data.size(), outOld); fclose(outOld); }
     }
+
     mkdir("/sdcard/GalaxyData", 0770);
     mkdir("/sdcard/GalaxyData/saves", 0770);
     FILE* outExt = fopen("/sdcard/GalaxyData/saves/GameData.bin", "wb");
@@ -126,7 +145,7 @@ bool SaveSyncManager::importSave(const std::string& savePath, std::string& outTo
         fclose(outExt);
     }
 
-    outToastMsg = "Imported save data successfully!";
+    outToastMsg = wasDolphin ? "Imported & converted Dolphin save successfully!" : "Imported save data successfully!";
     return true;
 }
 

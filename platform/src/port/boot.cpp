@@ -3,6 +3,11 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <string>
+#include <vector>
+
+#if TARGET_MOBILE
+#include "mobile/ui/DolphinSaveConverter.h"
+#endif
 
 extern "C" void port_os_time_init(void);
 extern "C" void port_gx_init(void);
@@ -51,37 +56,48 @@ extern "C" void port_boot(const char* dataRoot, const char* saveRoot) {
                 mkdir((std::string(saveRoot) + "/title/00010000").c_str(), 0770);
                 mkdir((std::string(saveRoot) + "/title/00010000/" + t).c_str(), 0770);
                 mkdir(dir.c_str(), 0770);
-
                 std::string tmpInternal = internalSave + ".tmp";
                 FILE* mirror = fopen(mirrorPath.c_str(), "rb");
                 if (mirror) {
+                    std::vector<uint8_t> mdata;
+                    char buf[8192];
+                    size_t n;
+                    while ((n = fread(buf, 1, sizeof(buf), mirror)) > 0) {
+                        mdata.insert(mdata.end(), buf, buf + n);
+                    }
+                    fclose(mirror);
+
+#if TARGET_MOBILE
+                    if (mobile_ui::DolphinSaveConverter::isDolphinSave(mdata.data(), mdata.size())) {
+                        std::vector<uint8_t> converted;
+                        if (mobile_ui::DolphinSaveConverter::convertDolphinToNative(mdata.data(), mdata.size(), converted)) {
+                            mdata = std::move(converted);
+                            port_log("[BOOT] NAND: converted Dolphin big-endian save to native little-endian");
+                            FILE* fixMirror = fopen(mirrorPath.c_str(), "wb");
+                            if (fixMirror) {
+                                fwrite(mdata.data(), 1, mdata.size(), fixMirror);
+                                fclose(fixMirror);
+                            }
+                        }
+                    }
+#endif
+
                     FILE* restore = fopen(tmpInternal.c_str(), "wb");
                     if (restore) {
-                        char buf[8192];
-                        size_t n;
-                        size_t total = 0;
-                        bool writeErr = false;
-                        while ((n = fread(buf, 1, sizeof(buf), mirror)) > 0) {
-                            if (fwrite(buf, 1, n, restore) != n) {
-                                writeErr = true;
-                                break;
-                            }
-                            total += n;
-                        }
+                        bool writeErr = (fwrite(mdata.data(), 1, mdata.size(), restore) != mdata.size());
                         fflush(restore);
                         int fd = fileno(restore);
                         if (fd >= 0) fsync(fd);
                         fclose(restore);
 
-                        if (!writeErr && total == (size_t)stMirror.st_size) {
+                        if (!writeErr && mdata.size() >= 512) {
                             rename(tmpInternal.c_str(), internalSave.c_str());
-                            port_log("[BOOT] NAND: verified auto-restore GameData.bin (%zu bytes) -> %s", total, internalSave.c_str());
+                            port_log("[BOOT] NAND: verified auto-restore GameData.bin (%zu bytes) -> %s", mdata.size(), internalSave.c_str());
                         } else {
                             unlink(tmpInternal.c_str());
                             port_log("[BOOT] NAND: warning - restore from mirror failed byte verification");
                         }
                     }
-                    fclose(mirror);
                 }
             }
         }

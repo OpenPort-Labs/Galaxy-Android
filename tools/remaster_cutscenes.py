@@ -10,7 +10,7 @@ import subprocess
 import sys
 import time
 
-def remaster_all_cutscenes(shield_movie_dir: str, target_movie_dir: str):
+def remaster_all_cutscenes(shield_movie_dir: str, target_movie_dir: str, orig_wii_movie_dir: str = "tools/orig_wii_extracted/DATA/files/MovieData"):
     tools_dir = os.path.abspath("tools")
     thpconv_exe = os.path.join(tools_dir, "THPConv.exe")
     dsptool_dll = os.path.join(tools_dir, "dsptool.dll")
@@ -30,10 +30,11 @@ def remaster_all_cutscenes(shield_movie_dir: str, target_movie_dir: str):
         return False
 
     print("=======================================================")
-    print("REMASTERING WII THP CUTSCENES FROM NVIDIA SHIELD MASTERS")
+    print("REMASTERING WII THP CUTSCENES (SHIELD 1080p + WII AUDIO)")
     print("=======================================================")
-    print(f"Source Directory : {shield_movie_dir}")
-    print(f"Target Directory : {target_movie_dir}")
+    print(f"Shield Video Source : {shield_movie_dir}")
+    print(f"Wii Audio Source    : {orig_wii_movie_dir}")
+    print(f"Target Directory    : {target_movie_dir}")
     print(f"Found {len(mp4_files)} cutscenes to remaster.\n")
 
     temp_dir = os.path.join(tools_dir, "temp_cutscene_build")
@@ -65,14 +66,24 @@ def remaster_all_cutscenes(shield_movie_dir: str, target_movie_dir: str):
             print(f"  Error extracting frames: {res_v.stderr.decode('utf-8', errors='ignore')}")
             continue
 
-        # 2. Extract 32000Hz 16-bit stereo PCM audio
-        print("  - Extracting 32kHz stereo audio...")
+        # 2. Extract 32000Hz 16-bit stereo PCM audio from original Wii THP
         audio_wav = os.path.join(temp_dir, "audio.wav")
-        ffmpeg_a = [
-            "ffmpeg", "-y", "-i", mp4_path,
-            "-ar", "32000", "-ac", "2",
-            audio_wav
-        ]
+        orig_thp = os.path.join(orig_wii_movie_dir, f"{base_name}.thp") if orig_wii_movie_dir else None
+
+        if orig_thp and os.path.exists(orig_thp):
+            print(f"  - Extracting authentic Wii English audio from {base_name}.thp...")
+            ffmpeg_a = [
+                "ffmpeg", "-y", "-i", orig_thp,
+                "-vn", "-ar", "32000", "-ac", "2",
+                audio_wav
+            ]
+        else:
+            print(f"  - (Fallback) Extracting audio from {base_name}.mp4...")
+            ffmpeg_a = [
+                "ffmpeg", "-y", "-i", mp4_path,
+                "-vn", "-ar", "32000", "-ac", "2",
+                audio_wav
+            ]
         subprocess.run(ffmpeg_a, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
         # 3. Pack into THP using THPConv.exe
@@ -91,7 +102,7 @@ def remaster_all_cutscenes(shield_movie_dir: str, target_movie_dir: str):
             shutil.copy2(temp_thp, output_thp)
             size_mb = os.path.getsize(output_thp) / (1024 * 1024)
             elapsed = time.time() - start_time
-            print(f"  Successfully remastered {base_name}.thp ({size_mb:.1f} MB) in {elapsed:.1f}s\n")
+            print(f"  Successfully remastered {base_name}.thp ({size_mb:.1f} MB) with original Wii audio in {elapsed:.1f}s\n")
         else:
             print(f"  Failed to build {base_name}.thp\n")
 
@@ -99,11 +110,12 @@ def remaster_all_cutscenes(shield_movie_dir: str, target_movie_dir: str):
         shutil.rmtree(temp_dir, ignore_errors=True)
 
     print("=======================================================")
-    print("ALL CUTSCENES REMASTERED SUCCESSFULLY!")
+    print("ALL CUTSCENES REMASTERED WITH ORIGINAL WII AUDIO!")
     print("=======================================================")
     return True
 
 if __name__ == "__main__":
     src = sys.argv[1] if len(sys.argv) > 1 else "shield_extracted/assets_all/MovieData"
     dst = sys.argv[2] if len(sys.argv) > 2 else "extracted/DATA/files/MovieData"
-    remaster_all_cutscenes(src, dst)
+    wii_src = sys.argv[3] if len(sys.argv) > 3 else "tools/orig_wii_extracted/DATA/files/MovieData"
+    remaster_all_cutscenes(src, dst, wii_src)

@@ -25,12 +25,9 @@ public class MainActivity extends Activity {
     private static final int REQ_PICK_DISC = 1001;
     private static final int REQ_PICK_DRIVER = 1002;
 
-    private TextView txtGameStatusBadge, txtGameStatusDetail;
-    private TextView txtGpuHardwareInfo, txtDriverStatusBadge, txtDriverDetail;
-    private TextView txtSourcePath, txtProgressStatus, txtLogOutput;
+    private TextView txtGameStatusBadge, txtGameStatusDetail, txtGpuHardwareInfo, txtDriverStatusBadge, txtDriverDetail, txtSourcePath, txtProgressStatus, txtLogOutput;
     private CheckBox chkIncludeMovies;
-    private Button btnSelectDisc, btnAutoDetect, btnStartCooking, btnLaunchGame, btnResetData;
-    private Button btnInstallDriver, btnResetDriver, btnRes480, btnRes720, btnRes1080;
+    private Button btnSelectDisc, btnAutoDetect, btnStartCooking, btnLaunchGame, btnResetData, btnInstallDriver, btnResetDriver, btnRes480, btnRes720, btnRes1080;
     private ProgressBar progressBar;
 
     private String mSelectedSourcePath = "";
@@ -121,6 +118,11 @@ public class MainActivity extends Activity {
 
         btnLaunchGame.setOnClickListener(v -> launchGameDirectly());
         btnResetData.setOnClickListener(v -> showResetDialog());
+
+        Button btnDiscord = findViewById(R.id.btnJoinDiscord);
+        if (btnDiscord != null) {
+            btnDiscord.setOnClickListener(v -> startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("https://discord.gg/H3qdNWYu2"))));
+        }
     }
 
     private void applyResolutionPreset(int scale) {
@@ -142,14 +144,14 @@ public class MainActivity extends Activity {
             txtGameStatusBadge.setText("READY TO PLAY");
             txtGameStatusBadge.setBackgroundResource(R.drawable.badge_bg_green);
             txtGameStatusBadge.setTextColor(getColor(R.color.success_green));
-            txtGameStatusDetail.setText("Game data verified: " + foundDir.getAbsolutePath() + ". Tap Launch to play!");
+            txtGameStatusDetail.setText("Game data verified: " + foundDir.getAbsolutePath());
             txtProgressStatus.setText("Ready to play! Tap Launch Game.");
         } else {
             btnLaunchGame.setVisibility(View.GONE);
             txtGameStatusBadge.setText("INSTALLATION NEEDED");
             txtGameStatusBadge.setBackgroundResource(R.drawable.badge_bg_amber);
             txtGameStatusBadge.setTextColor(getColor(R.color.warning_amber));
-            txtGameStatusDetail.setText("Game data not found in /sdcard/GalaxyData or MicroSD. Select a disc below to install.");
+            txtGameStatusDetail.setText("Game data not found in /sdcard/GalaxyData or MicroSD.");
             txtProgressStatus.setText("Awaiting game disc selection...");
         }
     }

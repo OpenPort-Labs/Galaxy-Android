@@ -87,11 +87,59 @@
                     android:paddingRight="10dp"
                     android:paddingTop="4dp"
                     android:paddingBottom="4dp"
-                    android:text="v0.0.2"
+                    android:text="v0.0.4-alpha (Tester)"
                     android:textColor="@color/success_green"
                     android:textSize="11sp"
                     android:textStyle="bold" />
             </LinearLayout>
+        </LinearLayout>
+
+        <!-- Tester Build & Discord Notice Banner -->
+        <LinearLayout
+            android:id="@+id/cardDiscordNotice"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:background="@drawable/card_bg_accent"
+            android:padding="12dp"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="12dp">
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/tester_build_title"
+                    android:textColor="@color/primary_accent"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:text="@string/tester_build_desc"
+                    android:textColor="@color/text_primary"
+                    android:textSize="11sp" />
+            </LinearLayout>
+
+            <Button
+                android:id="@+id/btnJoinDiscord"
+                android:layout_width="wrap_content"
+                android:layout_height="38dp"
+                android:layout_marginLeft="10dp"
+                android:background="@drawable/btn_primary"
+                android:paddingLeft="14dp"
+                android:paddingRight="14dp"
+                android:text="@string/btn_join_discord"
+                android:textColor="@color/text_primary"
+                android:textSize="11sp"
+                android:textStyle="bold" />
         </LinearLayout>
 
         <!-- Main Responsive Two-Column Body -->

@@ -1,3 +1,26 @@
+# GalaxyAndroid v0.0.4-alpha — Community Tester Build
+
+Alpha test release introducing the modular sub-300 LOC Vulkan translation architecture, THP cutscene video crash guards, full touch control optimizations, and community tester feedback channels.
+
+> [!IMPORTANT]
+> **Mandatory Requirement for Testers: Discord Membership**:
+> For all testers, it is necessary and mandatory to join our official Discord server to report issues, submit logs, discuss test builds, and receive real-time support:
+> - **Official Tester Discord**: [https://discord.gg/H3qdNWYu2](https://discord.gg/H3qdNWYu2)
+> 
+> *Notice: Bug reports and support requests must go through Discord or GitHub Issues. Do not send bug reports via email; emails are not monitored for technical support.*
+
+---
+
+### Highlights & Engineering Improvements in v0.0.4-alpha
+- **Mandatory Tester Discord & Feedback Hub**: Added dedicated in-app links and tester notices requiring all alpha testers to join [https://discord.gg/H3qdNWYu2](https://discord.gg/H3qdNWYu2) for reporting issues, uploading crash logs, discussing performance across device chipsets, and receiving test updates.
+- **Hardware Translation Architecture Modularization**: Split the monolithic Vulkan renderer (`vk_renderer.cpp`, 3,967 LOC) into 21 dedicated single-responsibility translation units in `platform/src/gx/vk/` (all strictly <= 276 LOC).
+- **THP Movie Cutscene Crash Resolution**: Eliminated crashes on missing movie files or corrupt audio/video chunks with memory bounds validation, clamp guards, and silent fallbacks.
+- **Star Pointer Edge Tracking & Clamping**: Extended Star Pointer viewport tracking to 100% of physical display bounds on 20:9 and ultrawide screens.
+- **Natural 360 Camera Controls**: Corrected inverted right-stick and touch camera orbit behavior for seamless gamepad and touch navigation.
+- **In-App Tester Notices & One-Tap Discord Access**: Integrated interactive Discord tester banners into the startup setup launcher and in-game settings drawer.
+
+---
+
 # GalaxyAndroid v0.0.3a — Ultrawide Fullscreen & 360 Camera Precision Patch
 
 Hotfix release delivering true edge-to-edge ultrawide rendering, complete removal of 16:9 2D pillarboxing in fullscreen mode, natural 360 camera touch swiping, and full-screen Star Pointer tracking.

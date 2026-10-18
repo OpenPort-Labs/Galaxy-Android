@@ -201,11 +201,14 @@ The output APK is generated at `out-mobile/GalaxyAndroid.apk`.
 
 Need assistance, want to report an issue, or discuss development? Join our community:
 
-- **Discord Server**: [https://discord.gg/hGbgSmepC](https://discord.gg/hGbgSmepC)
+- **Discord Server (Tester Hub & Support)**: [https://discord.gg/H3qdNWYu2](https://discord.gg/H3qdNWYu2)
 - **GitHub Issues**: [https://github.com/OpenPort-Labs/Galaxy-Android/issues](https://github.com/OpenPort-Labs/Galaxy-Android/issues)
 - **GitHub Releases**: [https://github.com/OpenPort-Labs/Galaxy-Android/releases](https://github.com/OpenPort-Labs/Galaxy-Android/releases)
 
 > [!IMPORTANT]
+> **Notice for Testers**:
+> Joining our Discord server ([https://discord.gg/H3qdNWYu2](https://discord.gg/H3qdNWYu2)) is mandatory for all testers. Please report bugs, cutscene logs, device telemetry, and rendering issues directly in the designated tester channels.
+>
 > **Support Privacy Policy: NO EMAILS**
 > Email is a strict personal privacy boundary. Support requests or bug reports sent via email will not be read or answered. Please use Discord, GitHub Issues, or public comments instead.
 

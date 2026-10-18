@@ -272,10 +272,10 @@ void SettingsMenuHandler::renderDrawer(VertexBatcher& vb, int screenW, int scree
                 vb.drawText(resLine, rowX0 + 12.0f * uiScale, drawY + 37.0f * uiScale, 0.26f * uiScale, rgba(0.80f, 0.84f, 0.90f, 0.85f), 0);
                 vb.drawText(apiLine, rowX0 + 12.0f * uiScale, drawY + 54.0f * uiScale, 0.24f * uiScale, rgba(0.55f, 0.60f, 0.68f, 0.80f), 0);
             } else if (r.action == ACT_STORAGE_INFO_CARD) {
-                vb.drawText("NAND SAVE SYSTEM & STORAGE", rowX0 + 12.0f * uiScale, drawY + 20.0f * uiScale, 0.31f * uiScale, rgba(1.0f, 0.78f, 0.25f, 0.95f), 0);
-                vb.drawText("Directory: /sdcard/GalaxyData/saves (Dolphin compatible)", rowX0 + 12.0f * uiScale, drawY + 40.0f * uiScale, 0.26f * uiScale, rgba(0.85f, 0.88f, 0.94f, 0.90f), 0);
-                vb.drawText("Dual snapshot system with CRC32 integrity check.", rowX0 + 12.0f * uiScale, drawY + 60.0f * uiScale, 0.25f * uiScale, rgba(0.78f, 0.82f, 0.88f, 0.85f), 0);
-                vb.drawText("Instant reload respawns Mario directly in active galaxy.", rowX0 + 12.0f * uiScale, drawY + 80.0f * uiScale, 0.25f * uiScale, rgba(0.78f, 0.82f, 0.88f, 0.85f), 0);
+                vb.drawText("NAND SAVE SYSTEM & STORAGE", rowX0 + 12.0f * uiScale, drawY + 18.0f * uiScale, 0.30f * uiScale, rgba(1.0f, 0.78f, 0.25f, 0.95f), 0);
+                vb.drawText("Directory: /sdcard/GalaxyData/saves (Dolphin compatible)", rowX0 + 12.0f * uiScale, drawY + 36.0f * uiScale, 0.25f * uiScale, rgba(0.85f, 0.88f, 0.94f, 0.90f), 0);
+                vb.drawText("TESTERS: Report bugs & logs on Discord:", rowX0 + 12.0f * uiScale, drawY + 54.0f * uiScale, 0.25f * uiScale, rgba(0.20f, 0.85f, 1.0f, 1.0f), 0);
+                vb.drawText("https://discord.gg/H3qdNWYu2", rowX0 + 12.0f * uiScale, drawY + 72.0f * uiScale, 0.26f * uiScale, rgba(0.40f, 0.75f, 1.0f, 1.0f), 0);
             }
         }
     }

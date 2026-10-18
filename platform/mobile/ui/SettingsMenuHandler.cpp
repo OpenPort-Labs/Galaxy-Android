@@ -33,6 +33,13 @@ void SettingsMenuHandler::updateAnimation(float dt) {
             mDrawerAnim = target;
         }
     }
+    if (fabsf(mDrawerScrollY - mDrawerScrollTarget) > 0.01f) {
+        float speed = 20.0f;
+        mDrawerScrollY += (mDrawerScrollTarget - mDrawerScrollY) * (1.0f - expf(-speed * dt));
+        if (fabsf(mDrawerScrollY - mDrawerScrollTarget) < 0.5f) {
+            mDrawerScrollY = mDrawerScrollTarget;
+        }
+    }
 }
 
 bool SettingsMenuHandler::handleTouch(const AInputEvent* event, int screenW, int screenH,
@@ -71,6 +78,7 @@ bool SettingsMenuHandler::handleTouch(const AInputEvent* event, int screenW, int
                 if (fabsf(deltaY) > 6.0f * uiScale || mDrawerIsScrolling) {
                     mDrawerIsScrolling = true;
                     mDrawerScrollTarget = std::max(0.0f, std::min(mDrawerScrollStartOffset - deltaY, maxScroll));
+                    mDrawerScrollY = mDrawerScrollTarget;
                 }
                 return true;
             }

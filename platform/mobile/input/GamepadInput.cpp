@@ -68,8 +68,14 @@ bool GamepadInput::handleMotionEvent(AInputEvent* event, PortPadState& pad, int&
         rightX = AMotionEvent_getAxisValue(event, AMOTION_EVENT_AXIS_RX, 0);
         rightY = AMotionEvent_getAxisValue(event, AMOTION_EVENT_AXIS_RY, 0);
     }
-    float rStickX = (fabsf(rightX) > 0.12f) ? rightX : 0.0f;
-    float rStickY = (fabsf(rightY) > 0.12f) ? -rightY : 0.0f;
+    float deadzone = 0.08f;
+    float mag = sqrtf(rightX * rightX + rightY * rightY);
+    float rStickX = 0.0f, rStickY = 0.0f;
+    if (mag > deadzone) {
+        float scale = std::min(1.0f, (mag - deadzone) / (1.0f - deadzone));
+        rStickX = (rightX / mag) * scale;
+        rStickY = (-rightY / mag) * scale;
+    }
     float starSens = mobile_ui::UIOverlay::get().settings().starStickSensitivity;
     if (mobile_ui::UIOverlay::get().settings().rightStickMode == 0) {
         pad.rightStickX = std::max(-1.0f, std::min(1.0f, rStickX * starSens));
@@ -77,8 +83,8 @@ bool GamepadInput::handleMotionEvent(AInputEvent* event, PortPadState& pad, int&
     } else {
         pad.rightStickX = 0.0f;
         pad.rightStickY = 0.0f;
-        if ((fabsf(rStickX) > 0.10f || fabsf(rStickY) > 0.10f) && !touchscreenDown) {
-            float speed = 0.040f * starSens;
+        if ((fabsf(rStickX) > 0.01f || fabsf(rStickY) > 0.01f) && !touchscreenDown) {
+            float speed = 0.035f * starSens;
             pad.pointerX = std::max(-1.0f, std::min(1.0f, pad.pointerX + rStickX * speed));
             pad.pointerY = std::max(-1.0f, std::min(1.0f, pad.pointerY + rStickY * speed));
             pad.pointerValid = 1;

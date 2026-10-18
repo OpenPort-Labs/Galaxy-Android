@@ -1007,12 +1007,14 @@ bool VkRenderer::createSwapchain() {
     }
 
     VkPresentModeKHR chosenPresentMode = VK_PRESENT_MODE_FIFO_KHR;
+#if !defined(__ANDROID__)
     for (auto pm : presentModes) {
         if (pm == VK_PRESENT_MODE_MAILBOX_KHR) {
             chosenPresentMode = VK_PRESENT_MODE_MAILBOX_KHR;
             break;
         }
     }
+#endif
 
     sci.preTransform = preTransform;
     // Android surfaces do not always support OPAQUE: asking for it regardless
@@ -1168,7 +1170,7 @@ bool VkRenderer::createRenderPasses() {
     efbAttachments[1].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     efbAttachments[1].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
     efbAttachments[1].stencilLoadOp = hasStencil ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    efbAttachments[1].stencilStoreOp = hasStencil ? VK_ATTACHMENT_STORE_OP_STORE : VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    efbAttachments[1].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
     efbAttachments[1].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     efbAttachments[1].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
@@ -3336,14 +3338,28 @@ bool VkRenderer::render(VkTarget& target, const EyeView* eye, VkTarget* hud, Hud
 
     vkCmdBeginRenderPass(mCommandBuffer, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-    // Bind set 0 (SSBOs & UBO)
+    // Bind set 0 (SSBOs & UBO) and bind index buffer once for the entire render pass
     vkCmdBindDescriptorSets(mCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, mPipelineLayout, 0, 1, &fr.set0, 0, nullptr);
+    vkCmdBindIndexBuffer(mCommandBuffer, fr.ibo, 0, VK_INDEX_TYPE_UINT32);
 
     float fx = (float)target.width / (float)p.nativeW;
     float fy = (float)target.height / (float)p.nativeH;
 
     bool inRenderPass = true;
     bool inHudSection = false;
+
+    // Track state to eliminate redundant Vulkan driver calls and pipeline switches
+    VkPipeline lastPipeline = VK_NULL_HANDLE;
+    VkDescriptorSet lastSet1 = VK_NULL_HANDLE;
+    VkDeviceSize lastVOffset = ~(VkDeviceSize)0;
+    int lastVx = -1, lastVy = -1, lastVw = -1, lastVh = -1;
+    int lastSx = -1, lastSy = -1, lastSw = -1, lastSh = -1;
+    uint32_t lastTexMask = ~0u;
+    uint32_t lastTex[8]{};
+    uint32_t lastTexMode0[8]{};
+    uint32_t lastTexMode1[8]{};
+    bool hasLastTex = false;
+
     for (const Item& it : items) {
         if (it.type == IT_MARKER) {
             inHudSection = (it.marker == MARK_HUD_BEGIN);
@@ -3501,6 +3517,13 @@ bool VkRenderer::render(VkTarget& target, const EyeView* eye, VkTarget* hud, Hud
                 resumeRpInfo.pClearValues = nullptr;
                 vkCmdBeginRenderPass(mCommandBuffer, &resumeRpInfo, VK_SUBPASS_CONTENTS_INLINE);
                 vkCmdBindDescriptorSets(mCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, mPipelineLayout, 0, 1, &fr.set0, 0, nullptr);
+                vkCmdBindIndexBuffer(mCommandBuffer, fr.ibo, 0, VK_INDEX_TYPE_UINT32);
+                lastPipeline = VK_NULL_HANDLE;
+                lastSet1 = VK_NULL_HANDLE;
+                lastVOffset = ~(VkDeviceSize)0;
+                lastVx = lastVy = lastVw = lastVh = -1;
+                lastSx = lastSy = lastSw = lastSh = -1;
+                hasLastTex = false;
                 inRenderPass = true;
             }
 
@@ -3585,19 +3608,27 @@ bool VkRenderer::render(VkTarget& target, const EyeView* eye, VkTarget* hud, Hud
         if (sy + sh > target.height) sh = target.height - sy;
         if (sw <= 0 || sh <= 0) continue;
 
-        VkViewport viewport{};
-        viewport.x = (float)vx;
-        viewport.y = (float)vy;
-        viewport.width = (float)vw;
-        viewport.height = (float)vh;
-        viewport.minDepth = 0.0f;
-        viewport.maxDepth = 1.0f;
-        vkCmdSetViewport(mCommandBuffer, 0, 1, &viewport);
+        // Viewport
+        if (vx != lastVx || vy != lastVy || vw != lastVw || vh != lastVh) {
+            VkViewport viewport{};
+            viewport.x = (float)vx;
+            viewport.y = (float)vy;
+            viewport.width = (float)vw;
+            viewport.height = (float)vh;
+            viewport.minDepth = 0.0f;
+            viewport.maxDepth = 1.0f;
+            vkCmdSetViewport(mCommandBuffer, 0, 1, &viewport);
+            lastVx = vx; lastVy = vy; lastVw = vw; lastVh = vh;
+        }
 
-        VkRect2D scissor{};
-        scissor.offset = {sx, sy};
-        scissor.extent = {(uint32_t)sw, (uint32_t)sh};
-        vkCmdSetScissor(mCommandBuffer, 0, 1, &scissor);
+        // Scissor
+        if (sx != lastSx || sy != lastSy || sw != lastSw || sh != lastSh) {
+            VkRect2D scissor{};
+            scissor.offset = {sx, sy};
+            scissor.extent = {(uint32_t)sw, (uint32_t)sh};
+            vkCmdSetScissor(mCommandBuffer, 0, 1, &scissor);
+            lastSx = sx; lastSy = sy; lastSw = sw; lastSh = sh;
+        }
 
         // Pipeline
         if (it.uid >= p.uids.size()) {
@@ -3606,60 +3637,83 @@ bool VkRenderer::render(VkTarget& target, const EyeView* eye, VkTarget* hud, Hud
         }
         VkPipeline pipeline = getPipeline(it, p.uids[it.uid]);
         if (pipeline == VK_NULL_HANDLE) continue;
-        vkCmdBindPipeline(mCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+        if (pipeline != lastPipeline) {
+            vkCmdBindPipeline(mCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+            lastPipeline = pipeline;
+        }
 
         // Push constants
         vkCmdPushConstants(mCommandBuffer, mPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(uint32_t), &it.firstOrdinal);
 
-        // Textures & Samplers for Set 1
-        std::array<VkImageView, 8> views;
-        std::array<VkSampler, 8> samplers;
-        for (int u = 0; u < 8; u++) {
-            uint32_t tr = it.tex[u];
-            if (!(it.texMask & (1u << u)) || tr == ~0u) {
-                views[u] = mDummyTexture.view;
-                samplers[u] = mDummySampler;
+        // Textures & Samplers for Set 1 (fast-path identical consecutive textures)
+        VkDescriptorSet set1 = VK_NULL_HANDLE;
+        bool sameTex = hasLastTex && (it.texMask == lastTexMask) &&
+                       (memcmp(it.tex, lastTex, sizeof(lastTex)) == 0) &&
+                       (memcmp(it.texMode0, lastTexMode0, sizeof(lastTexMode0)) == 0) &&
+                       (memcmp(it.texMode1, lastTexMode1, sizeof(lastTexMode1)) == 0);
+        if (sameTex && lastSet1 != VK_NULL_HANDLE) {
+            set1 = lastSet1;
+        } else {
+            std::array<VkImageView, 8> views;
+            std::array<VkSampler, 8> samplers;
+            for (int u = 0; u < 8; u++) {
+                uint32_t tr = it.tex[u];
+                if (!(it.texMask & (1u << u)) || tr == ~0u) {
+                    views[u] = mDummyTexture.view;
+                    samplers[u] = mDummySampler;
+                    continue;
+                }
+                if (tr & 0x80000000u) {
+                    uint32_t addr = (tr & 0x7FFFFFFF) << 5;
+                    uint64_t key = copyKey(0, addr);
+                    auto cit = mCopies.find(key);
+                    if (cit != mCopies.end() && cit->second.view != VK_NULL_HANDLE) {
+                        views[u] = cit->second.view;
+                        samplers[u] = getSampler(it.texMode0[u], it.texMode1[u], 1);
+                    } else {
+                        views[u] = mDummyTexture.view;
+                        samplers[u] = mDummySampler;
+                    }
+                } else if (tr < f.textures.size()) {
+                    const std::shared_ptr<TexImage>& ti = f.textures[tr];
+                    if (ti && ti->vkView != 0 && ti->vkVersion == ti->version && ti->vkGeneration == sVkDeviceGeneration) {
+                        views[u] = (VkImageView)ti->vkView;
+                        samplers[u] = getSampler(it.texMode0[u], it.texMode1[u], ti->levels);
+                    } else {
+                        views[u] = mDummyTexture.view;
+                        samplers[u] = mDummySampler;
+                    }
+                } else {
+                    views[u] = mDummyTexture.view;
+                    samplers[u] = mDummySampler;
+                }
+            }
+            set1 = getSamplerDescriptorSet(views, samplers);
+            if (set1 == VK_NULL_HANDLE) {
+                LOGE("VkRenderer: failed to allocate sampler descriptor set - skipping draw");
                 continue;
             }
-            if (tr & 0x80000000u) {
-                uint32_t addr = (tr & 0x7FFFFFFF) << 5;
-                uint64_t key = copyKey(0, addr);
-                auto cit = mCopies.find(key);
-                if (cit != mCopies.end() && cit->second.view != VK_NULL_HANDLE) {
-                    views[u] = cit->second.view;
-                    samplers[u] = getSampler(it.texMode0[u], it.texMode1[u], 1);
-                } else {
-                    views[u] = mDummyTexture.view;
-                    samplers[u] = mDummySampler;
-                }
-            } else if (tr < f.textures.size()) {
-                const std::shared_ptr<TexImage>& ti = f.textures[tr];
-                if (ti && ti->vkView != 0 && ti->vkVersion == ti->version && ti->vkGeneration == sVkDeviceGeneration) {
-                    views[u] = (VkImageView)ti->vkView;
-                    samplers[u] = getSampler(it.texMode0[u], it.texMode1[u], ti->levels);
-                } else {
-                    views[u] = mDummyTexture.view;
-                    samplers[u] = mDummySampler;
-                }
-            } else {
-                views[u] = mDummyTexture.view;
-                samplers[u] = mDummySampler;
-            }
+            lastTexMask = it.texMask;
+            memcpy(lastTex, it.tex, sizeof(lastTex));
+            memcpy(lastTexMode0, it.texMode0, sizeof(lastTexMode0));
+            memcpy(lastTexMode1, it.texMode1, sizeof(lastTexMode1));
+            hasLastTex = true;
         }
-        VkDescriptorSet set1 = getSamplerDescriptorSet(views, samplers);
-        if (set1 == VK_NULL_HANDLE) {
-            LOGE("VkRenderer: failed to allocate sampler descriptor set - skipping draw");
-            continue;
-        }
-        vkCmdBindDescriptorSets(mCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, mPipelineLayout, 1, 1, &set1, 0, nullptr);
 
-        // Bind vertex & index buffers
+        if (set1 != lastSet1) {
+            vkCmdBindDescriptorSets(mCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, mPipelineLayout, 1, 1, &set1, 0, nullptr);
+            lastSet1 = set1;
+        }
+
+        // Bind vertex buffer only when offset changes
         VkDeviceSize vOffset = (VkDeviceSize)it.firstWord * 4;
-        vkCmdBindVertexBuffers(mCommandBuffer, 0, 1, &fr.vbo, &vOffset);
-        vkCmdBindIndexBuffer(mCommandBuffer, fr.ibo, (VkDeviceSize)it.idxOffset * 4, VK_INDEX_TYPE_UINT32);
+        if (vOffset != lastVOffset) {
+            vkCmdBindVertexBuffers(mCommandBuffer, 0, 1, &fr.vbo, &vOffset);
+            lastVOffset = vOffset;
+        }
 
-        // Draw indexed
-        vkCmdDrawIndexed(mCommandBuffer, it.idxCount, 1, 0, 0, 0);
+        // Draw indexed: fr.ibo is already bound at offset 0; pass it.idxOffset as firstIndex
+        vkCmdDrawIndexed(mCommandBuffer, it.idxCount, 1, it.idxOffset, 0, 0);
     }
 
     if (inRenderPass) {

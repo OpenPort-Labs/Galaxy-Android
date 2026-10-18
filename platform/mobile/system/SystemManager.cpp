@@ -64,13 +64,63 @@ void SystemManager::installCrashHandlers() {
 }
 
 void SystemManager::pinThreadToPerformanceCores() {
-    // Artificial CPU core pinning is disabled to allow Android EAS (Energy Aware
-    // Scheduler) to dynamically migrate threads across big and LITTLE cores
-    // without thermal lockups (especially on MediaTek Helio G99 / 2x A76 + 6x A55).
+#if defined(__linux__) || defined(__ANDROID__)
+    int numCores = (int)sysconf(_SC_NPROCESSORS_CONF);
+    if (numCores <= 1) return;
+
+    int maxFreqs[32] = {0};
+    int overallMax = 0;
+    int overallMin = 0x7FFFFFFF;
+    int validCount = 0;
+
+    for (int i = 0; i < numCores && i < 32; i++) {
+        char path[64];
+        snprintf(path, sizeof(path), "/sys/devices/system/cpu/cpu%d/cpufreq/cpuinfo_max_freq", i);
+        FILE* f = fopen(path, "r");
+        if (f) {
+            int freq = 0;
+            if (fscanf(f, "%d", &freq) == 1 && freq > 0) {
+                maxFreqs[i] = freq;
+                if (freq > overallMax) overallMax = freq;
+                if (freq < overallMin) overallMin = freq;
+                validCount++;
+            }
+            fclose(f);
+        }
+    }
+
+    cpu_set_t cpuset;
+    CPU_ZERO(&cpuset);
+    int bigCount = 0;
+
+    if (validCount > 1 && overallMax > overallMin) {
+        int threshold = (int)(overallMax * 0.85f);
+        for (int i = 0; i < numCores && i < 32; i++) {
+            if (maxFreqs[i] >= threshold) {
+                CPU_SET(i, &cpuset);
+                bigCount++;
+            }
+        }
+    } else if (numCores >= 8) {
+        for (int i = numCores / 2; i < numCores; i++) {
+            CPU_SET(i, &cpuset);
+            bigCount++;
+        }
+    }
+
+    if (bigCount > 0) {
+        sched_setaffinity(0, sizeof(cpu_set_t), &cpuset);
+    }
+#endif
 }
 
 void SystemManager::elevateThreadPriority(int priority) {
     setpriority(PRIO_PROCESS, 0, priority);
+}
+
+extern "C" void port_pin_thread_to_performance_cores(void) {
+    mobile_system::SystemManager::pinThreadToPerformanceCores();
+    mobile_system::SystemManager::elevateThreadPriority(-10);
 }
 
 void SystemManager::triggerHaptic(android_app* app, int ms) {

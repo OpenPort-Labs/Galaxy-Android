@@ -16,6 +16,8 @@ void port_game_main(void);
 
 static void gameEntry() { port_game_main(); }
 
+__attribute__((weak)) extern "C" void port_pin_thread_to_performance_cores(void) {}
+
 extern "C" void port_boot(const char* dataRoot, const char* saveRoot) {
     port_log("port_boot: data=%s save=%s", dataRoot, saveRoot);
     port_mem_init();

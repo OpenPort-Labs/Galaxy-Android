@@ -113,6 +113,7 @@ void port_irq_poll(void);      // safe point; only from the thread owning the CP
 // Boots the OS layer and runs `entry` as the Wii default thread (priority 16).
 void port_os_boot(void (*entry)(void));
 int port_is_game_thread(void);
+void port_pin_thread_to_performance_cores(void);
 int64_t port_host_time_ns(void);  // monotonic
 void port_host_sleep_ns(int64_t ns);
 

@@ -874,6 +874,7 @@ extern "C" void port_debug_dump_threads(void) {
 static void (*sBootEntry)(void);
 
 static void* defaultThreadMain(void*) {
+    port_pin_thread_to_performance_cores();
     OSThread* thread = &DefaultThread;
     tlsSelf = thread;
     hostOf(thread)->pt = pthread_self();

@@ -40,6 +40,8 @@ struct Settings {
     float btnZOffsetY = 0.0f;
     float btnSpinOffsetX = 0.0f;
     float btnSpinOffsetY = 0.0f;
+    float starStickOffsetX = 0.0f;
+    float starStickOffsetY = 0.0f;
     bool showDpad = true;
     bool dpadOnRight = false;
     float dpadOffsetX = 0.0f;
@@ -191,7 +193,12 @@ private:
     };
     ButtonLayout buttonLayout(int screenW, int screenH) const;
 
-    // Clear every layout offset: pad clusters and individual buttons.
+    struct StarStickLayout {
+        float cx, cy, r;
+    };
+    StarStickLayout starStickLayout(int screenW, int screenH) const;
+
+    // Clear every layout offset: pad clusters, star joystick, and individual buttons.
     void clearLayoutOffsets();
 
     Settings mSettings;
@@ -208,13 +215,15 @@ private:
     int64_t mLastAnimTime = 0;
     bool mEditLayoutMode = false;
     bool mDebugEditChecked = false;
-    int mDraggingCluster = 0; // 0 = none, 1 = stick cluster, 2 = button cluster
+    int mDraggingCluster = 0; // 0 = none, 1 = stick cluster, 2 = button cluster, 3 = dpad, 4 = star stick
     int mDraggingButton = -1; // 0 = A, 1 = B, 2 = Z, 3 = SPIN (layout editor)
     float mInitialOwnOfsX = 0.0f, mInitialOwnOfsY = 0.0f;
     float mDragStartX = 0.0f, mDragStartY = 0.0f;
     float mInitialStickOfsX = 0.0f, mInitialStickOfsY = 0.0f;
     float mInitialBtnOfsX = 0.0f, mInitialBtnOfsY = 0.0f;
     float mInitialDpadOfsX = 0.0f, mInitialDpadOfsY = 0.0f;
+    float mInitialStarStickOfsX = 0.0f;
+    float mInitialStarStickOfsY = 0.0f;
 
     // Settings Navigation & Scrolling (4 Dedicated Tabs: Controls, Graphics, Mods, Save & System)
     int mSettingsTab = 0;              // 0 = Controls, 1 = Graphics, 2 = Mods, 3 = Save & System

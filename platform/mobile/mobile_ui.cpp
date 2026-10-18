@@ -140,6 +140,7 @@ enum MenuActionId {
     ACT_HAPTICS,
     ACT_TOUCH_CAMERA,
     ACT_STAR_STICK,
+    ACT_REPOSITION_STAR_STICK,
     ACT_RIGHT_STICK_MODE,
     // Graphics & Display Tab
     ACT_GRAPHICS_BACKEND,
@@ -204,7 +205,8 @@ static const MenuRowDef kControlsRows[] = {
     {ACT_JOYSTICK_MODE, ROW_SEGMENTED, 56.0f, "Virtual Joystick", "Stick anchor behavior", 2, {"Dynamic", "Fixed"}},
     {ACT_SECTION_HEADER, ROW_SECTION, 36.0f, "CAMERA & STAR POINTER", "Aiming, sensor tilting & camera rotation", 0, {}},
     {ACT_TOUCH_CAMERA, ROW_SWITCH, 50.0f, "360 Touch Camera Swipe", "Drag right side of screen to freely orbit 360 camera", 0, {}},
-    {ACT_STAR_STICK, ROW_SWITCH, 50.0f, "2nd Joystick (Star Pointer)", "Dedicated right virtual stick to steer Star Pointer", 0, {}},
+    {ACT_STAR_STICK, ROW_SWITCH, 50.0f, "2nd Joystick (Star Pointer)", "Dedicated virtual stick to steer Star Pointer", 0, {}},
+    {ACT_REPOSITION_STAR_STICK, ROW_DUAL_BTN, 50.0f, "Reposition Star Stick", "Reset Above Buttons", 0, {}},
     {ACT_RIGHT_STICK_MODE, ROW_SEGMENTED, 56.0f, "Right Analog Stick Mode", "Gamepad / Controller right stick function", 2, {"360 Camera", "Star Pointer"}},
     {ACT_SHOW_DPAD, ROW_SWITCH, 50.0f, "Camera D-Pad", "Directional disc for camera rotation & recenter", 0, {}},
     {ACT_DPAD_SIDE, ROW_SEGMENTED, 56.0f, "D-Pad Position", "Anchor side for camera controls", 2, {"Left Side", "Right Side"}},
@@ -473,6 +475,8 @@ void Settings::load(const std::string& path) {
             else if (!strcmp(key, "btn_z_offset_y")) btnZOffsetY = val;
             else if (!strcmp(key, "btn_spin_offset_x")) btnSpinOffsetX = val;
             else if (!strcmp(key, "btn_spin_offset_y")) btnSpinOffsetY = val;
+            else if (!strcmp(key, "star_stick_offset_x")) starStickOffsetX = val;
+            else if (!strcmp(key, "star_stick_offset_y")) starStickOffsetY = val;
             else if (!strcmp(key, "show_dpad")) showDpad = (val > 0.5f);
             else if (!strcmp(key, "dpad_on_right")) dpadOnRight = (val > 0.5f);
             else if (!strcmp(key, "dpad_offset_x")) dpadOffsetX = val;
@@ -552,6 +556,8 @@ void Settings::save(const std::string& path) const {
     fprintf(f, "btn_z_offset_y=%.1f\n", btnZOffsetY);
     fprintf(f, "btn_spin_offset_x=%.1f\n", btnSpinOffsetX);
     fprintf(f, "btn_spin_offset_y=%.1f\n", btnSpinOffsetY);
+    fprintf(f, "star_stick_offset_x=%.1f\n", starStickOffsetX);
+    fprintf(f, "star_stick_offset_y=%.1f\n", starStickOffsetY);
     fprintf(f, "show_dpad=%d\n", showDpad ? 1 : 0);
     fprintf(f, "dpad_on_right=%d\n", dpadOnRight ? 1 : 0);
     fprintf(f, "dpad_offset_x=%.1f\n", dpadOffsetX);
@@ -1155,6 +1161,23 @@ UIOverlay::ButtonLayout UIOverlay::buttonLayout(int screenW, int screenH) const 
     return l;
 }
 
+UIOverlay::StarStickLayout UIOverlay::starStickLayout(int screenW, int screenH) const {
+    float baseDpi = (float)screenH / 650.0f;
+    float scale = baseDpi * mSettings.scale;
+    float w = (float)screenW;
+    float h = (float)screenH;
+
+    // Default position: centered cleanly directly on top of the action button diamond
+    float baseStarX = w - 180.0f * scale;
+    float baseStarY = h - 410.0f * scale;
+
+    StarStickLayout l{};
+    l.cx = baseStarX + mSettings.starStickOffsetX;
+    l.cy = baseStarY + mSettings.starStickOffsetY;
+    l.r = 70.0f * scale;
+    return l;
+}
+
 bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& spinFrames,
                             int screenW, int screenH, int vpX, int vpY, int vpW, int vpH) {
     int32_t eventType = AInputEvent_getType(event);
@@ -1287,12 +1310,22 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
             float dDpad2 = (px - curDpadX) * (px - curDpadX) + (py - curDpadY) * (py - curDpadY);
             float dStick2 = (px - curStickX) * (px - curStickX) + (py - curStickY) * (py - curStickY);
 
+            StarStickLayout starL = starStickLayout(screenW, screenH);
+            float dStar2 = (px - starL.cx) * (px - starL.cx) + (py - starL.cy) * (py - starL.cy);
+            float starHitR = starL.r * 1.30f;
+
             if (mSettings.showDpad && dDpad2 <= (95.0f * scale) * (95.0f * scale)) {
                 mDraggingCluster = 3; // D-Pad
                 mDragStartX = px;
                 mDragStartY = py;
                 mInitialDpadOfsX = mSettings.dpadOffsetX;
                 mInitialDpadOfsY = mSettings.dpadOffsetY;
+            } else if (mSettings.starStick && dStar2 <= starHitR * starHitR) {
+                mDraggingCluster = 4; // Star Joystick (Mappable anywhere on screen)
+                mDragStartX = px;
+                mDragStartY = py;
+                mInitialStarStickOfsX = mSettings.starStickOffsetX;
+                mInitialStarStickOfsY = mSettings.starStickOffsetY;
             } else if (dStick2 <= (140.0f * scale) * (140.0f * scale) || px < w * 0.40f) {
                 mDraggingCluster = 1; // stick
                 mDragStartX = px;
@@ -1341,6 +1374,9 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
             } else if (mDraggingCluster == 3) {
                 mSettings.dpadOffsetX = mInitialDpadOfsX + (px - mDragStartX);
                 mSettings.dpadOffsetY = mInitialDpadOfsY + (py - mDragStartY);
+            } else if (mDraggingCluster == 4) {
+                mSettings.starStickOffsetX = mInitialStarStickOfsX + (px - mDragStartX);
+                mSettings.starStickOffsetY = mInitialStarStickOfsY + (py - mDragStartY);
             }
             mDirty = true;
             return true;
@@ -1451,6 +1487,18 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
                             case ACT_STAR_STICK:
                                 mSettings.starStick = !mSettings.starStick;
                                 showToast(mSettings.starStick ? "2nd Joystick (Star Pointer): ON" : "2nd Joystick (Star Pointer): OFF");
+                                break;
+                            case ACT_REPOSITION_STAR_STICK:
+                                if (px < midX) {
+                                    mSettingsOpen = false;
+                                    mEditLayoutMode = true;
+                                    showToast("Drag Star Joystick to any position, then tap SAVE");
+                                } else {
+                                    mSettings.starStickOffsetX = 0.0f;
+                                    mSettings.starStickOffsetY = 0.0f;
+                                    if (!mSavePath.empty()) mSettings.save(mSavePath);
+                                    showToast("Star Joystick reset to default position above buttons");
+                                }
                                 break;
                             case ACT_RIGHT_STICK_MODE:
                                 mSettings.rightStickMode = (px >= midX) ? 1 : 0;
@@ -1891,39 +1939,9 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
             mTouches[slot].startTime = currentTimeMs();
             mTouches[slot].role = TouchRole::NONE;
 
-            // Stick acquisition: bottom-left thumb zone
-            bool stickEligible = false;
-            if (mSettings.showControls && mStickPointerId < 0) {
-                if (mSettings.dynamicStick) {
-                    stickEligible = (px <= w * 0.38f && py >= h * 0.45f);
-                } else {
-                    float d2 = (px - defaultStickX) * (px - defaultStickX) + (py - defaultStickY) * (py - defaultStickY);
-                    stickEligible = (d2 <= (stickBaseR * 1.5f) * (stickBaseR * 1.5f));
-                }
-            }
-
-            if (stickEligible) {
-                mTouches[slot].role = TouchRole::STICK;
-                mStickPointerId = pid;
-                if (mSettings.dynamicStick) {
-                    mStickBaseX = px;
-                    mStickBaseY = py;
-                } else {
-                    mStickBaseX = defaultStickX;
-                    mStickBaseY = defaultStickY;
-                }
-                mStickKnobX = px;
-                mStickKnobY = py;
-                mDirty = true;
-            }
-            // Camera D-Pad
-            else if (mSettings.showControls && mSettings.showDpad &&
-                     ((px - dpadX)*(px - dpadX) + (py - dpadY)*(py - dpadY) <= dpadTotalR * dpadTotalR)) {
-                mTouches[slot].role = TouchRole::DPAD;
-                mDirty = true;
-            }
-            // Action Buttons - NEAREST EXCLUSIVE MATCHING
-            else if (mSettings.showControls) {
+            // Candidate check for Action Buttons (A, B, Z, SPIN, PLUS)
+            int bestBtnIdx = -1;
+            if (mSettings.showControls) {
                 struct BtnCandidate {
                     TouchRole role;
                     float distSq;
@@ -1937,54 +1955,73 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
                     {TouchRole::BTN_PLUS, (px - plusX)*(px - plusX) + (py - plusY)*(py - plusY), (plusR * 1.25f) * (plusR * 1.25f)},
                 };
 
-                int bestIdx = -1;
                 float bestNormDist = 1.0f;
                 for (int b = 0; b < 5; b++) {
                     float normDist = candidates[b].distSq / candidates[b].maxDistSq;
                     if (normDist <= 1.0f && normDist < bestNormDist) {
                         bestNormDist = normDist;
-                        bestIdx = b;
+                        bestBtnIdx = b;
                     }
                 }
+            }
 
-                if (bestIdx >= 0) {
-                    mTouches[slot].role = candidates[bestIdx].role;
-                    mDirty = true;
-                } else if (mSettings.starStick && mStarStickPointerId < 0) {
-                    float defaultStarX = w - 165.0f * scale;
-                    float defaultStarY = h - 295.0f * scale;
-                    float d2Star = (px - defaultStarX) * (px - defaultStarX) + (py - defaultStarY) * (py - defaultStarY);
-                    float starBaseR = 75.0f * scale;
-                    if (d2Star <= (starBaseR * 1.5f) * (starBaseR * 1.5f)) {
-                        mTouches[slot].role = TouchRole::STAR_STICK;
-                        mStarStickPointerId = pid;
-                        mStarStickBaseX = defaultStarX;
-                        mStarStickBaseY = defaultStarY;
-                        mStarStickKnobX = px;
-                        mStarStickKnobY = py;
-                        mDirty = true;
-                    } else if (mSettings.touchCamera && px >= w * 0.38f) {
-                        mTouches[slot].role = TouchRole::CAMERA_SWIPE;
-                        mTouches[slot].lastX = px;
-                        mTouches[slot].lastY = py;
-                        mDirty = true;
-                    } else {
-                        mTouches[slot].role = TouchRole::STAR_POINTER;
-                    }
-                } else if (mSettings.touchCamera && px >= w * 0.38f) {
-                    mTouches[slot].role = TouchRole::CAMERA_SWIPE;
-                    mTouches[slot].lastX = px;
-                    mTouches[slot].lastY = py;
-                    mDirty = true;
+            // Star Stick check (mappable anywhere on screen)
+            StarStickLayout starL = starStickLayout(screenW, screenH);
+            float d2Star = (px - starL.cx) * (px - starL.cx) + (py - starL.cy) * (py - starL.cy);
+            float starHitR = starL.r * 1.45f;
+            bool starEligible = (mSettings.starStick && mStarStickPointerId < 0 && d2Star <= starHitR * starHitR);
+
+            // Left Movement Stick acquisition: bottom-left thumb zone
+            bool stickEligible = false;
+            if (mSettings.showControls && mStickPointerId < 0 && !starEligible) {
+                if (mSettings.dynamicStick) {
+                    stickEligible = (px <= w * 0.38f && py >= h * 0.45f);
                 } else {
-                    mTouches[slot].role = TouchRole::STAR_POINTER;
+                    float d2 = (px - defaultStickX) * (px - defaultStickX) + (py - defaultStickY) * (py - defaultStickY);
+                    stickEligible = (d2 <= (stickBaseR * 1.5f) * (stickBaseR * 1.5f));
                 }
+            }
+
+            if (bestBtnIdx >= 0) {
+                TouchRole btnRoles[5] = {TouchRole::BTN_A, TouchRole::BTN_B, TouchRole::BTN_Z, TouchRole::BTN_SPIN, TouchRole::BTN_PLUS};
+                mTouches[slot].role = btnRoles[bestBtnIdx];
+                mDirty = true;
+            } else if (starEligible) {
+                // 2nd Joystick (Star Pointer)
+                mTouches[slot].role = TouchRole::STAR_STICK;
+                mStarStickPointerId = pid;
+                mStarStickBaseX = starL.cx;
+                mStarStickBaseY = starL.cy;
+                mStarStickKnobX = px;
+                mStarStickKnobY = py;
+                mDirty = true;
+            } else if (stickEligible) {
+                // Movement Joystick
+                mTouches[slot].role = TouchRole::STICK;
+                mStickPointerId = pid;
+                if (mSettings.dynamicStick) {
+                    mStickBaseX = px;
+                    mStickBaseY = py;
+                } else {
+                    mStickBaseX = defaultStickX;
+                    mStickBaseY = defaultStickY;
+                }
+                mStickKnobX = px;
+                mStickKnobY = py;
+                mDirty = true;
+            } else if (mSettings.showControls && mSettings.showDpad &&
+                     ((px - dpadX)*(px - dpadX) + (py - dpadY)*(py - dpadY) <= dpadTotalR * dpadTotalR)) {
+                // Camera D-Pad
+                mTouches[slot].role = TouchRole::DPAD;
+                mDirty = true;
             } else if (mSettings.touchCamera && px >= w * 0.38f) {
+                // 360 Touch Camera Swipe on right screen
                 mTouches[slot].role = TouchRole::CAMERA_SWIPE;
                 mTouches[slot].lastX = px;
                 mTouches[slot].lastY = py;
                 mDirty = true;
             } else {
+                // Star Pointer tap / direct coordinate target
                 mTouches[slot].role = TouchRole::STAR_POINTER;
             }
 
@@ -2510,13 +2547,12 @@ void UIOverlay::generateVertices(int screenW, int screenH, std::vector<UIVertex>
         // 1b. 2nd Virtual Joystick (Star Pointer) - Golden Star Theme
         // ---------------------------------------------------------
         if (mSettings.starStick) {
-            float defaultStarX = w - 165.0f * scale;
-            float defaultStarY = h - 295.0f * scale;
-            float sBaseX = (mStarStickPointerId >= 0) ? mStarStickBaseX : defaultStarX;
-            float sBaseY = (mStarStickPointerId >= 0) ? mStarStickBaseY : defaultStarY;
+            StarStickLayout starL = starStickLayout(screenW, screenH);
+            float sBaseX = (mStarStickPointerId >= 0) ? mStarStickBaseX : starL.cx;
+            float sBaseY = (mStarStickPointerId >= 0) ? mStarStickBaseY : starL.cy;
             float sKnobX = (mStarStickPointerId >= 0) ? mStarStickKnobX : sBaseX;
             float sKnobY = (mStarStickPointerId >= 0) ? mStarStickKnobY : sBaseY;
-            float sBaseR = 75.0f * scale;
+            float sBaseR = starL.r;
             float sKnobR = 30.0f * scale;
             bool sActive = (mStarStickPointerId >= 0);
 
@@ -2771,6 +2807,16 @@ void UIOverlay::generateVertices(int screenW, int screenH, std::vector<UIVertex>
             drawRing(curDpadX, curDpadY, 78.0f * scale, 0.96f, rgba(0.40f, 0.65f, 0.98f, 0.85f));
             drawText("CAMERA D-PAD", curDpadX, curDpadY - 88.0f * scale, 0.42f, rgba(0.40f, 0.65f, 0.98f, 0.95f), 1);
         }
+
+        // Star Joystick bounding outline (Mappable anywhere)
+        if (mSettings.starStick) {
+            StarStickLayout starL = starStickLayout(screenW, screenH);
+            drawCircle(starL.cx, starL.cy, starL.r, rgba(0.20f, 0.16f, 0.06f, 0.50f));
+            drawRing(starL.cx, starL.cy, starL.r, 0.94f, rgba(1.0f, 0.85f, 0.20f, 0.95f));
+            drawCircle(starL.cx, starL.cy, 3.0f * scale, rgba(1.0f, 0.90f, 0.30f, 0.90f));
+            drawText("*", starL.cx, starL.cy + 6.0f * scale, 0.45f * scale, rgba(1.0f, 1.0f, 1.0f, 0.95f), 1);
+            drawText("STAR JOYSTICK", starL.cx, starL.cy - starL.r - 12.0f * scale, 0.42f, rgba(1.0f, 0.85f, 0.20f, 0.95f), 1);
+        }
     }
 
     // -------------------------------------------------------------
@@ -2950,6 +2996,15 @@ void UIOverlay::generateVertices(int screenW, int screenH, std::vector<UIVertex>
                     drawRoundRect(b1_x0, btnY, b1_x1, btnY + btnH, 12.0f * uiScale, rgba(0.35f, 0.15f, 0.18f, 0.95f));
                     drawRoundRect(b1_x0, btnY, b1_x1, btnY + btnH, 12.0f * uiScale, rgba(0.85f, 0.30f, 0.35f, 0.60f));
                     drawText("Reset Defaults", (b1_x0 + b1_x1) * 0.5f, btnY + btnH * 0.62f, 0.33f * uiScale, rgba(1.0f, 0.85f, 0.85f, 1.0f), 1);
+                }
+                else if (r.action == ACT_REPOSITION_STAR_STICK) {
+                    drawRoundRect(b0_x0, btnY, b0_x1, btnY + btnH, 12.0f * uiScale, rgba(0.24f, 0.18f, 0.06f, 0.95f));
+                    drawRoundRect(b0_x0, btnY, b0_x1, btnY + btnH, 12.0f * uiScale, rgba(1.0f, 0.85f, 0.20f, 0.60f));
+                    drawText("Reposition Star Stick", (b0_x0 + b0_x1) * 0.5f, btnY + btnH * 0.62f, 0.32f * uiScale, rgba(1.0f, 0.95f, 0.80f, 1.0f), 1);
+
+                    drawRoundRect(b1_x0, btnY, b1_x1, btnY + btnH, 12.0f * uiScale, rgba(0.25f, 0.18f, 0.12f, 0.95f));
+                    drawRoundRect(b1_x0, btnY, b1_x1, btnY + btnH, 12.0f * uiScale, rgba(0.85f, 0.65f, 0.30f, 0.50f));
+                    drawText("Reset Above Buttons", (b1_x0 + b1_x1) * 0.5f, btnY + btnH * 0.62f, 0.32f * uiScale, rgba(0.95f, 0.90f, 0.85f, 1.0f), 1);
                 }
                 else if (r.action == ACT_GYRO_INVERT_BUTTONS) {
                     Color c0 = mSettings.gyroInvertX ? rgba(0.043f, 0.341f, 0.816f, 0.95f) : rgba(0.16f, 0.18f, 0.24f, 0.85f);
@@ -3264,6 +3319,8 @@ void UIOverlay::clearLayoutOffsets() {
     mSettings.btnZOffsetY = 0.0f;
     mSettings.btnSpinOffsetX = 0.0f;
     mSettings.btnSpinOffsetY = 0.0f;
+    mSettings.starStickOffsetX = 0.0f;
+    mSettings.starStickOffsetY = 0.0f;
     mSettings.dpadOffsetX = 0.0f;
     mSettings.dpadOffsetY = 0.0f;
 }

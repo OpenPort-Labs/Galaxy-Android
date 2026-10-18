@@ -14,6 +14,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sched.h>
 #include <sys/resource.h>
 #include <sys/stat.h>
 #include <sys/system_properties.h>
@@ -1011,6 +1012,9 @@ void onAppCmd(android_app* app, int32_t cmd) {
         break;
     case APP_CMD_PAUSE:
         LOGI("APP_CMD_PAUSE");
+        if (a->vkReady) {
+            gpu::VkRenderer::get().savePipelineCache();
+        }
         // Key-up events are lost while the activity is paused, so drop every held
         // button instead of resuming with a stuck pad.
         a->physicalButtons = 0;
@@ -1215,10 +1219,37 @@ static void installCrashHandlers() {
     sigaction(SIGABRT, &sa, nullptr);
 }
 
+static void pinThreadToPerformanceCores() {
+    int numCores = (int)sysconf(_SC_NPROCESSORS_ONLN);
+    if (numCores <= 1) return;
+
+    cpu_set_t cpuset;
+    CPU_ZERO(&cpuset);
+    if (numCores >= 8) {
+        // Octa-core big.LITTLE: Cores 4-7 are big/prime performance cores
+        for (int i = 4; i < numCores; i++) {
+            CPU_SET(i, &cpuset);
+        }
+    } else if (numCores >= 4) {
+        // Quad-core / Hexa-core: pin to upper half
+        for (int i = numCores / 2; i < numCores; i++) {
+            CPU_SET(i, &cpuset);
+        }
+    } else {
+        for (int i = 0; i < numCores; i++) {
+            CPU_SET(i, &cpuset);
+        }
+    }
+    int res = sched_setaffinity(0, sizeof(cpu_set_t), &cpuset);
+    LOGI("CPU performance core pinning: %d online cores, sched_setaffinity result=%d", numCores, res);
+}
+
 extern "C" __attribute__((visibility("default"))) void port_android_main(struct android_app* app, uintptr_t windowBase, size_t windowSize) {
     installCrashHandlers();
     // Elevate render thread priority to avoid OS scheduling hiccups and stutters
     setpriority(PRIO_PROCESS, 0, -10);
+    // Pin render and engine threads to big performance cores
+    pinThreadToPerformanceCores();
     LOGI("==================================================");
     LOGI("GalaxyMobile: Native flat-screen mobile initialized");
     LOGI("==================================================");
@@ -1264,6 +1295,8 @@ extern "C" __attribute__((visibility("default"))) void port_android_main(struct 
     gpu::setVkPipelineCachePath((internalPath + "/vk_pipeline_cache.bin").c_str());
     // Compiled SPIR-V, so shaderc only runs for a program once per install.
     gpu::setVulkanShaderCachePath((internalPath + "/vk_shaders.bin").c_str());
+    // Pre-warm common shaders into permanent on-disk cache if not already present
+    gpu::prewarmCommonShaders();
 
     // Search for game data files
     a.dataRoot = findGameData(ext);

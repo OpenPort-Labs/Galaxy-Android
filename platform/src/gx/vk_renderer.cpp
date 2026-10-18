@@ -538,22 +538,22 @@ void VkRenderer::shutdown() {
 
         // Frame resources
         for (auto& fr : mFrameRes) {
+            if (fr.vboMem) { if (fr.vboMapped) vkUnmapMemory(mDevice, fr.vboMem); vkFreeMemory(mDevice, fr.vboMem, nullptr); }
             if (fr.vbo) vkDestroyBuffer(mDevice, fr.vbo, nullptr);
-            if (fr.vboMem) vkFreeMemory(mDevice, fr.vboMem, nullptr);
+            if (fr.iboMem) { if (fr.iboMapped) vkUnmapMemory(mDevice, fr.iboMem); vkFreeMemory(mDevice, fr.iboMem, nullptr); }
             if (fr.ibo) vkDestroyBuffer(mDevice, fr.ibo, nullptr);
-            if (fr.iboMem) vkFreeMemory(mDevice, fr.iboMem, nullptr);
+            if (fr.rowMem) { if (fr.rowMapped) vkUnmapMemory(mDevice, fr.rowMem); vkFreeMemory(mDevice, fr.rowMem, nullptr); }
             if (fr.rowBuf) vkDestroyBuffer(mDevice, fr.rowBuf, nullptr);
-            if (fr.rowMem) vkFreeMemory(mDevice, fr.rowMem, nullptr);
+            if (fr.recMem) { if (fr.recMapped) vkUnmapMemory(mDevice, fr.recMem); vkFreeMemory(mDevice, fr.recMem, nullptr); }
             if (fr.recBuf) vkDestroyBuffer(mDevice, fr.recBuf, nullptr);
-            if (fr.recMem) vkFreeMemory(mDevice, fr.recMem, nullptr);
+            if (fr.stMem) { if (fr.stMapped) vkUnmapMemory(mDevice, fr.stMem); vkFreeMemory(mDevice, fr.stMem, nullptr); }
             if (fr.stBuf) vkDestroyBuffer(mDevice, fr.stBuf, nullptr);
-            if (fr.stMem) vkFreeMemory(mDevice, fr.stMem, nullptr);
+            if (fr.vtxRecMem) { if (fr.vtxRecMapped) vkUnmapMemory(mDevice, fr.vtxRecMem); vkFreeMemory(mDevice, fr.vtxRecMem, nullptr); }
             if (fr.vtxRecBuf) vkDestroyBuffer(mDevice, fr.vtxRecBuf, nullptr);
-            if (fr.vtxRecMem) vkFreeMemory(mDevice, fr.vtxRecMem, nullptr);
+            if (fr.eyeMem) { if (fr.eyeMapped) vkUnmapMemory(mDevice, fr.eyeMem); vkFreeMemory(mDevice, fr.eyeMem, nullptr); }
             if (fr.eyeUbo) vkDestroyBuffer(mDevice, fr.eyeUbo, nullptr);
-            if (fr.eyeMem) vkFreeMemory(mDevice, fr.eyeMem, nullptr);
+            if (fr.uiVboMem) { if (fr.uiVboMapped) vkUnmapMemory(mDevice, fr.uiVboMem); vkFreeMemory(mDevice, fr.uiVboMem, nullptr); }
             if (fr.uiVbo) vkDestroyBuffer(mDevice, fr.uiVbo, nullptr);
-            if (fr.uiVboMem) vkFreeMemory(mDevice, fr.uiVboMem, nullptr);
             fr = {};
         }
 
@@ -2017,7 +2017,7 @@ void VkRenderer::renderUiOverlay(int width, int height, VkCommandBuffer cmd) {
     if (verts.empty()) return;
 
     FrameResource& fr = mFrameRes[mFrameIndex];
-    uploadDynamicBuffer(fr.uiVbo, fr.uiVboMem, fr.uiVboCap,
+    uploadDynamicBuffer(fr.uiVbo, fr.uiVboMem, fr.uiVboMapped, fr.uiVboCap,
                         VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
                         verts.data(), verts.size() * sizeof(mobile_ui::UIVertex));
 
@@ -2135,10 +2135,10 @@ bool VkRenderer::createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMem
     return true;
 }
 
-bool VkRenderer::uploadDynamicBuffer(VkBuffer& buf, VkDeviceMemory& mem, size_t& currentCap,
+bool VkRenderer::uploadDynamicBuffer(VkBuffer& buf, VkDeviceMemory& mem, void*& mappedPtr, size_t& currentCap,
                                      VkBufferUsageFlags usage, const void* data, size_t bytes) {
     size_t reqCap = (bytes > 0) ? bytes : 256;
-    if (reqCap > currentCap || buf == VK_NULL_HANDLE || mem == VK_NULL_HANDLE) {
+    if (reqCap > currentCap || buf == VK_NULL_HANDLE || mem == VK_NULL_HANDLE || mappedPtr == nullptr) {
         size_t newCap = reqCap + reqCap / 4 + 4096;
         VkBuffer newBuf = VK_NULL_HANDLE;
         VkDeviceMemory newMem = VK_NULL_HANDLE;
@@ -2150,24 +2150,30 @@ bool VkRenderer::uploadDynamicBuffer(VkBuffer& buf, VkDeviceMemory& mem, size_t&
             return false;
         }
 
-        // Successfully created replacement buffer; now safe to destroy old buffer
+        void* newMapped = nullptr;
+        VkResult mapRes = vkMapMemory(mDevice, newMem, 0, (VkDeviceSize)newCap, 0, &newMapped);
+        if (mapRes != VK_SUCCESS || !newMapped) {
+            LOGE("uploadDynamicBuffer: persistent vkMapMemory failed: %d", mapRes);
+            vkDestroyBuffer(mDevice, newBuf, nullptr);
+            vkFreeMemory(mDevice, newMem, nullptr);
+            return false;
+        }
+
+        // Successfully created replacement buffer; safe to unmap and destroy old buffer
+        if (mem != VK_NULL_HANDLE) {
+            if (mappedPtr != nullptr) vkUnmapMemory(mDevice, mem);
+            vkFreeMemory(mDevice, mem, nullptr);
+        }
         if (buf != VK_NULL_HANDLE) vkDestroyBuffer(mDevice, buf, nullptr);
-        if (mem != VK_NULL_HANDLE) vkFreeMemory(mDevice, mem, nullptr);
 
         buf = newBuf;
         mem = newMem;
+        mappedPtr = newMapped;
         currentCap = newCap;
     }
 
-    if (bytes > 0 && data) {
-        void* mapped = nullptr;
-        VkResult mapRes = vkMapMemory(mDevice, mem, 0, bytes, 0, &mapped);
-        if (mapRes != VK_SUCCESS || !mapped) {
-            LOGE("uploadDynamicBuffer: vkMapMemory failed: %d", mapRes);
-            return false;
-        }
-        memcpy(mapped, data, bytes);
-        vkUnmapMemory(mDevice, mem);
+    if (bytes > 0 && data && mappedPtr) {
+        memcpy(mappedPtr, data, bytes);
     }
     return true;
 }
@@ -3195,12 +3201,12 @@ bool VkRenderer::render(VkTarget& target, const EyeView* eye, VkTarget* hud, Hud
 
     // Upload geometry & storage buffers
     bool uploadOk = true;
-    uploadOk &= uploadDynamicBuffer(fr.vbo, fr.vboMem, fr.vboCap, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, f.verts.data(), f.verts.size() * sizeof(uint32_t));
-    uploadOk &= uploadDynamicBuffer(fr.ibo, fr.iboMem, fr.iboCap, VK_BUFFER_USAGE_INDEX_BUFFER_BIT, p.indices.data(), p.indices.size() * sizeof(uint32_t));
-    uploadOk &= uploadDynamicBuffer(fr.rowBuf, fr.rowMem, fr.rowCap, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, p.rows.data(), p.rows.size() * sizeof(float));
-    uploadOk &= uploadDynamicBuffer(fr.recBuf, fr.recMem, fr.recCap, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, p.recs.data(), p.recs.size() * sizeof(uint32_t));
-    uploadOk &= uploadDynamicBuffer(fr.stBuf, fr.stMem, fr.stCap, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, p.states.data(), p.states.size() * sizeof(float));
-    uploadOk &= uploadDynamicBuffer(fr.vtxRecBuf, fr.vtxRecMem, fr.vtxRecCap, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, p.vtxRec.data(), p.vtxRec.size() * sizeof(uint32_t));
+    uploadOk &= uploadDynamicBuffer(fr.vbo, fr.vboMem, fr.vboMapped, fr.vboCap, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, f.verts.data(), f.verts.size() * sizeof(uint32_t));
+    uploadOk &= uploadDynamicBuffer(fr.ibo, fr.iboMem, fr.iboMapped, fr.iboCap, VK_BUFFER_USAGE_INDEX_BUFFER_BIT, p.indices.data(), p.indices.size() * sizeof(uint32_t));
+    uploadOk &= uploadDynamicBuffer(fr.rowBuf, fr.rowMem, fr.rowMapped, fr.rowCap, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, p.rows.data(), p.rows.size() * sizeof(float));
+    uploadOk &= uploadDynamicBuffer(fr.recBuf, fr.recMem, fr.recMapped, fr.recCap, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, p.recs.data(), p.recs.size() * sizeof(uint32_t));
+    uploadOk &= uploadDynamicBuffer(fr.stBuf, fr.stMem, fr.stMapped, fr.stCap, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, p.states.data(), p.states.size() * sizeof(float));
+    uploadOk &= uploadDynamicBuffer(fr.vtxRecBuf, fr.vtxRecMem, fr.vtxRecMapped, fr.vtxRecCap, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, p.vtxRec.data(), p.vtxRec.size() * sizeof(uint32_t));
 
     // Upload EyeBlock UBO
     EyeBlock eb{};
@@ -3220,7 +3226,7 @@ bool VkRenderer::render(VkTarget& target, const EyeView* eye, VkTarget* hud, Hud
         eb.vrStereo2[0] = eye->pointer[0];
         eb.vrStereo2[1] = eye->pointer[1];
     }
-    uploadOk &= uploadDynamicBuffer(fr.eyeUbo, fr.eyeMem, fr.eyeCap, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, &eb, sizeof(eb));
+    uploadOk &= uploadDynamicBuffer(fr.eyeUbo, fr.eyeMem, fr.eyeMapped, fr.eyeCap, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, &eb, sizeof(eb));
     if (!uploadOk) {
         LOGE("render: failed to upload one or more dynamic buffers");
         return false;

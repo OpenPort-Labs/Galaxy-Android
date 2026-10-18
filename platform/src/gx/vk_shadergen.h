@@ -26,4 +26,7 @@ bool lookupVulkanShader(const ShaderUid& uid, std::vector<uint32_t>& outVsSpirv,
 // means every program is compiled from source.
 void setVulkanShaderCachePath(const char* path);
 
+// Pre-compile common Mario Galaxy shader permutations into SPIR-V cache on first boot
+void prewarmCommonShaders();
+
 }  // namespace gpu

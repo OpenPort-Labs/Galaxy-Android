@@ -107,30 +107,37 @@ struct SamplerSetEntry {
 struct FrameResource {
     VkBuffer vbo = VK_NULL_HANDLE;
     VkDeviceMemory vboMem = VK_NULL_HANDLE;
+    void* vboMapped = nullptr;
     size_t vboCap = 0;
 
     VkBuffer ibo = VK_NULL_HANDLE;
     VkDeviceMemory iboMem = VK_NULL_HANDLE;
+    void* iboMapped = nullptr;
     size_t iboCap = 0;
 
     VkBuffer rowBuf = VK_NULL_HANDLE;
     VkDeviceMemory rowMem = VK_NULL_HANDLE;
+    void* rowMapped = nullptr;
     size_t rowCap = 0;
 
     VkBuffer recBuf = VK_NULL_HANDLE;
     VkDeviceMemory recMem = VK_NULL_HANDLE;
+    void* recMapped = nullptr;
     size_t recCap = 0;
 
     VkBuffer stBuf = VK_NULL_HANDLE;
     VkDeviceMemory stMem = VK_NULL_HANDLE;
+    void* stMapped = nullptr;
     size_t stCap = 0;
 
     VkBuffer vtxRecBuf = VK_NULL_HANDLE;
     VkDeviceMemory vtxRecMem = VK_NULL_HANDLE;
+    void* vtxRecMapped = nullptr;
     size_t vtxRecCap = 0;
 
     VkBuffer eyeUbo = VK_NULL_HANDLE;
     VkDeviceMemory eyeMem = VK_NULL_HANDLE;
+    void* eyeMapped = nullptr;
     size_t eyeCap = 0;
 
     VkDescriptorSet set0 = VK_NULL_HANDLE;
@@ -138,6 +145,7 @@ struct FrameResource {
     // UI dynamic vertex buffer
     VkBuffer uiVbo = VK_NULL_HANDLE;
     VkDeviceMemory uiVboMem = VK_NULL_HANDLE;
+    void* uiVboMapped = nullptr;
     size_t uiVboCap = 0;
 };
 
@@ -181,6 +189,7 @@ public:
     void present(const VkTarget& target, int vpX, int vpY, int vpW, int vpH);
 
     void onWindowResized(ANativeWindow* window);
+    void savePipelineCache();
 
 private:
     bool createInstance();
@@ -199,7 +208,6 @@ private:
     void destroyUiPipeline();
     void renderUiOverlay(int width, int height, VkCommandBuffer cmd);
     void initPipelineCache();
-    void savePipelineCache();
 
     uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
     VkFormat findSupportedDepthFormat();
@@ -220,7 +228,7 @@ private:
 
     bool createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties,
                       VkBuffer& buffer, VkDeviceMemory& bufferMemory);
-    bool uploadDynamicBuffer(VkBuffer& buf, VkDeviceMemory& mem, size_t& currentCap,
+    bool uploadDynamicBuffer(VkBuffer& buf, VkDeviceMemory& mem, void*& mappedPtr, size_t& currentCap,
                              VkBufferUsageFlags usage, const void* data, size_t bytes);
 
     VkSampler getSampler(uint32_t mode0, uint32_t mode1, uint32_t levels);

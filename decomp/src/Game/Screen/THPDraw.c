@@ -26,6 +26,7 @@ void THPGXRestore(void) {
 }
 
 void THPGXYuv2RgbSetup(GXRenderModeObj* rmode) {
+    if (!rmode) return;
     s32 scrWidth;
     s32 scrHeight;
     Mtx44 pMtx;

@@ -115,13 +115,17 @@ void MoviePlayerSimple::draw() const {
         u32 v4 = (MR::getFrameBufferWidth() - frameBufferWidth) / 2;
         u32 v5 = (MR::getFrameBufferHeight() - ySize) / 2;
         THPGXSetTexObjFilter(GX_LINEAR);
-        mMovie->mCurrentFrame = mPlayerWrapper->drawCurrentFrame(JUTVideo::getManager()->getRenderMode(), v4, v5, frameBufferWidth, ySize);
+        GXRenderModeObj* rmode = JUTVideo::getManager() ? JUTVideo::getManager()->getRenderMode() : nullptr;
+        if (rmode) {
+            mMovie->mCurrentFrame = mPlayerWrapper->drawCurrentFrame(rmode, v4, v5, frameBufferWidth, ySize);
+        }
     }
 }
 
 void MoviePlayerSimple::startMovie(const char* pMovieName, bool a2) {
-    if (!MR::isFileExist(pMovieName, false)) {
-        OSPanic(__FILE__, 0xDB, "Moive File NOT found.");
+    if (!pMovieName || !*pMovieName || !MR::isFileExist(pMovieName, false)) {
+        stopMovie();
+        return;
     }
 
     mMovie->mMovieName = pMovieName;

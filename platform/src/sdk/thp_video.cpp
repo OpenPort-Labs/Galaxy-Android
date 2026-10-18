@@ -349,7 +349,7 @@ void idct(const s32* coef, int count, const float* q, u8* out /* 8x8 */) {
 // that are not a multiple of 8 put the last block of a row past the plane, so
 // the block is clipped to it instead of overwriting the next tile row.
 void storeBlock(u8* plane, u32 width, u32 height, u32 x, u32 y, const u8* px) {
-    if (x >= width) {
+    if (!plane || !px || x >= width || y >= height) {
         return;
     }
     u32 tilesPerRow = (width + 7) / 8;
@@ -421,11 +421,14 @@ s32 THPVideoDecode(void* file, void* tileY, void* tileU, void* tileV, void* work
     const u8* c = (const u8*)file;
     const u8* end = c + (4u << 20);
     for (;;) {
-        if (*c++ != 0xFF) {
+        if (c >= end || *c++ != 0xFF) {
             return kErrBadSyntax;
         }
-        while (*c == 0xFF) {
+        while (c < end && *c == 0xFF) {
             c++;
+        }
+        if (c >= end) {
+            return kErrBadSyntax;
         }
         u8 marker = *c++;
         s32 status = 0;
@@ -442,6 +445,7 @@ s32 THPVideoDecode(void* file, void* tileY, void* tileU, void* tileV, void* work
             status = readQuant(d, c, end);
             break;
         case 0xDD:  // DRI
+            if (c + 4 > end) return kErrBadSyntax;
             d.restartInterval = read16(c + 2);
             c += 4;
             break;
@@ -458,7 +462,10 @@ s32 THPVideoDecode(void* file, void* tileY, void* tileU, void* tileV, void* work
             return status;
         default:
             if ((marker >= 0xE0 && marker <= 0xEF) || marker == 0xFE) {
-                c += read16(c);
+                if (c + 2 > end) return kErrBadSyntax;
+                u16 len = read16(c);
+                if (c + len > end) return kErrBadSyntax;
+                c += len;
                 break;
             }
             return kErrUnsupportedMarker;

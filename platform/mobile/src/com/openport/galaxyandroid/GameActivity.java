@@ -21,7 +21,7 @@ public class GameActivity extends NativeActivity {
         applyFullscreen();
         setPreferredRefreshRate(144.0f);
 
-        if (!MainActivity.isGameDataReady()) {
+        if (!MainActivity.isGameDataReady(this)) {
             returnToLauncher();
             return;
         }

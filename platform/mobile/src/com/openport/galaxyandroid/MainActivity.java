@@ -122,6 +122,18 @@ public class MainActivity extends Activity {
                 }
             }
         }
+        File mediaDir = new File("/mnt/media_rw");
+        if (mediaDir.exists() && mediaDir.isDirectory()) {
+            File[] mounts = mediaDir.listFiles();
+            if (mounts != null) {
+                for (File m : mounts) {
+                    if (m.isDirectory()) {
+                        candidates.add(new File(m, "GalaxyData"));
+                        candidates.add(new File(m, "Android/data/com.openport.galaxyandroid/files/GalaxyData"));
+                    }
+                }
+            }
+        }
         for (File dir : candidates) {
             if (checkDataDir(dir)) return dir;
         }
@@ -130,6 +142,10 @@ public class MainActivity extends Activity {
 
     public static boolean isGameDataReady() {
         return findGameDataFolder(null) != null;
+    }
+
+    public static boolean isGameDataReady(android.content.Context context) {
+        return findGameDataFolder(context) != null;
     }
 
     @Override

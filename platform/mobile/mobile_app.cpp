@@ -289,6 +289,22 @@ std::string findGameData(const std::string& extDir) {
         closedir(storageDir);
     }
 
+    DIR* mediaDir = opendir("/mnt/media_rw");
+    if (mediaDir) {
+        struct dirent* entry;
+        while ((entry = readdir(mediaDir)) != nullptr) {
+            if (entry->d_name[0] != '.') {
+                std::string sd = std::string("/mnt/media_rw/") + entry->d_name;
+                candidates.push_back(sd + "/GalaxyData");
+                candidates.push_back(sd + "/GalaxyData/game");
+                candidates.push_back(sd + "/Android/data/com.openport.galaxyandroid/files/GalaxyData");
+                candidates.push_back(sd + "/Android/data/com.openport.galaxyandroid/files/game");
+                candidates.push_back(sd + "/game");
+            }
+        }
+        closedir(mediaDir);
+    }
+
     for (const auto& path : candidates) {
         bool ready = false;
         if (checkGameFolder(path, &ready) && ready) {
@@ -1216,6 +1232,9 @@ extern "C" __attribute__((visibility("default"))) void port_android_main(struct 
     port_skip_set_hold_seconds(0.0f);
 
     std::string internalPath = app->activity->internalDataPath ? app->activity->internalDataPath : "";
+    if (internalPath.empty()) {
+        internalPath = "/data/data/com.openport.galaxyandroid/files";
+    }
     bool isPlus = (internalPath.find("plus") != std::string::npos);
     mobile_ui::get().setPlusEdition(isPlus);
     LOGI("GalaxyMobile edition detected: %s (internalDataPath: %s)", isPlus ? "GalaxyMobile+" : "GalaxyMobile (Standard)", internalPath.c_str());
@@ -1236,10 +1255,10 @@ extern "C" __attribute__((visibility("default"))) void port_android_main(struct 
     } else {
         port_log_file((ext + "/galaxy_log.txt").c_str());
     }
-    gpu::setShaderCachePath((std::string(app->activity->internalDataPath) + "/shaders.bin").c_str());
-    gpu::setVkPipelineCachePath((std::string(app->activity->internalDataPath) + "/vk_pipeline_cache.bin").c_str());
+    gpu::setShaderCachePath((internalPath + "/shaders.bin").c_str());
+    gpu::setVkPipelineCachePath((internalPath + "/vk_pipeline_cache.bin").c_str());
     // Compiled SPIR-V, so shaderc only runs for a program once per install.
-    gpu::setVulkanShaderCachePath((std::string(app->activity->internalDataPath) + "/vk_shaders.bin").c_str());
+    gpu::setVulkanShaderCachePath((internalPath + "/vk_shaders.bin").c_str());
 
     // Search for game data files
     a.dataRoot = findGameData(ext);

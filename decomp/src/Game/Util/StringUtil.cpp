@@ -236,14 +236,17 @@ namespace MR {
     }
 
     bool isEqualString(const char* pStr1, const char* pStr2) {
+        if (!pStr1 || !pStr2) return pStr1 == pStr2;
         return strcmp(pStr1, pStr2) == 0;
     }
 
     bool isEqualStringCase(const char* pStr1, const char* pStr2) {
+        if (!pStr1 || !pStr2) return pStr1 == pStr2;
         return strcasecmp(pStr1, pStr2) == 0;
     }
 
     bool isEqualSubString(const char* pStr, const char* pSubStr) {
+        if (!pStr || !pSubStr) return false;
         return strstr(pStr, pSubStr) != nullptr;
     }
 

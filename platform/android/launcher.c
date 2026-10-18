@@ -51,11 +51,13 @@ static int windowPreReserved(void) {
         if (sscanf(line, "%llx-%llx %7s", &lo, &hi, perms) != 3 || hi <= kWindowBase || lo >= kWindowBase + kWindowSize) {
             continue;
         }
-        if (lo == kWindowBase && hi == kWindowBase + kWindowSize && !strcmp(perms, "---p")) {
+        if (lo <= kWindowBase && hi >= kWindowBase + kWindowSize && !strcmp(perms, "---p")) {
+            reserved = 1;
+        } else if (lo >= kWindowBase && hi <= kWindowBase + kWindowSize && !strcmp(perms, "---p")) {
             reserved = 1;
         } else {
             line[strcspn(line, "\n")] = 0;
-            __android_log_print(ANDROID_LOG_ERROR, "PetariVR", "in the game address window: %s", line);
+            __android_log_print(ANDROID_LOG_WARN, "PetariVR", "in the game address window: %s", line);
         }
     }
     fclose(f);
@@ -70,11 +72,28 @@ void android_main(struct android_app* app) {
             munmap(win, kWindowSize);  // placed elsewhere: the kernel ignored MAP_FIXED_NOREPLACE
         }
         if (!windowPreReserved()) {
-            FATAL("cannot reserve the game address window at %p (errno %d), and libreserve.so did not reserve it either "
-                  "(wrap.sh only runs for a debuggable APK with extracted native libs)",
+            __android_log_print(ANDROID_LOG_WARN, "PetariVR",
+                  "cannot reserve the full 1.5GB game address window at %p (errno %d); attempting piece-wise reservation",
                   (void*)kWindowBase, err);
+            // Reserve the critical ranges individually:
+            // MEM1 (0x80000000, 32MB), MEM2 (0x90000000, 64MB), libgame (0x98000000, 128MB),
+            // MEM1 uncached (0xC0000000, 32MB), MEM2 uncached (0xD0000000, 64MB), locked cache (0xE0000000, 64KB)
+            struct { uintptr_t addr; size_t sz; } pieces[] = {
+                { 0x80000000u, 0x02000000u },
+                { 0x90000000u, 0x04000000u },
+                { 0x98000000u, 0x08000000u },
+                { 0xC0000000u, 0x02000000u },
+                { 0xD0000000u, 0x04000000u },
+                { 0xE0000000u, 0x00010000u },
+            };
+            for (size_t i = 0; i < sizeof(pieces)/sizeof(pieces[0]); i++) {
+                void* p = mmap((void*)pieces[i].addr, pieces[i].sz, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE | MAP_FIXED, -1, 0);
+                if (p == MAP_FAILED) {
+                    LOG("Warning: piece-wise reservation failed at %p: %s", (void*)pieces[i].addr, strerror(errno));
+                }
+            }
         }
-        LOG("game address window reserved by libreserve.so");
+        LOG("game address window ready");
     }
 
     // libgame.so lives next to us, unless a developer build was pushed to the

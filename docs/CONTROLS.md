@@ -30,6 +30,7 @@ The on-screen overlay is engineered with a modern frosted translucent dark glass
 | On-Screen Element | Controller Equivalent | In-Game Action |
 |---|---|---|
 | **Analog Thumbstick** (Left) | Analog Stick | 360° character movement, swimming, rolling |
+| **2nd Joystick** (Right, Optional) | IR Pointer / Camera | Dedicated analog Star Pointer aiming and free camera orbit |
 | **A Button** (Cyan `#38BDF8`) | Button **A** | Jump, confirm in menus, talk, hold to fast-forward dialogue |
 | **SPIN Button** (Emerald `#34D399`) | Motion Shake | Star Spin attack, spin jump, activate Launch Stars |
 | **B Button** (Amber `#FBBF24`) | Trigger **B** | Shoot collected Star Bits at enemies / obstacles |
@@ -40,11 +41,18 @@ The on-screen overlay is engineered with a modern frosted translucent dark glass
 
 ---
 
-### Precision Reticle Joystick & Laser Tether
+### Dual Analog Joysticks & Sensitivity Calibration
 
-- **Dynamic Floating Mode (Default):** Tap and drag anywhere on the left third of your screen. The thumbstick anchors dynamically under your finger.
-- **Fixed Mode:** Locks the joystick in a fixed physical position on screen (can be repositioned in the Layout Editor).
-- **Luminous Laser Tether:** A vector laser line connects the joystick center to the thumb puck, providing immediate visual feedback of analog angle and deflection magnitude without screen clutter.
+- **Primary Movement Stick (Left):**
+  - **Dynamic Floating Mode (Default):** Tap and drag anywhere on the left third of your screen. The thumbstick anchors dynamically under your finger.
+  - **Fixed Mode:** Locks the joystick in a fixed physical position on screen (can be repositioned in the Layout Editor).
+  - **Movement Sensitivity:** Configurable in the Settings drawer between 75%, 100%, 125%, and 150% to match small or large phone screens.
+  - **Luminous Laser Tether:** A vector laser line connects the joystick center to the thumb puck, providing immediate visual feedback of analog angle and deflection magnitude.
+
+- **Dedicated 2nd Joystick (Right / Star Pointer & Camera):**
+  - Enables smooth dual-stick control without requiring finger swipes across the game view.
+  - **Freely Repositionable:** Positioned by default above the action buttons; can be dragged to any location on the screen in **Touch Edit Mode**.
+  - **Star Stick Sensitivity:** Independent sensitivity multiplier in Settings (50%, 75%, 100%, 150%, and 200%) for high-speed star bit sweeping or precision pull-star targeting.
 
 ---
 

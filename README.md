@@ -8,7 +8,7 @@
 [![Platform: Android ARM64](https://img.shields.io/badge/Platform-Android%20ARM64-brightgreen.svg)](docs/TECHNICAL.md)
 [![Graphics: Vulkan 1.0 (Default) | GLES 3.2](https://img.shields.io/badge/Graphics-Vulkan%201.0%20(Default)%20%7C%20GLES%203.2-orange.svg)](docs/TECHNICAL.md)
 [![Audio: AAudio](https://img.shields.io/badge/Audio-AAudio%20Low--Latency-purple.svg)](docs/TECHNICAL.md)
-[![Release: v0.0.2](https://img.shields.io/badge/Release-v0.0.2-blue.svg)](https://github.com/OpenPort-Labs/Galaxy-Android/releases/tag/v0.0.2)
+[![Release: v0.0.4](https://img.shields.io/badge/Release-v0.0.4-blue.svg)](https://github.com/OpenPort-Labs/Galaxy-Android/releases/tag/v0.0.4)
 
 **Play the classic 3D cosmic gravity platformer natively on your Android phone, tablet, or handheld console.**
 
@@ -32,10 +32,16 @@ We express our deepest thanks to our contributors and the community for keeping 
 
 ## Key Features
 
-### Native Vulkan 1.0 Pipeline (Primary & Recommended)
-- **Zero-Overhead Graphics**: Fully native Vulkan 1.0 renderer featuring unified Pipeline State Objects (PSO), offscreen EFB render target creation, dynamic swapchain blitting, and synchronized fence pacing.
+### Zero-Stutter Native Vulkan 1.0 Architecture (Primary & Recommended)
+- **Asynchronous Pipelined Presentation**: Dedicated swapchain presentation command buffer (`mPresentCommandBuffer`) decoupled from offscreen rendering via GPU semaphore (`mRenderToPresentSem`), completely eliminating synchronous CPU fence stalls.
+- **Non-Blocking Texture Streaming**: In-command texture upload recording with deferred staging buffer deletion, eliminating `vkQueueWaitIdle` stalls during galaxy transitions.
+- **Phase-Locked VI Retrace Clocking**: Wii engine Video Interface tick synchronized directly to physical Android screen presentation flips (`port_vi_retrace()`), eliminating clock drift judder.
+- **Zero-Syscall Persistent Memory Mapping**: Dynamic vertex, index, row, and uniform buffers persistently mapped upon allocation, replacing per-frame kernel `mmap`/`munmap` calls with direct `memcpy()`.
+- **TBDR Tile Memory Optimization**: EFB depth attachments configured with `VK_ATTACHMENT_STORE_OP_DONT_CARE`, discarding depth on-chip in GMEM/SRAM to eliminate DRAM memory bus saturation.
+- **CPU big.LITTLE Performance Core Pinning**: Render and game threads locked to high-performance cores (Cores 4-7) via `sched_setaffinity()`.
+- **First-Boot Shader Precompilation**: Common TEV combinations pre-compiled into binary SPIR-V during initial engine initialization (`vk_shaders.bin`) and Vulkan driver pipeline cache serialized on pause/exit (`vk_pipeline_cache.bin`).
 - **Native Vulkan 1.0 UI Overlay**: Completely native Vulkan pipeline (`mUiPipeline`) rendering touch controls, vector joystick lines, and Material 3 drawer widgets directly into the swapchain render pass.
-- **OpenGL ES 3.2 Fallback**: Robust secondary backend featuring dynamic TEV stage translation, indirect coordinate warping, and cross-GPU lighting safeguards for legacy devices.
+- **OpenGL ES 3.2 Fallback**: Secondary backend featuring dynamic TEV stage translation, indirect coordinate warping, and cross-GPU lighting safeguards for legacy devices.
 
 ### Real-Time Hardware Performance Telemetry HUD
 - Monoscopic render submission and frame-time telemetry powered by `port_perf_render`.
@@ -64,9 +70,11 @@ We express our deepest thanks to our contributors and the community for keeping 
 ### Frosted Glass Minimalist Touch Controls
 - **Sleek Translucent Dark Glass Theme**: Semi-transparent frosted glass backplates with luminous perimeter rings and tactile depression feedback.
 - **Dynamic Luminous Laser Tether Joystick**: Vector laser line connects the stick origin to your thumb knob, providing immediate visual feedback of analog magnitude and deflection angle. Supports dynamic floating stick anchor mode.
+- **Repositionable 2nd Joystick (Star Pointer)**: Dedicated right analog stick for Star Pointer aim and free camera control. Fully repositionable anywhere on screen (including stacked directly above action buttons) via Touch Edit mode.
+- **Independent Dual Joystick Sensitivity**: Fine-tune analog responsiveness in Settings with dedicated multipliers for Movement (75% to 150%) and Star Pointer / Camera (50% to 200%).
 - **Directional Camera D-Pad**: Unibody circular navigation disc replicating the controller D-Pad for 45° camera rotation and recentering.
 - **Direct 1:1 Star Pointer Finger Tracking**: Touch and drag anywhere on screen to collect and aim star bits without accidental joystick conflicts.
-- **Interactive Layout Editor**: Reposition and scale any button cluster to fit your hands.
+- **Interactive Layout Editor**: Reposition and scale any button cluster or analog stick to fit your hands.
 
 ### True Native Hor+ Ultrawide (No Stretch, No Zoom)
 - Dynamically adapts the 3D camera projection to modern mobile aspect ratios (19.5:9, 20:9, foldables, and tablets).

@@ -296,15 +296,8 @@ void GameSystem::frameLoop() {
         }
     } else if (sQuickLoadState == 3) {
         if (--sQuickLoadDelayFrames <= 0 && !GameSequenceFunction::isActiveSaveDataHandleSequence()) {
-            const char* stage = MR::getCurrentStageName();
-            if (stage && stage[0] && strcmp(stage, "Logo") != 0 && strcmp(stage, "Title") != 0) {
-                port_log("[QUICK_LOAD] Safely reloading stage: %s (scenario %d)", stage, MR::getCurrentScenarioNo());
-                GameSystemSceneController* pController = SingletonHolder< GameSystem >::get()->mSceneController;
-                pController->mNextSceneControlInfo.setScene("Game");
-                pController->mNextSceneControlInfo.setStage(stage);
-                pController->mNextSceneControlInfo.mScenarioNo = MR::getCurrentScenarioNo();
-                pController->requestChangeScene();
-            }
+            port_log("[QUICK_LOAD] Loaded UserFile successfully. Transitioning to saved galaxy...");
+            MR::requestChangeStageInGameAfterLoadingGameData();
             sQuickLoadState = 0;
         }
     }

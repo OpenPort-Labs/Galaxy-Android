@@ -1,5 +1,6 @@
 #include "SettingsMenuActions.h"
 #include "SettingsMenuModActions.h"
+#include "../system/SystemManager.h"
 
 #include <android/log.h>
 #include <algorithm>
@@ -22,6 +23,7 @@ static void applyTargetFps(int fps) {
     if (fps < 30) fps = 30;
     if (fps > 144) fps = 144;
     port_set_display_refresh_rate(fps);
+    mobile_system::SystemManager::setPreferredRefreshRate(nullptr, (float)fps);
 }
 
 
@@ -228,7 +230,7 @@ bool SettingsMenuActions::dispatch(MenuActionId action, float px, float midX, fl
     default:
         if (SettingsMenuModActions::dispatch(action, px, midX, relX, contentW,
                                              settings, saveMgr, outToastMsg, outCloseSettings)) {
-            return false;
+            return true;
         }
         break;
     }

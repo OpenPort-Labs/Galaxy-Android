@@ -52,13 +52,10 @@ void ScenePresenter::presentVulkan(gpu::VkRenderer& vkr, gpu::VkTarget& target,
     } else {
         int targetFps = settings.targetFps;
         if (settings.batterySaver) targetFps = 30;
-        int64_t nowNs = port_host_time_ns();
-
-        bool highRefreshSlot = framePacer.shouldPresentSlot(targetFps, port_get_game_speed(), nowNs) && vkr.hasFrame();
         bool uiRedrawNeeded = mobile_ui::UIOverlay::get().needsRedraw() && vkr.hasFrame() &&
                               (!gameBooted || port_is_paused() || mobile_ui::UIOverlay::get().isSettingsOpen());
 
-        if (highRefreshSlot || uiRedrawNeeded) {
+        if (uiRedrawNeeded) {
             framePacer.sync(app, targetFps, 1.0f);
             vpMgr.update(screenW, screenH, settings.fullscreen);
             vkr.present(target, vpMgr.x(), vpMgr.y(), vpMgr.w(), vpMgr.h());

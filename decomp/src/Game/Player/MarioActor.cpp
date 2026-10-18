@@ -1021,13 +1021,28 @@ void MarioActor::control() {
         mVelocity = sSaveVel;
         _294 = sSavePos;
         _270 = sSavePos;
+        mScale.set(TVec3f(1.0f, 1.0f, 1.0f));
+        _F44 = true;
+        _482 = false;
+        _A6E = 0;
+        MR::showPlayer();
+        _388 = 0;
         if (mMario) {
             mMario->mPosition = sSavePos;
             mMario->mVelocity = sSaveVel;
+            mMario->mVelocityAfter = sSaveVel;
+            mMario->mAirGravityVec.zero();
+            mMario->mMovementStates._3C = false;
+            mMario->mMovementStates._1 = false;
             mMario->mFrontVec = sSaveFront;
             mMario->mJumpVec.zero();
+            mMario->stopJump();
+            mMario->stopWalk();
+            mMario->changeAnimationNonStop("Wait");
         }
         mHealth = sSaveHealth;
+        MR::activateDefaultGameLayout();
+        setNerve(GET_NERVE(MarioActor, MarioActorNrvWait));
         MR::startSystemSE("SE_SY_WARP_IN");
     }
 

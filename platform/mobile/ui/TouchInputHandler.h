@@ -24,9 +24,10 @@ public:
     float getTouchStarStickX() const { return (mStarStickPointerId >= 0) ? mStarStickX : 0.0f; }
     float getTouchStarStickY() const { return (mStarStickPointerId >= 0) ? mStarStickY : 0.0f; }
 
-    void setPointerPos(float x, float y) { mPointerX = x; mPointerY = y; }
+    void setPointerPos(float x, float y) { mPointerX = x; mPointerY = y; mPointerActiveFrames = 120; }
     float getPointerX() const { return mPointerX; }
     float getPointerY() const { return mPointerY; }
+    bool isPointerActive() const { return mPointerActiveFrames > 0 || mStarStickPointerId >= 0; }
 
     bool handleTouch(const AInputEvent* event, PortPadState& pad, int& spinFrames,
                      int screenW, int screenH, int vpX, int vpY, int vpW, int vpH,
@@ -68,6 +69,7 @@ private:
     float mStarStickX = 0.0f, mStarStickY = 0.0f;
 
     float mPointerX = 0.0f, mPointerY = 0.0f;
+    int mPointerActiveFrames = 0;
 
     bool mBtnAPressed = false, mBtnBPressed = false, mBtnZPressed = false;
     bool mBtnSpinPressed = false, mBtnPlusPressed = false, mBtnCfgPressed = false;

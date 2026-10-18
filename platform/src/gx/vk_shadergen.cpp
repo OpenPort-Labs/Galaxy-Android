@@ -851,8 +851,54 @@ void setVulkanShaderCachePath(const char* path) {
 }
 
 void prewarmCommonShaders() {
-    std::lock_guard<std::mutex> lock(sSpirvCacheLock);
-    if (!sSpirvCacheLoaded) loadSpirvCacheLocked();
+    {
+        std::lock_guard<std::mutex> lock(sSpirvCacheLock);
+        if (!sSpirvCacheLoaded) loadSpirvCacheLocked();
+        if (sSpirvCache.size() >= 30) {
+            port_log("vk_shadergen: prewarmCommonShaders skipped (%zu cached shaders already present)", sSpirvCache.size());
+            return;
+        }
+    }
+
+    port_log("vk_shadergen: prewarming common Galaxy shaders into permanent cache...");
+    std::vector<ShaderUid> uids;
+
+    // 1. Stub default shader
+    uids.push_back(ShaderUid{});
+
+    // 2. Typical untextured & 1-channel diffuse shaders
+    for (uint32_t chans = 0; chans <= 2; chans++) {
+        for (uint32_t texGens = 0; texGens <= 2; texGens++) {
+            for (uint32_t tevStages = 1; tevStages <= 3; tevStages++) {
+                for (uint32_t hud = 0; hud <= 1; hud++) {
+                    ShaderUid u{};
+                    u.numChans = chans;
+                    u.numTexGens = texGens;
+                    u.numTevStages = tevStages;
+                    u.hud = hud;
+                    for (uint32_t c = 0; c < chans && c < 2; c++) {
+                        u.colorCtrl[c] = 0x0001;
+                        u.alphaCtrl[c] = 0x0001;
+                    }
+                    for (uint32_t s = 0; s < tevStages; s++) {
+                        u.tevColor[s] = 0x0F0800;
+                        u.tevAlpha[s] = 0x0F0800;
+                    }
+                    uids.push_back(u);
+                }
+            }
+        }
+    }
+
+    // Precompile each candidate
+    int count = 0;
+    std::vector<uint32_t> vs, fs;
+    for (const auto& u : uids) {
+        if (compileVulkanShader(u, vs, fs)) {
+            count++;
+        }
+    }
+    port_log("vk_shadergen: prewarm completed (%d common shaders compiled and saved to disk)", count);
 }
 
 }  // namespace gpu

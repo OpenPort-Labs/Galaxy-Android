@@ -42,10 +42,20 @@ void TouchInputHandler::update(PortPadState& pad, int& spinFrames, bool fullTouc
 
     mBtnPlusPressed = mFingerDownOnPlus;
 
-    pad.pointerValid = 1;
-    pad.pointerX = mPointerX;
-    pad.pointerY = mPointerY;
-    pad.pointerDist = 2.0f;
+    if (mPointerActiveFrames > 0 || mStarStickPointerId >= 0) {
+        pad.pointerValid = 1;
+        pad.pointerX = mPointerX;
+        pad.pointerY = mPointerY;
+        pad.pointerDist = 2.0f;
+        if (mPointerActiveFrames > 0 && mStarStickPointerId < 0) {
+            mPointerActiveFrames--;
+        }
+    } else {
+        pad.pointerValid = 0;
+        pad.pointerX = 0.0f;
+        pad.pointerY = 0.0f;
+        pad.pointerDist = 0.0f;
+    }
 }
 
 uint32_t TouchInputHandler::getTouchButtons() const {
@@ -257,6 +267,7 @@ bool TouchInputHandler::handleTouch(const AInputEvent* event, PortPadState& pad,
             if (mTouches[slot].role == TouchRole::STAR_POINTER && !settings.relativePointer && vpW > 0 && vpH > 0) {
                 mPointerX = std::max(-1.0f, std::min(1.0f, ((px - vpX) / (float)vpW) * 2.0f - 1.0f));
                 mPointerY = std::max(-1.0f, std::min(1.0f, ((py - vpY) / (float)vpH) * 2.0f - 1.0f));
+                mPointerActiveFrames = 120;
             }
         }
     }

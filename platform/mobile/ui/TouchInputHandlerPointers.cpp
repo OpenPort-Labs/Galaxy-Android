@@ -103,6 +103,7 @@ void TouchInputHandler::updateActivePointers(
             float slew = 0.038f * settings.starStickSensitivity;
             mPointerX = std::max(-1.0f, std::min(1.0f, mPointerX + mStarStickX * slew));
             mPointerY = std::max(-1.0f, std::min(1.0f, mPointerY - mStarStickY * slew));
+            mPointerActiveFrames = 120;
         } else if (role == TouchRole::CAMERA_SWIPE) {
             cameraSwipeFound = true;
             if (slot >= 0) {
@@ -112,7 +113,7 @@ void TouchInputHandler::updateActivePointers(
                 pad.rightStickX = std::max(-1.0f, std::min(1.0f, dx * sens));
                 pad.rightStickY = std::max(-1.0f, std::min(1.0f, -dy * sens));
             }
-        } else if (vpW > 0 && vpH > 0) {
+        } else if (role == TouchRole::STAR_POINTER && vpW > 0 && vpH > 0) {
             if (settings.relativePointer && slot >= 0) {
                 mPointerX = std::max(-1.0f, std::min(1.0f, mPointerX + ((px - mTouches[slot].lastX) / (float)vpW) * 2.0f));
                 mPointerY = std::max(-1.0f, std::min(1.0f, mPointerY + ((py - mTouches[slot].lastY) / (float)vpH) * 2.0f));
@@ -120,6 +121,7 @@ void TouchInputHandler::updateActivePointers(
                 mPointerX = std::max(-1.0f, std::min(1.0f, ((px - vpX) / (float)vpW) * 2.0f - 1.0f));
                 mPointerY = std::max(-1.0f, std::min(1.0f, ((py - vpY) / (float)vpH) * 2.0f - 1.0f));
             }
+            mPointerActiveFrames = 120;
             if (slot >= 0) { mTouches[slot].lastX = px; mTouches[slot].lastY = py; }
         }
     }

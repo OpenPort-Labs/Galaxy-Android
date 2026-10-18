@@ -125,12 +125,18 @@ void SystemManager::returnToLauncher(android_app* app) {
     if (attached) vm->DetachCurrentThread();
 }
 
+static android_app* sSavedApp = nullptr;
+
 void SystemManager::setPreferredRefreshRate(android_app* app, float targetFps) {
+    if (app) sSavedApp = app;
+    else app = sSavedApp;
+
     static float sLastAppliedFps = -1.0f;
     if (fabsf(sLastAppliedFps - targetFps) < 0.5f) return;
-    sLastAppliedFps = targetFps;
 
     if (!app || !app->activity || !app->activity->vm || !app->activity->clazz) return;
+    sLastAppliedFps = targetFps;
+
     JavaVM* vm = app->activity->vm;
     JNIEnv* env = nullptr;
     bool attached = false;

@@ -47,11 +47,26 @@ namespace nw4r {
 extern "C" {
 __attribute__((weak)) int port_is_fullscreen_aspect(void) { return 0; }
 __attribute__((weak)) float port_get_display_aspect(void) { return 16.0f / 9.0f; }
-__attribute__((weak)) int port_is_fly_mode(void) { return 0; }
-__attribute__((weak)) int port_is_skip_cutscenes(void) { return 0; }
-__attribute__((weak)) int port_is_infinite_health(void) { return 0; }
-__attribute__((weak)) int port_is_infinite_lives(void) { return 0; }
-__attribute__((weak)) int port_is_infinite_starbits(void) { return 0; }
+static int sFlyMode = 0;
+__attribute__((weak)) int port_is_fly_mode(void) { return __atomic_load_n(&sFlyMode, __ATOMIC_ACQUIRE); }
+__attribute__((weak)) void port_set_fly_mode(int e) { __atomic_store_n(&sFlyMode, e, __ATOMIC_RELEASE); }
+
+static int sSkipCutscenes = 0;
+__attribute__((weak)) int port_is_skip_cutscenes(void) { return __atomic_load_n(&sSkipCutscenes, __ATOMIC_ACQUIRE); }
+__attribute__((weak)) void port_set_skip_cutscenes(int e) { __atomic_store_n(&sSkipCutscenes, e, __ATOMIC_RELEASE); }
+
+static int sInfiniteHealth = 0;
+__attribute__((weak)) int port_is_infinite_health(void) { return __atomic_load_n(&sInfiniteHealth, __ATOMIC_ACQUIRE); }
+__attribute__((weak)) void port_set_infinite_health(int e) { __atomic_store_n(&sInfiniteHealth, e, __ATOMIC_RELEASE); }
+
+static int sInfiniteLives = 0;
+__attribute__((weak)) int port_is_infinite_lives(void) { return __atomic_load_n(&sInfiniteLives, __ATOMIC_ACQUIRE); }
+__attribute__((weak)) void port_set_infinite_lives(int e) { __atomic_store_n(&sInfiniteLives, e, __ATOMIC_RELEASE); }
+
+static int sInfiniteStarbits = 0;
+__attribute__((weak)) int port_is_infinite_starbits(void) { return __atomic_load_n(&sInfiniteStarbits, __ATOMIC_ACQUIRE); }
+__attribute__((weak)) void port_set_infinite_starbits(int e) { __atomic_store_n(&sInfiniteStarbits, e, __ATOMIC_RELEASE); }
+
 __attribute__((weak)) int port_is_shield_hd_textures(void) { return 1; }
 __attribute__((weak)) int port_is_shield_cutscenes(void) { return 1; }
 __attribute__((weak)) int port_is_shield_controls(void) { return 1; }
@@ -135,7 +150,7 @@ __attribute__((weak)) void port_get_speedrun_telemetry(PortSpeedrunTelemetry* t)
     if (t) *t = sTelemetry;
 }
 
-static int sPostProcessing = 1;
+static int sPostProcessing = 0;
 __attribute__((weak)) int port_is_post_processing_enabled(void) { return __atomic_load_n(&sPostProcessing, __ATOMIC_ACQUIRE); }
 __attribute__((weak)) void port_set_post_processing_enabled(int e) { __atomic_store_n(&sPostProcessing, e, __ATOMIC_RELEASE); }
 }

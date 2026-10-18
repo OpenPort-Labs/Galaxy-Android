@@ -112,22 +112,27 @@ bool SettingsMenuModActions::dispatch(MenuActionId action, float px, float midX,
     }
     case ACT_FLY_MODE:
         settings.modFly = !settings.modFly;
+        port_set_fly_mode(settings.modFly ? 1 : 0);
         outToastMsg = settings.modFly ? "Fly Mode: ON (Hold A ascend, Z descend)" : "Fly Mode: OFF";
         return true;
     case ACT_SKIP_CUTSCENES:
         settings.modSkipCutscenes = !settings.modSkipCutscenes;
+        port_set_skip_cutscenes(settings.modSkipCutscenes ? 1 : 0);
         outToastMsg = settings.modSkipCutscenes ? "Skip Cutscenes: ON" : "Skip Cutscenes: OFF";
         return true;
     case ACT_INFINITE_HEALTH:
         settings.modInfiniteHealth = !settings.modInfiniteHealth;
+        port_set_infinite_health(settings.modInfiniteHealth ? 1 : 0);
         outToastMsg = settings.modInfiniteHealth ? "Infinite Health: ON" : "Infinite Health: OFF";
         return true;
     case ACT_INFINITE_LIVES:
         settings.modInfiniteLives = !settings.modInfiniteLives;
+        port_set_infinite_lives(settings.modInfiniteLives ? 1 : 0);
         outToastMsg = settings.modInfiniteLives ? "Infinite Lives (99): ON" : "Infinite Lives: OFF";
         return true;
     case ACT_INFINITE_STARBITS:
         settings.modInfiniteStarBits = !settings.modInfiniteStarBits;
+        port_set_infinite_starbits(settings.modInfiniteStarBits ? 1 : 0);
         outToastMsg = settings.modInfiniteStarBits ? "Infinite Star Bits (999): ON" : "Infinite Star Bits: OFF";
         return true;
     case ACT_RIIVOLUTION:

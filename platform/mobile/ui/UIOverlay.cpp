@@ -12,6 +12,11 @@ void port_set_character_choice(int choice);
 void port_set_odyssey_moveset(int enabled);
 void port_set_coop_mode(int enabled);
 void port_set_speedrun_hud_enabled(int enabled);
+void port_set_fly_mode(int enabled);
+void port_set_skip_cutscenes(int enabled);
+void port_set_infinite_health(int enabled);
+void port_set_infinite_lives(int enabled);
+void port_set_infinite_starbits(int enabled);
 }
 
 namespace mobile_ui {
@@ -34,12 +39,26 @@ bool UIOverlay::init() {
     port_set_odyssey_moveset(mSettings.odysseyMoveset ? 1 : 0);
     port_set_coop_mode(mSettings.coopMode ? 1 : 0);
     port_set_speedrun_hud_enabled(mSettings.speedrunHud ? 1 : 0);
+    port_set_fly_mode(mSettings.modFly ? 1 : 0);
+    port_set_skip_cutscenes(mSettings.modSkipCutscenes ? 1 : 0);
+    port_set_infinite_health(mSettings.modInfiniteHealth ? 1 : 0);
+    port_set_infinite_lives(mSettings.modInfiniteLives ? 1 : 0);
+    port_set_infinite_starbits(mSettings.modInfiniteStarBits ? 1 : 0);
     return mGles.init();
 }
 
 void UIOverlay::setSavePath(const std::string& path) {
     mSave.setSavePath(path);
     mSettings.load(path);
+    port_set_character_choice(mSettings.characterChoice);
+    port_set_odyssey_moveset(mSettings.odysseyMoveset ? 1 : 0);
+    port_set_coop_mode(mSettings.coopMode ? 1 : 0);
+    port_set_speedrun_hud_enabled(mSettings.speedrunHud ? 1 : 0);
+    port_set_fly_mode(mSettings.modFly ? 1 : 0);
+    port_set_skip_cutscenes(mSettings.modSkipCutscenes ? 1 : 0);
+    port_set_infinite_health(mSettings.modInfiniteHealth ? 1 : 0);
+    port_set_infinite_lives(mSettings.modInfiniteLives ? 1 : 0);
+    port_set_infinite_starbits(mSettings.modInfiniteStarBits ? 1 : 0);
 }
 
 void UIOverlay::update(PortPadState& pad, int& spinFrames) {

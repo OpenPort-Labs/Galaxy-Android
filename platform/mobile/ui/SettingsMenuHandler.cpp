@@ -96,13 +96,10 @@ bool SettingsMenuHandler::handleTouch(const AInputEvent* event, int screenW, int
                         float relX = px - (drawerX + padX);
 
                         bool closeSettings = false;
-                        if (SettingsMenuActions::dispatch(r.action, px, midX, relX, contentW,
-                                                          settings, saveMgr, outToastMsg,
-                                                          outEditMode, outResetLayout,
-                                                          closeSettings, savePath)) {
-                            if (closeSettings) mSettingsOpen = false;
-                            return true;
-                        }
+                        SettingsMenuActions::dispatch(r.action, px, midX, relX, contentW,
+                                                      settings, saveMgr, outToastMsg,
+                                                      outEditMode, outResetLayout,
+                                                      closeSettings, savePath);
                         if (closeSettings) mSettingsOpen = false;
                         if (!savePath.empty()) settings.save(savePath);
                         break;

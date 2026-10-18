@@ -1,388 +1,234 @@
 #pragma once
 
-#include <vulkan/vulkan.h>
-#include <vulkan/vulkan_android.h>
+#include "gl_renderer.h"
+#include "gpu.h"
+#include "gx/vk/vk_types.h"
+#include "gx_builder.h"
+#include "gx_record.h"
+#include "mobile/mobile_ui.h"
+#include "vk_shadergen.h"
 #include <android/native_window.h>
-#include <memory>
-#include <vector>
+#include <array>
+#include <condition_variable>
 #include <deque>
+#include <memory>
+#include <mutex>
 #include <string>
 #include <thread>
-#include <condition_variable>
-#include <mutex>
 #include <unordered_map>
 #include <unordered_set>
-#include <array>
-#include <cstring>
-
-#include "gx_record.h"
-#include "gpu.h"
-#include "gl_renderer.h"
-#include "gx_builder.h"
-#include "vk_shadergen.h"
-#include "mobile/mobile_ui.h"
+#include <vector>
+#include <vulkan/vulkan.h>
+#include <vulkan/vulkan_android.h>
 
 namespace gpu {
 
-struct VkTarget {
-    int width = 0;
-    int height = 0;
-    VkImage colorImage = VK_NULL_HANDLE;
-    VkDeviceMemory colorMemory = VK_NULL_HANDLE;
-    VkImageView colorView = VK_NULL_HANDLE;
-    VkImage depthImage = VK_NULL_HANDLE;
-    VkDeviceMemory depthMemory = VK_NULL_HANDLE;
-    VkImageView depthView = VK_NULL_HANDLE;
-    VkFramebuffer framebuffer = VK_NULL_HANDLE;
-    VkImageLayout colorLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    bool hasValidContent = false;
-};
-
-struct VkCopyTex {
-    VkImage image = VK_NULL_HANDLE;
-    VkDeviceMemory memory = VK_NULL_HANDLE;
-    VkImageView view = VK_NULL_HANDLE;
-    int w = 0;
-    int h = 0;
-    uint64_t frame = 0;
-};
-
-struct PipelineKey {
-    ShaderUid uid;
-    uint32_t flags;
-    uint32_t depthState;   // test(1) | (write << 1) | (depthFunc << 4)
-    // Blend factors are stored as the mapped VkBlendFactor (0..14), not as the
-    // GL enums: GL_FUNC_* and the 0x03xx/0x80xx factors overlap in their low
-    // bits, which used to make distinct blend states share one pipeline.
-    uint32_t blendState;   // blendOn(1) | (srcRGB << 1) | (dstRGB << 6) | (srcAlpha << 11) | (dstAlpha << 16)
-    uint32_t blendState2;  // colorOp(2) | (alphaOp << 2) | (colorMask << 4) | (constantAlpha << 8)
-    uint32_t rasterState;  // cull(1) | (cullFace << 1) | (prim << 4)
-
-    bool operator==(const PipelineKey& o) const {
-        return uid == o.uid && flags == o.flags && depthState == o.depthState &&
-               blendState == o.blendState && blendState2 == o.blendState2 && rasterState == o.rasterState;
-    }
-};
-
-struct PipelineKeyHash {
-    size_t operator()(const PipelineKey& k) const {
-        size_t h = ShaderUidHash()(k.uid);
-        h = (h ^ k.flags) * 1099511628211ull;
-        h = (h ^ k.depthState) * 1099511628211ull;
-        h = (h ^ k.blendState) * 1099511628211ull;
-        h = (h ^ k.blendState2) * 1099511628211ull;
-        h = (h ^ k.rasterState) * 1099511628211ull;
-        return h;
-    }
-};
-
-struct SamplerDescKey {
-    std::array<VkImageView, 8> views;
-    std::array<VkSampler, 8> samplers;
-
-    bool operator==(const SamplerDescKey& o) const {
-        return views == o.views && samplers == o.samplers;
-    }
-};
-
-struct SamplerDescKeyHash {
-    size_t operator()(const SamplerDescKey& k) const {
-        size_t h = 1469598103934665603ull;
-        for (int i = 0; i < 8; i++) {
-            h = (h ^ (uintptr_t)k.views[i]) * 1099511628211ull;
-            h = (h ^ (uintptr_t)k.samplers[i]) * 1099511628211ull;
-        }
-        return h;
-    }
-};
-
-// One cached descriptor set per distinct (views, samplers) combination, with the
-// frame it was last used in so unused sets can be freed again instead of
-// draining the descriptor pool.
-struct SamplerSetEntry {
-    VkDescriptorSet set = VK_NULL_HANDLE;
-    uint64_t lastUse = 0;
-};
-
-struct FrameResource {
-    VkBuffer vbo = VK_NULL_HANDLE;
-    VkDeviceMemory vboMem = VK_NULL_HANDLE;
-    void* vboMapped = nullptr;
-    size_t vboCap = 0;
-
-    VkBuffer ibo = VK_NULL_HANDLE;
-    VkDeviceMemory iboMem = VK_NULL_HANDLE;
-    void* iboMapped = nullptr;
-    size_t iboCap = 0;
-
-    VkBuffer rowBuf = VK_NULL_HANDLE;
-    VkDeviceMemory rowMem = VK_NULL_HANDLE;
-    void* rowMapped = nullptr;
-    size_t rowCap = 0;
-
-    VkBuffer recBuf = VK_NULL_HANDLE;
-    VkDeviceMemory recMem = VK_NULL_HANDLE;
-    void* recMapped = nullptr;
-    size_t recCap = 0;
-
-    VkBuffer stBuf = VK_NULL_HANDLE;
-    VkDeviceMemory stMem = VK_NULL_HANDLE;
-    void* stMapped = nullptr;
-    size_t stCap = 0;
-
-    VkBuffer vtxRecBuf = VK_NULL_HANDLE;
-    VkDeviceMemory vtxRecMem = VK_NULL_HANDLE;
-    void* vtxRecMapped = nullptr;
-    size_t vtxRecCap = 0;
-
-    VkBuffer eyeUbo = VK_NULL_HANDLE;
-    VkDeviceMemory eyeMem = VK_NULL_HANDLE;
-    void* eyeMapped = nullptr;
-    size_t eyeCap = 0;
-
-    VkDescriptorSet set0 = VK_NULL_HANDLE;
-
-    // UI dynamic vertex buffer
-    VkBuffer uiVbo = VK_NULL_HANDLE;
-    VkDeviceMemory uiVboMem = VK_NULL_HANDLE;
-    void* uiVboMapped = nullptr;
-    size_t uiVboCap = 0;
-};
-
-struct VkTexture {
-    VkImage image = VK_NULL_HANDLE;
-    VkDeviceMemory memory = VK_NULL_HANDLE;
-    VkImageView view = VK_NULL_HANDLE;
-    uint32_t width = 0;
-    uint32_t height = 0;
-    uint32_t levels = 1;
-    uint32_t version = 0;
-};
-
 class VkRenderer {
 public:
-    static VkRenderer& get();
+  static VkRenderer &get();
 
-    VkRenderer() = default;
-    ~VkRenderer() { shutdown(); }
+  VkRenderer() = default;
+  ~VkRenderer() { shutdown(); }
 
-    bool init(ANativeWindow* window);
-    void shutdown();
+  bool init(ANativeWindow *window);
+  void shutdown();
 
-    bool isReady() const { return mInitialized; }
-    // True once a fatal Vulkan error (lost device, out of memory, failed
-    // submission) has been seen.  Rendering then stops instead of retrying every
-    // frame forever, which is the caller's cue to tear the backend down and
-    // continue on OpenGL ES.
-    bool hasFailed() const { return mFatal; }
-    int width() const { return mWidth; }
-    int height() const { return mHeight; }
-    const char* deviceName() const { return mDeviceProperties.deviceName; }
+  bool isReady() const { return mInitialized; }
+  bool hasFailed() const { return mFatal; }
+  int width() const { return mWidth; }
+  int height() const { return mHeight; }
+  const char *deviceName() const { return mDeviceProperties.deviceName; }
 
-    VkTarget createTarget(int w, int h);
-    void destroyTarget(VkTarget& target);
+  VkTarget createTarget(int w, int h);
+  void destroyTarget(VkTarget &target);
 
-    bool update();
-    bool render(VkTarget& target, const EyeView* eye, VkTarget* hud, HudMode hudMode = HudMode::Inline);
-    uint64_t frameNumber() const { return mFrameNumber; }
-    bool hasFrame() const { return mCurrentFrame != nullptr; }
-    void present(const VkTarget& target, int vpX, int vpY, int vpW, int vpH);
+  bool update();
+  bool render(VkTarget &target, const EyeView *eye, VkTarget *hud,
+              HudMode hudMode = HudMode::Inline);
+  uint64_t frameNumber() const { return mFrameNumber; }
+  bool hasFrame() const { return mCurrentFrame != nullptr; }
+  void present(const VkTarget &target, int vpX, int vpY, int vpW, int vpH);
 
-    void onWindowResized(ANativeWindow* window);
-    void savePipelineCache();
+  void onWindowResized(ANativeWindow *window);
+  void savePipelineCache();
 
-private:
-    bool createInstance();
-    bool selectPhysicalDevice();
-    bool createLogicalDevice();
-    bool createSurface(ANativeWindow* window);
-    bool createSwapchain();
-    bool createRenderPasses();
-    bool createSwapchainFramebuffers();
-    bool createCommandPool();
-    bool createSyncObjects();
-    bool createDescriptorLayouts();
-    bool createPresentationPipeline();
-    void destroyPresentationPipeline();
-    bool createUiPipeline();
-    void destroyUiPipeline();
-    void renderUiOverlay(int width, int height, VkCommandBuffer cmd);
-    void initPipelineCache();
+  // Internal subsystem methods
+  bool createInstance();
+  bool selectPhysicalDevice();
+  bool createLogicalDevice();
+  bool createSurface(ANativeWindow *window);
+  bool createSwapchain();
+  bool createRenderPasses();
+  bool createSwapchainFramebuffers();
+  bool createCommandPool();
+  bool createSyncObjects();
+  bool createDescriptorLayouts();
+  bool createPresentationPipeline();
+  void destroyPresentationPipeline();
+  bool createUiPipeline();
+  void destroyUiPipeline();
+  void renderUiOverlay(int width, int height, VkCommandBuffer cmd);
+  void initPipelineCache();
 
-    uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
-    VkFormat findSupportedDepthFormat();
-    // Destroys texture images whose TexImage died on another thread, and frees
-    // descriptor sets (and other cached resources) the recent frames did not use.
-    void flushDeferredDeletes();
-    void trimFrameCaches(uint64_t frame);
-    // Waits for every submission still in flight.  This is the only point where
-    // cached GPU resources, the render target and the frame resources may be
-    // touched or destroyed safely.
-    bool waitInFlightSubmissions(const char* where);
-    // Records a fatal Vulkan error (once) and stops rendering.
-    void markFatal(const char* where, const char* what, int result);
-    // Ask the driver why the device was lost (VK_EXT_device_fault, if present).
-    void logDeviceFault(const char* where);
-    // Forget the driver pipeline cache after a device loss (see markFatal).
-    void discardPipelineCacheAfterFault();
+  uint32_t findMemoryType(uint32_t typeFilter,
+                          VkMemoryPropertyFlags properties);
+  VkFormat findSupportedDepthFormat();
+  void flushDeferredDeletes();
+  void trimFrameCaches(uint64_t frame);
+  bool waitInFlightSubmissions(const char *where);
+  void markFatal(const char *where, const char *what, int result);
+  void logDeviceFault(const char *where);
+  void discardPipelineCacheAfterFault();
 
-    bool createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties,
-                      VkBuffer& buffer, VkDeviceMemory& bufferMemory);
-    bool uploadDynamicBuffer(VkBuffer& buf, VkDeviceMemory& mem, void*& mappedPtr, size_t& currentCap,
-                             VkBufferUsageFlags usage, const void* data, size_t bytes);
+  bool createBuffer(VkDeviceSize size, VkBufferUsageFlags usage,
+                    VkMemoryPropertyFlags properties, VkBuffer &buffer,
+                    VkDeviceMemory &bufferMemory);
+  bool uploadDynamicBuffer(VkBuffer &buf, VkDeviceMemory &mem, void *&mappedPtr,
+                           size_t &currentCap, VkBufferUsageFlags usage,
+                           const void *data, size_t bytes);
 
-    VkSampler getSampler(uint32_t mode0, uint32_t mode1, uint32_t levels);
-    void uploadTextures(VkCommandBuffer cmd, const std::vector<std::shared_ptr<TexImage>>& textures);
-    VkPipeline getPipeline(const Item& it, const ShaderUid& uid);
-    // Builds and caches the pipeline for one (shader, render state) pair.
-    VkPipeline createPipeline(const Item& it, const PipelineKey& key, const ShaderUid& uid,
-                              const std::vector<uint32_t>& vsSpirv, const std::vector<uint32_t>& fsSpirv);
-    // The pipeline drawn while a program is still being compiled off-thread: same
-    // render state as the draw it stands in for, but a minimal program.
-    VkPipeline placeholderPipeline(const Item& it);
+  VkSampler getSampler(uint32_t mode0, uint32_t mode1, uint32_t levels);
+  void uploadTextures(VkCommandBuffer cmd,
+                      const std::vector<std::shared_ptr<TexImage>> &textures);
+  VkPipeline getPipeline(const Item &it, const ShaderUid &uid);
+  VkPipeline createPipeline(const Item &it, const PipelineKey &key,
+                            const ShaderUid &uid,
+                            const std::vector<uint32_t> &vsSpirv,
+                            const std::vector<uint32_t> &fsSpirv);
+  VkPipeline placeholderPipeline(const Item &it);
 
-    // Shader compilation runs on a worker thread.
-    //
-    // shaderc needs about a quarter of a second per program on a mid-range phone
-    // and the render thread is what the game thread waits on, so compiling there
-    // freezes the whole game: a level that introduces thirty programs froze for
-    // seconds at a time.  The render thread therefore only ever builds a pipeline
-    // from SPIR-V it already has, and hands misses to the worker instead.
-    void startShaderWorker();
-    void stopShaderWorker();
-    void requestShader(const ShaderUid& uid, const Item& it);
-    // Moves whatever the worker finished into pipelines; called once per frame.
-    void drainCompiledShaders();
-    VkDescriptorSet getSamplerDescriptorSet(const std::array<VkImageView, 8>& views,
-                                            const std::array<VkSampler, 8>& samplers);
+  void startShaderWorker();
+  void stopShaderWorker();
+  void requestShader(const ShaderUid &uid, const Item &it);
+  void drainCompiledShaders();
+  VkDescriptorSet
+  getSamplerDescriptorSet(const std::array<VkImageView, 8> &views,
+                          const std::array<VkSampler, 8> &samplers);
 
-    VkShaderModule createShaderModule(const uint32_t* code, size_t sizeBytes);
+  VkShaderModule createShaderModule(const uint32_t *code, size_t sizeBytes);
+  VkCopyTex &getCopyTex(uint64_t key, int w, int h);
+  void evictCopies(uint64_t currentFrame);
 
-    bool mInitialized = false;
-    ANativeWindow* mWindow = nullptr;
-    int mWidth = 0;
-    int mHeight = 0;
+  bool uploadUiFontAtlas();
+  void executeCopyItem(VkCommandBuffer cmd, const Item &it, const Prepared &p,
+                       VkTarget &target, float fx, float fy, bool &inRenderPass,
+                       const VkRenderPassBeginInfo &rpInfo, FrameResource &fr);
+  void executeDrawPass(VkCommandBuffer cmd, const Frame &f, const Prepared &p,
+                       VkTarget &target, HudMode hudMode, FrameResource &fr);
 
-    VkInstance mInstance = VK_NULL_HANDLE;
-    VkPhysicalDevice mPhysicalDevice = VK_NULL_HANDLE;
-    VkPhysicalDeviceProperties mDeviceProperties{};
-    VkPhysicalDeviceFeatures mDeviceFeatures{};
-    VkDevice mDevice = VK_NULL_HANDLE;
-    VkQueue mQueue = VK_NULL_HANDLE;
-    uint32_t mQueueFamily = 0;
+  bool mInitialized = false;
+  ANativeWindow *mWindow = nullptr;
+  int mWidth = 0;
+  int mHeight = 0;
 
-    VkSurfaceKHR mSurface = VK_NULL_HANDLE;
-    VkSwapchainKHR mSwapchain = VK_NULL_HANDLE;
-    VkFormat mSwapchainFormat = VK_FORMAT_R8G8B8A8_UNORM;
-    VkImageUsageFlags mSwapchainUsage = 0;
-    VkSurfaceTransformFlagBitsKHR mSwapchainPreTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
-    // The extent the swapchain was actually created with.  The framebuffers and
-    // the presentation render area have to follow it, which is not necessarily
-    // the window size on every device.
-    VkExtent2D mSwapchainExtent{0, 0};
-    VkFormat mDepthFormat = VK_FORMAT_UNDEFINED;
-    std::vector<VkImage> mSwapchainImages;
-    std::vector<VkImageView> mSwapchainImageViews;
-    std::vector<VkFramebuffer> mSwapchainFramebuffers;
+  VkInstance mInstance = VK_NULL_HANDLE;
+  VkPhysicalDevice mPhysicalDevice = VK_NULL_HANDLE;
+  VkPhysicalDeviceProperties mDeviceProperties{};
+  VkPhysicalDeviceFeatures mDeviceFeatures{};
+  VkDevice mDevice = VK_NULL_HANDLE;
+  VkQueue mQueue = VK_NULL_HANDLE;
+  uint32_t mQueueFamily = 0;
 
-    VkRenderPass mEfbRenderPass = VK_NULL_HANDLE;
-    VkRenderPass mEfbLoadRenderPass = VK_NULL_HANDLE;
-    VkRenderPass mPresentRenderPass = VK_NULL_HANDLE;
-    VkCommandPool mCommandPool = VK_NULL_HANDLE;
-    VkCommandBuffer mCommandBuffer = VK_NULL_HANDLE;
-    VkCommandBuffer mPresentCommandBuffer = VK_NULL_HANDLE;
+  VkSurfaceKHR mSurface = VK_NULL_HANDLE;
+  VkSwapchainKHR mSwapchain = VK_NULL_HANDLE;
+  VkFormat mSwapchainFormat = VK_FORMAT_R8G8B8A8_UNORM;
+  VkImageUsageFlags mSwapchainUsage = 0;
+  VkSurfaceTransformFlagBitsKHR mSwapchainPreTransform =
+      VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
+  VkExtent2D mSwapchainExtent{0, 0};
+  VkFormat mDepthFormat = VK_FORMAT_UNDEFINED;
+  std::vector<VkImage> mSwapchainImages;
+  std::vector<VkImageView> mSwapchainImageViews;
+  std::vector<VkFramebuffer> mSwapchainFramebuffers;
 
-    VkSemaphore mImageAvailableSem = VK_NULL_HANDLE;
-    VkSemaphore mRenderToPresentSem = VK_NULL_HANDLE;
-    bool mRenderSignaledSem = false;
-    // One "render finished" semaphore per swapchain image.  The presentation of
-    // an image consumes it, and that outlives the submit's fence, so a single
-    // shared semaphore would be signalled again while still in use - the spec
-    // forbids that (VUID-vkQueueSubmit-pSignalSemaphores-00067) and Mali answers
-    // with a lost device.  An image can only be acquired again once its present
-    // has finished, which is exactly when its semaphore is free again.
-    std::vector<VkSemaphore> mRenderFinishedSems;
-    VkFence mRenderFence = VK_NULL_HANDLE;
-    VkFence mPresentFence = VK_NULL_HANDLE;
-    bool mRenderFenceInFlight = false;
-    bool mPresentFenceInFlight = false;
-    bool mFatal = false;
+  VkRenderPass mEfbRenderPass = VK_NULL_HANDLE;
+  VkRenderPass mEfbLoadRenderPass = VK_NULL_HANDLE;
+  VkRenderPass mPresentRenderPass = VK_NULL_HANDLE;
+  VkCommandPool mCommandPool = VK_NULL_HANDLE;
+  VkCommandBuffer mCommandBuffer = VK_NULL_HANDLE;
+  VkCommandBuffer mPresentCommandBuffer = VK_NULL_HANDLE;
 
-    struct StagingBufferItem {
-        VkBuffer buffer = VK_NULL_HANDLE;
-        VkDeviceMemory memory = VK_NULL_HANDLE;
-    };
-    std::vector<StagingBufferItem> mStagingBuffersToFree;
+  VkSemaphore mImageAvailableSem = VK_NULL_HANDLE;
+  VkSemaphore mRenderToPresentSem = VK_NULL_HANDLE;
+  bool mRenderSignaledSem = false;
+  std::vector<VkSemaphore> mRenderFinishedSems;
+  VkFence mRenderFence = VK_NULL_HANDLE;
+  VkFence mPresentFence = VK_NULL_HANDLE;
+  bool mRenderFenceInFlight = false;
+  bool mPresentFenceInFlight = false;
+  bool mFatal = false;
 
-    // Descriptors & Pipelines
-    VkDescriptorSetLayout mStorageDescLayout = VK_NULL_HANDLE;
-    VkDescriptorSetLayout mTextureDescLayout = VK_NULL_HANDLE;
-    VkDescriptorPool mDescriptorPool = VK_NULL_HANDLE;
-    VkPipelineLayout mPipelineLayout = VK_NULL_HANDLE;
-    VkPipelineCache mPipelineCache = VK_NULL_HANDLE;
+  struct StagingBufferItem {
+    VkBuffer buffer = VK_NULL_HANDLE;
+    VkDeviceMemory memory = VK_NULL_HANDLE;
+  };
+  std::vector<StagingBufferItem> mStagingBuffersToFree;
 
-    // Presentation pipeline
-    VkDescriptorSetLayout mPresentDescLayout = VK_NULL_HANDLE;
-    VkPipelineLayout mPresentPipelineLayout = VK_NULL_HANDLE;
-    VkPipeline mPresentPipeline = VK_NULL_HANDLE;
-    VkPipeline mPresentPipelinePostProcess = VK_NULL_HANDLE;
-    VkSampler mPresentSampler = VK_NULL_HANDLE;
-    std::unordered_map<VkImageView, VkDescriptorSet> mPresentDescSets;
+  // Descriptors & Pipelines
+  VkDescriptorSetLayout mStorageDescLayout = VK_NULL_HANDLE;
+  VkDescriptorSetLayout mTextureDescLayout = VK_NULL_HANDLE;
+  VkDescriptorPool mDescriptorPool = VK_NULL_HANDLE;
+  VkPipelineLayout mPipelineLayout = VK_NULL_HANDLE;
+  VkPipelineCache mPipelineCache = VK_NULL_HANDLE;
 
-    // UI overlay pipeline
-    VkDescriptorSetLayout mUiDescLayout = VK_NULL_HANDLE;
-    VkPipelineLayout mUiPipelineLayout = VK_NULL_HANDLE;
-    VkPipeline mUiPipeline = VK_NULL_HANDLE;
-    VkSampler mUiFontSampler = VK_NULL_HANDLE;
-    VkTexture mUiFontTexture;
-    VkDescriptorSet mUiDescSet = VK_NULL_HANDLE;
+  // Presentation pipeline
+  VkDescriptorSetLayout mPresentDescLayout = VK_NULL_HANDLE;
+  VkPipelineLayout mPresentPipelineLayout = VK_NULL_HANDLE;
+  VkPipeline mPresentPipeline = VK_NULL_HANDLE;
+  VkPipeline mPresentPipelinePostProcess = VK_NULL_HANDLE;
+  VkSampler mPresentSampler = VK_NULL_HANDLE;
+  std::unordered_map<VkImageView, VkDescriptorSet> mPresentDescSets;
 
-    // Rotating frame resources
-    FrameResource mFrameRes[2];
-    int mFrameIndex = 0;
+  // UI overlay pipeline
+  VkDescriptorSetLayout mUiDescLayout = VK_NULL_HANDLE;
+  VkPipelineLayout mUiPipelineLayout = VK_NULL_HANDLE;
+  VkPipeline mUiPipeline = VK_NULL_HANDLE;
+  VkSampler mUiFontSampler = VK_NULL_HANDLE;
+  VkTexture mUiFontTexture;
+  VkDescriptorSet mUiDescSet = VK_NULL_HANDLE;
 
-    // Shader worker state.  mShaderQueue/mShaderQueued/mShaderDone are guarded by
-    // mShaderMutex; mShaderPendingItems belongs to the render thread.
-    struct CompiledShader {
-        ShaderUid uid;
-        std::vector<uint32_t> vsSpirv, fsSpirv;
-        bool ok = false;
-        double ms = 0.0;  // how long shaderc took, reported by the render thread
-    };
-    std::thread mShaderThread;
-    std::mutex mShaderMutex;
-    std::condition_variable mShaderCv;
-    std::deque<ShaderUid> mShaderQueue;
-    std::unordered_set<ShaderUid, ShaderUidHash> mShaderQueued;
-    std::vector<CompiledShader> mShaderDone;
-    std::unordered_set<ShaderUid, ShaderUidHash> mShaderFailed;
-    bool mShaderStop = false;
-    // The draw state the pending program was asked for: a pipeline needs it.
-    std::unordered_map<ShaderUid, Item, ShaderUidHash> mShaderPendingItems;
-    uint64_t mShaderCompiles = 0;
+  // Rotating frame resources
+  FrameResource mFrameRes[2];
+  int mFrameIndex = 0;
 
-    // Caches
-    std::unordered_map<PipelineKey, VkPipeline, PipelineKeyHash> mPipelines;
-    std::unordered_map<uint64_t, VkSampler> mSamplers;
-    std::unordered_map<SamplerDescKey, SamplerSetEntry, SamplerDescKeyHash> mSamplerDescSets;
-    std::unordered_map<uint64_t, VkCopyTex> mCopies;
+  // Shader worker state
+  struct CompiledShader {
+    ShaderUid uid;
+    std::vector<uint32_t> vsSpirv, fsSpirv;
+    bool ok = false;
+    double ms = 0.0;
+  };
+  std::thread mShaderThread;
+  std::mutex mShaderMutex;
+  std::condition_variable mShaderCv;
+  std::deque<ShaderUid> mShaderQueue;
+  std::unordered_set<ShaderUid, ShaderUidHash> mShaderQueued;
+  std::vector<CompiledShader> mShaderDone;
+  std::unordered_set<ShaderUid, ShaderUidHash> mShaderFailed;
+  bool mShaderStop = false;
+  std::unordered_map<ShaderUid, Item, ShaderUidHash> mShaderPendingItems;
+  uint64_t mShaderCompiles = 0;
 
-    VkCopyTex& getCopyTex(uint64_t key, int w, int h);
-    void evictCopies(uint64_t currentFrame);
+  // Caches
+  std::unordered_map<PipelineKey, VkPipeline, PipelineKeyHash> mPipelines;
+  std::unordered_map<uint64_t, VkSampler> mSamplers;
+  std::unordered_map<SamplerDescKey, SamplerSetEntry, SamplerDescKeyHash>
+      mSamplerDescSets;
+  std::unordered_map<uint64_t, VkCopyTex> mCopies;
 
-    VkTexture mDummyTexture;
-    VkSampler mDummySampler = VK_NULL_HANDLE;
+  VkTexture mDummyTexture;
+  VkSampler mDummySampler = VK_NULL_HANDLE;
 
-    // Frame command batching
-    Builder mBuilder;
-    std::unique_ptr<Prepared> mPrepared;
-    std::shared_ptr<const Frame> mCurrentFrame;
-    uint64_t mFrameNumber = 0;
+  // Frame command batching
+  Builder mBuilder;
+  std::unique_ptr<Prepared> mPrepared;
+  std::shared_ptr<const Frame> mCurrentFrame;
+  uint64_t mFrameNumber = 0;
 
-    std::recursive_mutex mRenderMutex;
+  std::recursive_mutex mRenderMutex;
 };
 
-VkRenderer& vkRenderer();
-void setVkPipelineCachePath(const char* path);
+VkRenderer &vkRenderer();
+void setVkPipelineCachePath(const char *path);
 
-}  // namespace gpu
+} // namespace gpu

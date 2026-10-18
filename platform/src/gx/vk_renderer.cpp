@@ -463,10 +463,20 @@ void VkRenderer::shutdown() {
             vkDestroySemaphore(mDevice, mImageAvailableSem, nullptr);
             mImageAvailableSem = VK_NULL_HANDLE;
         }
+        if (mRenderToPresentSem != VK_NULL_HANDLE) {
+            vkDestroySemaphore(mDevice, mRenderToPresentSem, nullptr);
+            mRenderToPresentSem = VK_NULL_HANDLE;
+        }
         for (VkSemaphore s : mRenderFinishedSems) {
             if (s != VK_NULL_HANDLE) vkDestroySemaphore(mDevice, s, nullptr);
         }
         mRenderFinishedSems.clear();
+
+        for (const auto& sb : mStagingBuffersToFree) {
+            if (sb.buffer != VK_NULL_HANDLE) vkDestroyBuffer(mDevice, sb.buffer, nullptr);
+            if (sb.memory != VK_NULL_HANDLE) vkFreeMemory(mDevice, sb.memory, nullptr);
+        }
+        mStagingBuffersToFree.clear();
 
         if (mDummySampler != VK_NULL_HANDLE) {
             vkDestroySampler(mDevice, mDummySampler, nullptr);
@@ -1247,9 +1257,15 @@ bool VkRenderer::createCommandPool() {
     allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
     allocInfo.commandPool = mCommandPool;
     allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    allocInfo.commandBufferCount = 1;
+    allocInfo.commandBufferCount = 2;
 
-    return vkAllocateCommandBuffers(mDevice, &allocInfo, &mCommandBuffer) == VK_SUCCESS;
+    VkCommandBuffer cmdBufs[2] = {VK_NULL_HANDLE, VK_NULL_HANDLE};
+    if (vkAllocateCommandBuffers(mDevice, &allocInfo, cmdBufs) != VK_SUCCESS) {
+        return false;
+    }
+    mCommandBuffer = cmdBufs[0];
+    mPresentCommandBuffer = cmdBufs[1];
+    return true;
 }
 
 bool VkRenderer::createSyncObjects() {
@@ -1261,6 +1277,7 @@ bool VkRenderer::createSyncObjects() {
     fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
 
     if (vkCreateSemaphore(mDevice, &semInfo, nullptr, &mImageAvailableSem) != VK_SUCCESS) return false;
+    if (vkCreateSemaphore(mDevice, &semInfo, nullptr, &mRenderToPresentSem) != VK_SUCCESS) return false;
     // mRenderFinishedSems are created with the swapchain images (see
     // createSwapchainImageViewsAndSync).
     if (vkCreateFence(mDevice, &fenceInfo, nullptr, &mRenderFence) != VK_SUCCESS) return false;
@@ -1992,8 +2009,8 @@ void VkRenderer::destroyUiPipeline() {
     mUiDescSet = VK_NULL_HANDLE;
 }
 
-void VkRenderer::renderUiOverlay(int width, int height) {
-    if (mUiPipeline == VK_NULL_HANDLE || mUiDescSet == VK_NULL_HANDLE) return;
+void VkRenderer::renderUiOverlay(int width, int height, VkCommandBuffer cmd) {
+    if (mUiPipeline == VK_NULL_HANDLE || mUiDescSet == VK_NULL_HANDLE || cmd == VK_NULL_HANDLE) return;
 
     std::vector<mobile_ui::UIVertex> verts;
     mobile_ui::UIOverlay::get().generateVertices(width, height, verts);
@@ -2011,15 +2028,15 @@ void VkRenderer::renderUiOverlay(int width, int height) {
     vp.height = (float)height;
     vp.minDepth = 0.0f;
     vp.maxDepth = 1.0f;
-    vkCmdSetViewport(mCommandBuffer, 0, 1, &vp);
+    vkCmdSetViewport(cmd, 0, 1, &vp);
 
     VkRect2D scissor{};
     scissor.offset = {0, 0};
     scissor.extent = {(uint32_t)width, (uint32_t)height};
-    vkCmdSetScissor(mCommandBuffer, 0, 1, &scissor);
+    vkCmdSetScissor(cmd, 0, 1, &scissor);
 
-    vkCmdBindPipeline(mCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, mUiPipeline);
-    vkCmdBindDescriptorSets(mCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, mUiPipelineLayout, 0, 1, &mUiDescSet, 0, nullptr);
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mUiPipeline);
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mUiPipelineLayout, 0, 1, &mUiDescSet, 0, nullptr);
 
     float proj[16] = {
         2.0f / (float)width,  0.0f,                 0.0f, 0.0f,
@@ -2027,12 +2044,12 @@ void VkRenderer::renderUiOverlay(int width, int height) {
         0.0f,                 0.0f,                 1.0f, 0.0f,
         -1.0f,                -1.0f,                0.0f, 1.0f
     };
-    vkCmdPushConstants(mCommandBuffer, mUiPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(proj), proj);
+    vkCmdPushConstants(cmd, mUiPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(proj), proj);
 
     VkDeviceSize offset = 0;
-    vkCmdBindVertexBuffers(mCommandBuffer, 0, 1, &fr.uiVbo, &offset);
+    vkCmdBindVertexBuffers(cmd, 0, 1, &fr.uiVbo, &offset);
 
-    vkCmdDraw(mCommandBuffer, (uint32_t)verts.size(), 1, 0, 0);
+    vkCmdDraw(cmd, (uint32_t)verts.size(), 1, 0, 0);
 }
 
 VkFormat VkRenderer::findSupportedDepthFormat() {
@@ -2536,7 +2553,8 @@ VkSampler VkRenderer::getSampler(uint32_t mode0, uint32_t mode1, uint32_t levels
     return s;
 }
 
-void VkRenderer::uploadTextures(const std::vector<std::shared_ptr<TexImage>>& textures) {
+void VkRenderer::uploadTextures(VkCommandBuffer cmd, const std::vector<std::shared_ptr<TexImage>>& textures) {
+    if (cmd == VK_NULL_HANDLE) return;
     struct UploadItem {
         std::shared_ptr<TexImage> img;
         VkTexture vt;
@@ -2634,73 +2652,57 @@ void VkRenderer::uploadTextures(const std::vector<std::shared_ptr<TexImage>>& te
 
     if (pending.empty()) return;
 
-    vkResetCommandBuffer(mCommandBuffer, 0);
-    VkCommandBufferBeginInfo bi{};
-    bi.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-    if (vkBeginCommandBuffer(mCommandBuffer, &bi) == VK_SUCCESS) {
-        for (const auto& item : pending) {
-            VkImageMemoryBarrier barrierToDst{};
-            barrierToDst.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-            barrierToDst.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-            barrierToDst.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-            barrierToDst.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            barrierToDst.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            barrierToDst.image = item.vt.image;
-            barrierToDst.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-            barrierToDst.subresourceRange.levelCount = item.vt.levels;
-            barrierToDst.subresourceRange.layerCount = 1;
-            barrierToDst.srcAccessMask = 0;
-            barrierToDst.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-
-            vkCmdPipelineBarrier(mCommandBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-                                 VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrierToDst);
-
-            std::vector<VkBufferImageCopy> regions(item.vt.levels);
-            VkDeviceSize offset = 0;
-            uint32_t w = item.vt.width, h = item.vt.height;
-            for (uint32_t l = 0; l < item.vt.levels; l++) {
-                regions[l].bufferOffset = offset;
-                regions[l].imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-                regions[l].imageSubresource.mipLevel = l;
-                regions[l].imageSubresource.layerCount = 1;
-                regions[l].imageExtent = {w, h, 1};
-                offset += (VkDeviceSize)w * h * 4;
-                w = w > 1 ? w / 2 : 1;
-                h = h > 1 ? h / 2 : 1;
-            }
-
-            vkCmdCopyBufferToImage(mCommandBuffer, item.stagingBuf, item.vt.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                                   (uint32_t)regions.size(), regions.data());
-
-            VkImageMemoryBarrier barrierToShader = barrierToDst;
-            barrierToShader.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-            barrierToShader.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-            barrierToShader.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-            barrierToShader.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-
-            vkCmdPipelineBarrier(mCommandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT,
-                                 VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrierToShader);
-        }
-
-        if (vkEndCommandBuffer(mCommandBuffer) == VK_SUCCESS) {
-            VkSubmitInfo si{};
-            si.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-            si.commandBufferCount = 1;
-            si.pCommandBuffers = &mCommandBuffer;
-            vkQueueSubmit(mQueue, 1, &si, VK_NULL_HANDLE);
-            vkQueueWaitIdle(mQueue);
-        }
-    }
-
     for (const auto& item : pending) {
-        vkDestroyBuffer(mDevice, item.stagingBuf, nullptr);
-        vkFreeMemory(mDevice, item.stagingMem, nullptr);
+        VkImageMemoryBarrier barrierToDst{};
+        barrierToDst.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        barrierToDst.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        barrierToDst.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        barrierToDst.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrierToDst.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrierToDst.image = item.vt.image;
+        barrierToDst.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        barrierToDst.subresourceRange.levelCount = item.vt.levels;
+        barrierToDst.subresourceRange.layerCount = 1;
+        barrierToDst.srcAccessMask = 0;
+        barrierToDst.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+
+        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                             VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrierToDst);
+
+        std::vector<VkBufferImageCopy> regions(item.vt.levels);
+        VkDeviceSize offset = 0;
+        uint32_t w = item.vt.width, h = item.vt.height;
+        for (uint32_t l = 0; l < item.vt.levels; l++) {
+            regions[l].bufferOffset = offset;
+            regions[l].imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            regions[l].imageSubresource.mipLevel = l;
+            regions[l].imageSubresource.layerCount = 1;
+            regions[l].imageExtent = {w, h, 1};
+            offset += (VkDeviceSize)w * h * 4;
+            w = w > 1 ? w / 2 : 1;
+            h = h > 1 ? h / 2 : 1;
+        }
+
+        vkCmdCopyBufferToImage(cmd, item.stagingBuf, item.vt.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                               (uint32_t)regions.size(), regions.data());
+
+        VkImageMemoryBarrier barrierToShader = barrierToDst;
+        barrierToShader.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        barrierToShader.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        barrierToShader.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        barrierToShader.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                             VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrierToShader);
+
         item.img->vkImage = (uint64_t)item.vt.image;
         item.img->vkMemory = (uint64_t)item.vt.memory;
         item.img->vkView = (uint64_t)item.vt.view;
         item.img->vkVersion = item.vt.version;
         item.img->vkGeneration = sVkDeviceGeneration;
+
+        // Queue staging buffer to be destroyed asynchronously once this frame's fence finishes
+        mStagingBuffersToFree.push_back({item.stagingBuf, item.stagingMem});
     }
 }
 
@@ -3175,6 +3177,13 @@ bool VkRenderer::render(VkTarget& target, const EyeView* eye, VkTarget* hud, Hud
     flushDeferredDeletes();
     trimFrameCaches(mFrameNumber);
 
+    // Free staging buffers from previous frame now that mRenderFence has completed
+    for (auto& item : mStagingBuffersToFree) {
+        if (item.buffer != VK_NULL_HANDLE) vkDestroyBuffer(mDevice, item.buffer, nullptr);
+        if (item.memory != VK_NULL_HANDLE) vkFreeMemory(mDevice, item.memory, nullptr);
+    }
+    mStagingBuffersToFree.clear();
+
     // Programs the worker compiled since the last frame become pipelines here:
     // the SPIR-V is ready, so only the driver's part is left (a few ms), and it
     // happens at a point where nothing is in flight.
@@ -3256,9 +3265,6 @@ bool VkRenderer::render(VkTarget& target, const EyeView* eye, VkTarget* hud, Hud
 
     vkUpdateDescriptorSets(mDevice, 5, writes, 0, nullptr);
 
-    // Upload new / updated textures
-    uploadTextures(f.textures);
-
     vkResetCommandBuffer(mCommandBuffer, 0);
 
     VkCommandBufferBeginInfo beginInfo{};
@@ -3269,6 +3275,9 @@ bool VkRenderer::render(VkTarget& target, const EyeView* eye, VkTarget* hud, Hud
         markFatal("render", "vkBeginCommandBuffer", (int)beginRes);
         return false;
     }
+
+    // Upload new / updated textures asynchronously inside mCommandBuffer
+    uploadTextures(mCommandBuffer, f.textures);
 
     VkRenderPassBeginInfo rpInfo{};
     rpInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -3630,6 +3639,9 @@ bool VkRenderer::render(VkTarget& target, const EyeView* eye, VkTarget* hud, Hud
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &mCommandBuffer;
+    VkSemaphore signalSems[] = {mRenderToPresentSem};
+    submitInfo.signalSemaphoreCount = 1;
+    submitInfo.pSignalSemaphores = signalSems;
 
     vkResetFences(mDevice, 1, &mRenderFence);
     VkResult subRes = vkQueueSubmit(mQueue, 1, &submitInfo, mRenderFence);
@@ -3650,8 +3662,14 @@ void VkRenderer::present(const VkTarget& target, int vpX, int vpY, int vpW, int 
     std::lock_guard<std::recursive_mutex> lock(mRenderMutex);
     if (!mInitialized || mFatal || mSwapchain == VK_NULL_HANDLE || target.colorView == VK_NULL_HANDLE || !target.hasValidContent) return;
 
-    if (!waitInFlightSubmissions("present")) {
-        return;
+    // Only wait for previous presentation command buffer to finish (do NOT wait on mRenderFence; CPU-GPU pipelining)
+    if (mPresentFenceInFlight) {
+        VkResult r = vkWaitForFences(mDevice, 1, &mPresentFence, VK_TRUE, 2000000000ULL);
+        mPresentFenceInFlight = false;
+        if (r != VK_SUCCESS) {
+            markFatal("present", "vkWaitForFences on mPresentFence", (int)r);
+            return;
+        }
     }
 
     uint32_t imageIndex = 0;
@@ -3693,11 +3711,12 @@ void VkRenderer::present(const VkTarget& target, int vpX, int vpY, int vpW, int 
         }
     }
 
-    vkResetCommandBuffer(mCommandBuffer, 0);
+    vkResetCommandBuffer(mPresentCommandBuffer, 0);
 
     VkCommandBufferBeginInfo beginInfo{};
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    VkResult beginRes = vkBeginCommandBuffer(mCommandBuffer, &beginInfo);
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    VkResult beginRes = vkBeginCommandBuffer(mPresentCommandBuffer, &beginInfo);
     if (beginRes != VK_SUCCESS) {
         markFatal("present", "vkBeginCommandBuffer", (int)beginRes);
         return;
@@ -3724,7 +3743,7 @@ void VkRenderer::present(const VkTarget& target, int vpX, int vpY, int vpW, int 
     rpInfo.clearValueCount = 1;
     rpInfo.pClearValues = &clearColor;
 
-    vkCmdBeginRenderPass(mCommandBuffer, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
+    vkCmdBeginRenderPass(mPresentCommandBuffer, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
 
     // The presentation rect arrives in window coordinates: keep it inside the
     // swapchain image (whose extent a device may have clamped) and skip the quad
@@ -3745,26 +3764,26 @@ void VkRenderer::present(const VkTarget& target, int vpX, int vpY, int vpW, int 
         vp.height = (float)qh;
         vp.minDepth = 0.0f;
         vp.maxDepth = 1.0f;
-        vkCmdSetViewport(mCommandBuffer, 0, 1, &vp);
+        vkCmdSetViewport(mPresentCommandBuffer, 0, 1, &vp);
 
         VkRect2D scissor{};
         scissor.offset = {qx, qy};
         scissor.extent = {(uint32_t)qw, (uint32_t)qh};
-        vkCmdSetScissor(mCommandBuffer, 0, 1, &scissor);
+        vkCmdSetScissor(mPresentCommandBuffer, 0, 1, &scissor);
 
-        vkCmdBindPipeline(mCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, mPresentPipeline);
-        vkCmdBindDescriptorSets(mCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, mPresentPipelineLayout, 0, 1, &presentSet, 0, nullptr);
+        vkCmdBindPipeline(mPresentCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, mPresentPipeline);
+        vkCmdBindDescriptorSets(mPresentCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, mPresentPipelineLayout, 0, 1, &presentSet, 0, nullptr);
 
         // Draw procedural fullscreen quad (3 vertices)
-        vkCmdDraw(mCommandBuffer, 3, 1, 0, 0);
+        vkCmdDraw(mPresentCommandBuffer, 3, 1, 0, 0);
     }
 
     // Render on-screen controls HUD & Settings overlay directly in the swapchain render pass
-    renderUiOverlay(mWidth, mHeight);
+    renderUiOverlay(mWidth, mHeight, mPresentCommandBuffer);
 
-    vkCmdEndRenderPass(mCommandBuffer);
+    vkCmdEndRenderPass(mPresentCommandBuffer);
 
-    VkResult endRes = vkEndCommandBuffer(mCommandBuffer);
+    VkResult endRes = vkEndCommandBuffer(mPresentCommandBuffer);
     if (endRes != VK_SUCCESS) {
         markFatal("present", "vkEndCommandBuffer", (int)endRes);
         return;
@@ -3772,13 +3791,16 @@ void VkRenderer::present(const VkTarget& target, int vpX, int vpY, int vpW, int 
 
     VkSubmitInfo submitInfo{};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    VkSemaphore waitSemaphores[] = {mImageAvailableSem};
-    VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
-    submitInfo.waitSemaphoreCount = 1;
+    VkSemaphore waitSemaphores[] = {mImageAvailableSem, mRenderToPresentSem};
+    VkPipelineStageFlags waitStages[] = {
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT
+    };
+    submitInfo.waitSemaphoreCount = 2;
     submitInfo.pWaitSemaphores = waitSemaphores;
     submitInfo.pWaitDstStageMask = waitStages;
     submitInfo.commandBufferCount = 1;
-    submitInfo.pCommandBuffers = &mCommandBuffer;
+    submitInfo.pCommandBuffers = &mPresentCommandBuffer;
     VkSemaphore presentWaitSem = (imageIndex < mRenderFinishedSems.size()) ? mRenderFinishedSems[imageIndex] : VK_NULL_HANDLE;
     VkSemaphore signalSemaphores[] = {presentWaitSem};
     if (presentWaitSem == VK_NULL_HANDLE) {

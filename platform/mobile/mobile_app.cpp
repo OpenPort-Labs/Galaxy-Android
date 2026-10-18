@@ -14,6 +14,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/resource.h>
 #include <sys/stat.h>
 #include <sys/system_properties.h>
 #include <signal.h>
@@ -1216,6 +1217,8 @@ static void installCrashHandlers() {
 
 extern "C" __attribute__((visibility("default"))) void port_android_main(struct android_app* app, uintptr_t windowBase, size_t windowSize) {
     installCrashHandlers();
+    // Elevate render thread priority to avoid OS scheduling hiccups and stutters
+    setpriority(PRIO_PROCESS, 0, -10);
     LOGI("==================================================");
     LOGI("GalaxyMobile: Native flat-screen mobile initialized");
     LOGI("==================================================");
@@ -1460,6 +1463,9 @@ extern "C" __attribute__((visibility("default"))) void port_android_main(struct 
                 vkr.present(a.vkTarget, a.vpX, a.vpY, a.vpW, a.vpH);
                 port_perf_present(port_host_time_ns() - presentStartNs);
                 mobile_ui::get().reportFramePresented();
+                if (a.gameBooted) {
+                    port_vi_retrace();
+                }
 
                 // Frame pacing: enforce minimum time spacing between presents so FPS NEVER exceeds targetFps
                 int targetFps = mobile_ui::get().settings().targetFps;
@@ -1556,6 +1562,9 @@ extern "C" __attribute__((visibility("default"))) void port_android_main(struct 
                 mobile_ui::get().render(a.screenWidth, a.screenHeight);
 
                 eglSwapBuffers(a.display, a.surface);
+                if (a.gameBooted) {
+                    port_vi_retrace();
+                }
                 int64_t renderEndNs = port_host_time_ns();
                 port_perf_render(renderEndNs - renderStartNs, 0);
                 mobile_ui::get().reportGpuRenderTime(renderEndNs - renderStartNs);

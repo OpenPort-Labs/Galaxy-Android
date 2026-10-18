@@ -197,7 +197,7 @@ private:
     void destroyPresentationPipeline();
     bool createUiPipeline();
     void destroyUiPipeline();
-    void renderUiOverlay(int width, int height);
+    void renderUiOverlay(int width, int height, VkCommandBuffer cmd);
     void initPipelineCache();
     void savePipelineCache();
 
@@ -224,7 +224,7 @@ private:
                              VkBufferUsageFlags usage, const void* data, size_t bytes);
 
     VkSampler getSampler(uint32_t mode0, uint32_t mode1, uint32_t levels);
-    void uploadTextures(const std::vector<std::shared_ptr<TexImage>>& textures);
+    void uploadTextures(VkCommandBuffer cmd, const std::vector<std::shared_ptr<TexImage>>& textures);
     VkPipeline getPipeline(const Item& it, const ShaderUid& uid);
     // Builds and caches the pipeline for one (shader, render state) pair.
     VkPipeline createPipeline(const Item& it, const PipelineKey& key, const ShaderUid& uid,
@@ -282,8 +282,10 @@ private:
     VkRenderPass mPresentRenderPass = VK_NULL_HANDLE;
     VkCommandPool mCommandPool = VK_NULL_HANDLE;
     VkCommandBuffer mCommandBuffer = VK_NULL_HANDLE;
+    VkCommandBuffer mPresentCommandBuffer = VK_NULL_HANDLE;
 
     VkSemaphore mImageAvailableSem = VK_NULL_HANDLE;
+    VkSemaphore mRenderToPresentSem = VK_NULL_HANDLE;
     // One "render finished" semaphore per swapchain image.  The presentation of
     // an image consumes it, and that outlives the submit's fence, so a single
     // shared semaphore would be signalled again while still in use - the spec
@@ -296,6 +298,12 @@ private:
     bool mRenderFenceInFlight = false;
     bool mPresentFenceInFlight = false;
     bool mFatal = false;
+
+    struct StagingBufferItem {
+        VkBuffer buffer = VK_NULL_HANDLE;
+        VkDeviceMemory memory = VK_NULL_HANDLE;
+    };
+    std::vector<StagingBufferItem> mStagingBuffersToFree;
 
     // Descriptors & Pipelines
     VkDescriptorSetLayout mStorageDescLayout = VK_NULL_HANDLE;

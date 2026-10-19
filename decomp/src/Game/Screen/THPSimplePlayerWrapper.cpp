@@ -344,7 +344,7 @@ s32 THPSimplePlayerWrapper::decode(s32 audio) {
 }
 
 s32 THPSimplePlayerWrapper::drawCurrentFrame(_GXRenderModeObj* rmode, u32 x, u32 y, u32 polyW, u32 polyH) {
-    if (mTextureSet[_310].frameNumber < 0) {
+    if (mTextureSet[_310].frameNumber < 0 || !mTextureSet[_310].ytexture || !mTextureSet[_310].utexture || !mTextureSet[_310].vtexture) {
         return -1;
     }
 

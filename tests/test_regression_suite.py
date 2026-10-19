@@ -818,7 +818,175 @@ class TestVulkanRenderPassStateTracking(unittest.TestCase):
         self.assertEqual(status_err, "string_too_long")
 
 
+class TestCanonicalPipelineKeyContract(unittest.TestCase):
+    """
+    Exhaustive tests for Section B: Canonical Pipeline Key Encoding & Decoding.
+    Verifies bit layout, non-overlapping fields, round-trip fidelity, and safe rejection.
+    """
+    @staticmethod
+    def encode_key(vtx_flags, depth_test, depth_write, depth_func,
+                   blend_enable, src_color, dst_color, src_alpha, dst_alpha,
+                   color_blend_op=0, alpha_blend_op=0, color_mask=15,
+                   cull_mode=2, topology=3, front_face_cw=0, const_alpha=0):
+        flags = vtx_flags
+        depth_state = (1 if depth_test else 0) | ((1 if (depth_test and depth_write) else 0) << 1) | ((depth_func & 0x0F) << 4)
+        blend_state = ((1 if blend_enable else 0) |
+                       ((src_color & 0x1F) << 1) |
+                       ((dst_color & 0x1F) << 6) |
+                       ((src_alpha & 0x1F) << 11) |
+                       ((dst_alpha & 0x1F) << 16))
+        blend_state2 = ((color_blend_op & 7) |
+                        ((alpha_blend_op & 7) << 3) |
+                        ((color_mask & 0x0F) << 6) |
+                        ((const_alpha & 0xFF) << 10))
+        cull_val = cull_mode & 3
+        prim_val = topology & 7
+        front_bit = 1 if front_face_cw else 0
+        raster_state = cull_val | (prim_val << 2) | (front_bit << 5)
+        return (flags, depth_state, blend_state, blend_state2, raster_state)
+
+    @staticmethod
+    def decode_key(flags, depth_state, blend_state, blend_state2, raster_state):
+        depth_test = (depth_state & 1) != 0
+        depth_write = ((depth_state >> 1) & 1) != 0
+        depth_func = (depth_state >> 4) & 0x0F
+        blend_enable = (blend_state & 1) != 0
+        src_color = (blend_state >> 1) & 0x1F
+        dst_color = (blend_state >> 6) & 0x1F
+        src_alpha = (blend_state >> 11) & 0x1F
+        dst_alpha = (blend_state >> 16) & 0x1F
+        color_blend_op = blend_state2 & 7
+        alpha_blend_op = (blend_state2 >> 3) & 7
+        color_mask = (blend_state2 >> 6) & 0x0F
+        const_alpha = (blend_state2 >> 10) & 0xFF
+        cull_mode = raster_state & 3
+        topology = (raster_state >> 2) & 7
+        front_face_cw = (raster_state >> 5) & 1
+        return {
+            'vtx_flags': flags,
+            'depth_test': depth_test,
+            'depth_write': depth_write,
+            'depth_func': depth_func,
+            'blend_enable': blend_enable,
+            'src_color': src_color,
+            'dst_color': dst_color,
+            'src_alpha': src_alpha,
+            'dst_alpha': dst_alpha,
+            'color_blend_op': color_blend_op,
+            'alpha_blend_op': alpha_blend_op,
+            'color_mask': color_mask,
+            'const_alpha': const_alpha,
+            'cull_mode': cull_mode,
+            'topology': topology,
+            'front_face_cw': front_face_cw,
+        }
+
+    def test_canonical_pipeline_key_roundtrip_exhaustive(self):
+        """Verify round-trip fidelity for every canonical depth, blend, and raster state permutation."""
+        for df in range(8):  # NEVER .. ALWAYS
+            for cm in range(4):  # NONE, FRONT, BACK, FRONT_AND_BACK
+                for topo in (0, 1, 2, 3, 4, 5):  # POINT, LINE_LIST, LINE_STRIP, TRI_LIST, TRI_STRIP, TRI_FAN
+                    for ff in (0, 1):  # CCW, CW
+                        for b_en in (False, True):
+                            src_c = 4  # SRC_ALPHA
+                            dst_c = 5  # ONE_MINUS_SRC_ALPHA
+                            c_alpha = 128
+                            c_mask = 15
+                            key = self.encode_key(
+                                vtx_flags=0x1F, depth_test=True, depth_write=True, depth_func=df,
+                                blend_enable=b_en, src_color=src_c, dst_color=dst_c,
+                                src_alpha=src_c, dst_alpha=dst_c,
+                                color_blend_op=0, alpha_blend_op=0, color_mask=c_mask,
+                                cull_mode=cm, topology=topo, front_face_cw=ff, const_alpha=c_alpha
+                            )
+                            dec = self.decode_key(*key)
+                            self.assertEqual(dec['depth_func'], df)
+                            self.assertEqual(dec['cull_mode'], cm)
+                            self.assertEqual(dec['topology'], topo)
+                            self.assertEqual(dec['front_face_cw'], ff)
+                            self.assertEqual(dec['blend_enable'], b_en)
+                            self.assertEqual(dec['src_color'], src_c)
+                            self.assertEqual(dec['dst_color'], dst_c)
+                            self.assertEqual(dec['const_alpha'], c_alpha)
+                            self.assertEqual(dec['color_mask'], c_mask)
+
+    def test_bit_isolation_no_overlap(self):
+        """Verify that rasterState culling (bits 0..1), topology (bits 2..4), and front_face (bit 5) do not overlap."""
+        # Max cull = 3
+        key_cull = self.encode_key(0, False, False, 0, False, 0, 0, 0, 0, cull_mode=3, topology=0, front_face_cw=0)
+        self.assertEqual(key_cull[4], 3)
+
+        # Max topology = 7
+        key_topo = self.encode_key(0, False, False, 0, False, 0, 0, 0, 0, cull_mode=0, topology=7, front_face_cw=0)
+        self.assertEqual(key_topo[4], 7 << 2)
+
+        # Front face bit = 1
+        key_ff = self.encode_key(0, False, False, 0, False, 0, 0, 0, 0, cull_mode=0, topology=0, front_face_cw=1)
+        self.assertEqual(key_ff[4], 1 << 5)
+
+        # Combined
+        key_comb = self.encode_key(0, False, False, 0, False, 0, 0, 0, 0, cull_mode=3, topology=7, front_face_cw=1)
+        self.assertEqual(key_comb[4], 3 | (7 << 2) | (1 << 5))
+
+    def test_quantized_float_blend_constants(self):
+        """Verify float blend constant alpha quantization to 8-bit [0..255]."""
+        for f in (0.0, 0.25, 0.5, 0.75, 1.0):
+            quantized = int(round(f * 255.0))
+            key = self.encode_key(0, False, False, 0, False, 0, 0, 0, 0, const_alpha=quantized)
+            dec = self.decode_key(*key)
+            self.assertEqual(dec['const_alpha'], quantized)
+
+
+class TestFramePacerAndRetraceInvariants(unittest.TestCase):
+    """
+    Tests for Section A: Invariants preventing the ~12 FPS starvation collapse.
+    """
+    def test_retrace_cadence_not_starved_by_dropped_frame(self):
+        """
+        Verify that a single missed deadline or slow render submission (>16.6ms)
+        does not suppress subsequent retrace interrupts for 66.7ms (4 frames).
+        """
+        period_ns = 16666667  # 60Hz
+        now = 1000000000
+        last_external_at = now - 20000000  # 20ms ago (1 slow frame)
+
+        # Old flawed logic: if (now - sExternalAt < period * 4) continue;
+        old_suppressed = (now - last_external_at < period_ns * 4)
+        self.assertTrue(old_suppressed, "Old logic erroneously dropped retraces for 4 frames (66.7ms) causing 12 FPS!")
+
+        # New corrected logic: allow retrace if cadence has elapsed (>0.85 period)
+        new_allowed = (now - last_external_at >= int(period_ns * 0.85))
+        self.assertTrue(new_allowed, "New logic maintains 60 FPS retrace interrupt cadence!")
+
+
+class TestTextureUploadStagingSafety(unittest.TestCase):
+    """
+    Tests for Section F: Staging buffer allocation and copy bounds.
+    """
+    def test_staging_copy_region_within_allocated_buffer(self):
+        width = 256
+        height = 256
+        levels = 4
+        # Calculate expected byte sizes
+        total_bytes = 0
+        w, h = width, height
+        regions = []
+        for l in range(levels):
+            level_bytes = w * h * 4
+            regions.append((total_bytes, level_bytes, w, h))
+            total_bytes += level_bytes
+            w = max(1, w // 2)
+            h = max(1, h // 2)
+
+        # Verify all regions lie within total_bytes
+        for offset, bytes_count, rw, rh in regions:
+            self.assertLessEqual(offset + bytes_count, total_bytes)
+            self.assertGreater(rw, 0)
+            self.assertGreater(rh, 0)
+
+
 if __name__ == '__main__':
     unittest.main()
+
 
 

@@ -121,7 +121,8 @@ aaudio_data_callback_result_t dataCallback(AAudioStream* stream, void*, void* au
 // The output device went away or changed: port_audio_submit reopens the
 // stream (the callback may not do it itself).
 void errorCallback(AAudioStream*, void*, aaudio_result_t error) {
-    if (error == AAUDIO_ERROR_DISCONNECTED) {
+    if (error != AAUDIO_OK) {
+        port_log("audio: AAudio stream error %d (%s), scheduling reconnect", error, AAudio_convertResultToText(error));
         sDisconnected = true;
     }
 }
@@ -216,14 +217,14 @@ extern "C" void port_audio_submit(const s16* rightLeft, u32 frames, u32 rate) {
     }
 
     if (sStream && sDisconnected.exchange(false)) {
-        port_log("audio: output device disconnected, reopening");
+        port_log("audio: output device disconnected or error, reopening");
         AAudioStream_close(sStream);
         sStream = nullptr;
     }
     static int sRetryCounter = 0;
     if (!sStream) {
         if (sOpenFailed) {
-            if (++sRetryCounter < 100) return; // Retry audio stream initialization after ~2 seconds
+            if (++sRetryCounter < 30) return; // Retry audio stream initialization after ~0.5 seconds
             sRetryCounter = 0;
             sOpenFailed = false;
         }

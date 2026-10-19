@@ -21,25 +21,25 @@ static void test_key_round_trip() {
                             d.vtxFlags = 0x4047;
                             d.depthTest = (dt != 0);
                             d.depthWrite = (dw != 0);
-                            d.depthCompareOp = (VkCompareOp)dop;
+                            d.depthCompareOp = (CanonicalDepthFunc)dop;
                             d.blendEnable = (blend != 0);
-                            d.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-                            d.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-                            d.colorBlendOp = VK_BLEND_OP_ADD;
-                            d.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-                            d.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
-                            d.alphaBlendOp = VK_BLEND_OP_ADD;
+                            d.srcColorBlendFactor = CanonicalBlendFactor::SrcAlpha;
+                            d.dstColorBlendFactor = CanonicalBlendFactor::OneMinusSrcAlpha;
+                            d.colorBlendOp = CanonicalBlendOp::Add;
+                            d.srcAlphaBlendFactor = CanonicalBlendFactor::One;
+                            d.dstAlphaBlendFactor = CanonicalBlendFactor::Zero;
+                            d.alphaBlendOp = CanonicalBlendOp::Add;
                             d.colorWriteMask = 15;
                             d.blendConstantAlpha = 0.5f;
 
-                            if (cm == 0) d.cullMode = VK_CULL_MODE_NONE;
-                            else if (cm == 1) d.cullMode = VK_CULL_MODE_FRONT_BIT;
-                            else if (cm == 2) d.cullMode = VK_CULL_MODE_BACK_BIT;
-                            else d.cullMode = VK_CULL_MODE_FRONT_AND_BACK;
+                            if (cm == 0) d.cullMode = CanonicalCullMode::None;
+                            else if (cm == 1) d.cullMode = CanonicalCullMode::Front;
+                            else if (cm == 2) d.cullMode = CanonicalCullMode::Back;
+                            else d.cullMode = CanonicalCullMode::FrontAndBack;
 
-                            if (topo == 0) d.topology = VK_PRIMITIVE_TOPOLOGY_POINT_LIST;
-                            else if (topo == 1) d.topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
-                            else d.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+                            if (topo == 0) d.topology = CanonicalPrimitiveTopology::PointList;
+                            else if (topo == 1) d.topology = CanonicalPrimitiveTopology::LineList;
+                            else d.topology = CanonicalPrimitiveTopology::TriangleList;
 
                             PipelineKey k = encodePipelineKey(d);
                             DecodedPipelineKey dec = decodePipelineKey(k);

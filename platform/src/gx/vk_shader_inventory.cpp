@@ -41,20 +41,19 @@ PipelineKey makeCanonicalPipelineKey(const ShaderUid& uid, uint32_t vtxFlags, bo
     d.vtxFlags = vtxFlags;
     d.depthTest = depthTest;
     d.depthWrite = depthWrite;
-    d.depthCompareOp = depthOp;
+    d.depthCompareOp = toCanonicalDepthFuncFromVk(depthOp);
     d.blendEnable = blendEnable;
-    d.srcColorBlendFactor = srcColor;
-    d.dstColorBlendFactor = dstColor;
-    d.colorBlendOp = VK_BLEND_OP_ADD;
-    d.srcAlphaBlendFactor = srcAlpha;
-    d.dstAlphaBlendFactor = dstAlpha;
-    d.alphaBlendOp = VK_BLEND_OP_ADD;
-    d.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
-                       VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    d.srcColorBlendFactor = toCanonicalBlendFactorFromVk(srcColor);
+    d.dstColorBlendFactor = toCanonicalBlendFactorFromVk(dstColor);
+    d.colorBlendOp = CanonicalBlendOp::Add;
+    d.srcAlphaBlendFactor = toCanonicalBlendFactorFromVk(srcAlpha);
+    d.dstAlphaBlendFactor = toCanonicalBlendFactorFromVk(dstAlpha);
+    d.alphaBlendOp = CanonicalBlendOp::Add;
+    d.colorWriteMask = 0x0F;
     d.blendConstantAlpha = 0.0f;
-    d.cullMode = cullMode;
-    d.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
-    d.topology = topology;
+    d.cullMode = toCanonicalCullModeFromVk(cullMode);
+    d.frontFace = CanonicalFrontFace::CounterClockwise;
+    d.topology = toCanonicalTopologyFromVk(topology);
     return encodePipelineKey(d);
 }
 
@@ -586,19 +585,34 @@ void ShaderInventory::prewarmPipelines(VkRenderer& renderer, std::function<void(
 bool ShaderInventory::verifyStartupReadiness() const {
     std::lock_guard<std::mutex> lock(mMutex);
     size_t missingEssential = 0;
+    size_t totalReadyPipelines = 0;
+    std::string firstMissingSource;
+
     for (const auto& e : mEntries) {
-        if (e.sourceAsset == "placeholder_stub" || e.sourceAsset == "title_screen_and_ui") {
-            if (!e.pipelineReady) {
+        if (e.pipelineReady) {
+            totalReadyPipelines++;
+        }
+        bool isEssential = (e.sourceAsset == "placeholder_stub" ||
+                            e.sourceAsset == "title_screen_and_ui" ||
+                            e.sourceAsset.find("mario") != std::string::npos ||
+                            e.sourceAsset == "cinematic_intro");
+        if (isEssential) {
+            if (!e.spirvReady || !e.pipelineReady) {
                 missingEssential++;
+                if (firstMissingSource.empty()) {
+                    firstMissingSource = e.sourceAsset;
+                }
             }
         }
     }
-    if (missingEssential > 0) {
-        port_log("vk_shader_inventory: startup readiness check failed: %zu essential startup pipelines not ready",
-                 missingEssential);
+
+    if (missingEssential > 0 || totalReadyPipelines == 0) {
+        port_log("vk_shader_inventory: startup readiness check failed: %zu essential startup pipelines not ready (first failure: '%s', total ready: %zu)",
+                 missingEssential, firstMissingSource.c_str(), totalReadyPipelines);
         return false;
     }
-    port_log("vk_shader_inventory: startup readiness check passed: all essential stubs and title screen pipelines ready");
+    port_log("vk_shader_inventory: startup readiness check passed: %zu pipelines validated and ready for immediate gameplay",
+             totalReadyPipelines);
     return true;
 }
 

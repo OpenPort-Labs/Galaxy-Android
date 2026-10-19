@@ -56,21 +56,21 @@ void OverlayRenderer::generateVertices(int screenW, int screenH,
 
     // 4. Settings Cogwheel Tab Dock & Quick Save Button
     if (drawerAnim < 0.95f) {
-        float tabW = 56.0f * uiScale;
-        float tabH = 48.0f * uiScale;
-        float tabY = 22.0f * uiScale;
+        float tabW = 52.0f * uiScale;
+        float tabH = 44.0f * uiScale;
+        float tabY = 20.0f * uiScale;
         float tabPr = touchHandler.btnCfgPressed() ? 0.92f : 1.0f;
         float cogRot = drawerAnim * 1.5707963f;
 
-        vb.drawRoundRect(-10.0f, tabY, tabW * tabPr, tabY + tabH, 24.0f * uiScale, rgba(0.149f, 0.157f, 0.180f, 0.94f));
-        vb.drawRoundRect(-10.0f, tabY, tabW * tabPr, tabY + tabH, 24.0f * uiScale, rgba(0.267f, 0.278f, 0.310f, 0.60f));
-        vb.drawCogwheel(tabW * 0.50f, tabY + tabH * 0.5f, 15.0f * uiScale, rgba(0.659f, 0.780f, 0.980f, 1.0f), cogRot);
+        vb.drawRoundRect(-10.0f, tabY, tabW * tabPr, tabY + tabH, 16.0f * uiScale, rgba(0.08f, 0.09f, 0.12f, 0.70f));
+        vb.drawRoundRect(-10.0f, tabY, tabW * tabPr, tabY + tabH, 16.0f * uiScale, rgba(0.80f, 0.85f, 0.92f, 0.15f));
+        vb.drawCogwheel(tabW * 0.48f, tabY + tabH * 0.5f, 13.0f * uiScale, rgba(0.85f, 0.88f, 0.94f, 0.90f), cogRot);
 
-        float qsX = tabW + 16.0f * uiScale;
-        float qsW = 58.0f * uiScale;
-        vb.drawRoundRect(qsX, tabY + 4.0f * uiScale, qsX + qsW, tabY + tabH - 4.0f * uiScale, 16.0f * uiScale, rgba(0.12f, 0.14f, 0.18f, 0.88f));
-        vb.drawRoundRect(qsX, tabY + 4.0f * uiScale, qsX + qsW, tabY + tabH - 4.0f * uiScale, 16.0f * uiScale, rgba(0.25f, 0.45f, 0.78f, 0.65f));
-        vb.drawText("SAVE", qsX + qsW * 0.5f, tabY + tabH * 0.5f + 4.0f * uiScale, 0.28f * uiScale, rgba(0.92f, 0.96f, 1.0f, 0.95f), 1);
+        float qsX = tabW + 14.0f * uiScale;
+        float qsW = 54.0f * uiScale;
+        vb.drawRoundRect(qsX, tabY + 4.0f * uiScale, qsX + qsW, tabY + tabH - 4.0f * uiScale, 12.0f * uiScale, rgba(0.08f, 0.09f, 0.12f, 0.70f));
+        vb.drawRoundRect(qsX, tabY + 4.0f * uiScale, qsX + qsW, tabY + tabH - 4.0f * uiScale, 12.0f * uiScale, rgba(0.80f, 0.85f, 0.92f, 0.15f));
+        vb.drawText("SAVE", qsX + qsW * 0.5f, tabY + tabH * 0.5f + 3.0f * uiScale, 0.25f * uiScale, rgba(0.88f, 0.92f, 0.96f, 0.90f), 1);
     }
 
     // 5. Layout Edit Drag Overlay
@@ -106,31 +106,30 @@ void OverlayRenderer::renderControls(VertexBatcher& vb, int screenW, int screenH
     float knobR = 38.0f * scale;
     bool stickActive = touchHandler.isStickActive();
 
-    vb.drawCircle(baseX, baseY, baseR, rgba(0.05f, 0.07f, 0.11f, opacity * 0.28f));
-    vb.drawRing(baseX, baseY, baseR, 0.96f, rgba(0.60f, 0.80f, 1.0f, opacity * 0.45f));
+    vb.drawCircle(baseX, baseY, baseR, rgba(0.04f, 0.05f, 0.07f, opacity * 0.22f));
+    vb.drawRing(baseX, baseY, baseR, 0.96f, rgba(0.85f, 0.90f, 0.96f, opacity * 0.35f));
 
-    float tickIn = baseR * 0.84f, tickOut = baseR * 0.95f, tickW = 2.0f * scale;
-    Color tickCol = rgba(0.75f, 0.88f, 1.0f, opacity * 0.50f);
+    float tickIn = baseR * 0.84f, tickOut = baseR * 0.95f, tickW = 1.8f * scale;
+    Color tickCol = rgba(0.85f, 0.90f, 0.96f, opacity * 0.40f);
     vb.drawLine(baseX, baseY - tickOut, baseX, baseY - tickIn, tickW, tickCol);
     vb.drawLine(baseX, baseY + tickIn, baseX, baseY + tickOut, tickW, tickCol);
     vb.drawLine(baseX - tickOut, baseY, baseX - tickIn, baseY, tickW, tickCol);
     vb.drawLine(baseX + tickIn, baseY, baseX + tickOut, baseY, tickW, tickCol);
 
-    vb.drawRing(baseX, baseY, 13.0f * scale, 0.86f, rgba(0.50f, 0.70f, 1.0f, opacity * 0.35f));
-    vb.drawCircle(baseX, baseY, 2.5f * scale, rgba(1.0f, 1.0f, 1.0f, opacity * 0.60f));
+    vb.drawRing(baseX, baseY, 13.0f * scale, 0.88f, rgba(0.85f, 0.90f, 0.96f, opacity * 0.25f));
+    vb.drawCircle(baseX, baseY, 2.5f * scale, rgba(1.0f, 1.0f, 1.0f, opacity * 0.50f));
 
     float sDx = knobX - baseX, sDy = knobY - baseY;
     if (sqrtf(sDx * sDx + sDy * sDy) > 5.0f * scale) {
-        vb.drawLine(baseX, baseY, knobX, knobY, 3.2f * scale, rgba(0.22f, 0.74f, 0.97f, opacity * 0.65f));
-        vb.drawLine(baseX, baseY, knobX, knobY, 1.4f * scale, rgba(1.0f, 1.0f, 1.0f, opacity * 0.85f));
+        vb.drawLine(baseX, baseY, knobX, knobY, 2.5f * scale, rgba(0.90f, 0.94f, 1.0f, opacity * 0.65f));
     }
 
     float kpR = stickActive ? (knobR * 1.04f) : knobR;
-    vb.drawCircle(knobX, knobY, kpR, rgba(0.09f, 0.13f, 0.22f, opacity * (stickActive ? 0.85f : 0.65f)));
-    Color knobRim = stickActive ? rgba(0.22f, 0.74f, 0.97f, opacity * 0.95f) : rgba(0.60f, 0.80f, 1.0f, opacity * 0.65f);
+    vb.drawCircle(knobX, knobY, kpR, rgba(0.10f, 0.12f, 0.15f, opacity * (stickActive ? 0.85f : 0.60f)));
+    Color knobRim = stickActive ? rgba(1.0f, 1.0f, 1.0f, opacity * 0.95f) : rgba(0.85f, 0.90f, 0.96f, opacity * 0.55f);
     vb.drawRing(knobX, knobY, kpR, 0.90f, knobRim);
-    vb.drawRing(knobX, knobY, kpR * 0.68f, 0.93f, rgba(1.0f, 1.0f, 1.0f, opacity * 0.35f));
-    vb.drawCircle(knobX, knobY, 3.0f * scale, stickActive ? rgba(0.22f, 0.74f, 0.97f, opacity * 0.95f) : rgba(1.0f, 1.0f, 1.0f, opacity * 0.50f));
+    vb.drawRing(knobX, knobY, kpR * 0.68f, 0.94f, rgba(1.0f, 1.0f, 1.0f, opacity * 0.25f));
+    vb.drawCircle(knobX, knobY, 3.0f * scale, stickActive ? rgba(1.0f, 1.0f, 1.0f, opacity * 0.95f) : rgba(1.0f, 1.0f, 1.0f, opacity * 0.45f));
 
     // Star Joystick
     if (settings.starStick) {
@@ -143,19 +142,19 @@ void OverlayRenderer::renderControls(VertexBatcher& vb, int screenW, int screenH
         float sKnobR = 30.0f * scale;
         bool sActive = touchHandler.isStarStickActive();
 
-        vb.drawCircle(sBaseX, sBaseY, sBaseR, rgba(0.12f, 0.10f, 0.05f, opacity * 0.35f));
-        vb.drawRing(sBaseX, sBaseY, sBaseR, 0.94f, rgba(1.0f, 0.85f, 0.20f, opacity * (sActive ? 0.75f : 0.40f)));
-        vb.drawCircle(sBaseX, sBaseY, 3.0f * scale, rgba(1.0f, 0.90f, 0.30f, opacity * 0.70f));
+        vb.drawCircle(sBaseX, sBaseY, sBaseR, rgba(0.06f, 0.07f, 0.09f, opacity * 0.25f));
+        vb.drawRing(sBaseX, sBaseY, sBaseR, 0.95f, rgba(0.90f, 0.92f, 0.96f, opacity * (sActive ? 0.65f : 0.35f)));
+        vb.drawCircle(sBaseX, sBaseY, 2.5f * scale, rgba(1.0f, 1.0f, 1.0f, opacity * 0.50f));
 
         float dx = sKnobX - sBaseX, dy = sKnobY - sBaseY;
         if (sqrtf(dx * dx + dy * dy) > 4.0f * scale) {
-            vb.drawLine(sBaseX, sBaseY, sKnobX, sKnobY, 2.5f * scale, rgba(1.0f, 0.80f, 0.15f, opacity * 0.70f));
+            vb.drawLine(sBaseX, sBaseY, sKnobX, sKnobY, 2.0f * scale, rgba(0.90f, 0.94f, 1.0f, opacity * 0.60f));
         }
 
-        float spR = sActive ? (sKnobR * 1.05f) : sKnobR;
-        vb.drawCircle(sKnobX, sKnobY, spR, rgba(0.20f, 0.16f, 0.06f, opacity * (sActive ? 0.90f : 0.70f)));
-        vb.drawRing(sKnobX, sKnobY, spR, 0.88f, rgba(1.0f, 0.90f, 0.30f, opacity * 0.95f));
-        vb.drawText("*", sKnobX, sKnobY + 6.0f * scale, 0.45f * scale, rgba(1.0f, 1.0f, 1.0f, opacity * 0.95f), 1);
+        float spR = sActive ? (sKnobR * 1.04f) : sKnobR;
+        vb.drawCircle(sKnobX, sKnobY, spR, rgba(0.12f, 0.14f, 0.18f, opacity * (sActive ? 0.85f : 0.65f)));
+        vb.drawRing(sKnobX, sKnobY, spR, 0.90f, rgba(0.95f, 0.97f, 1.0f, opacity * 0.90f));
+        vb.drawText("*", sKnobX, sKnobY + 5.0f * scale, 0.40f * scale, rgba(1.0f, 1.0f, 1.0f, opacity * 0.90f), 1);
     }
 
     // Buttons
@@ -175,54 +174,55 @@ void OverlayRenderer::renderButtons(VertexBatcher& vb, const ButtonLayout& bl, f
                                     const Settings& settings) {
     (void)settings;
     auto drawBtn = [&](float cx, float cy, float r, const char* label, uint32_t hex, bool pressed, int specialGlyph = 0) {
+        (void)hex;
         float pr = pressed ? (r * 0.93f) : r;
-        Color baseBg = pressed ? hexColor(hex, op * 0.88f) : rgba(0.06f, 0.08f, 0.13f, op * 0.36f);
+        Color baseBg = pressed ? rgba(0.22f, 0.26f, 0.35f, op * 0.85f) : rgba(0.06f, 0.07f, 0.09f, op * 0.36f);
         vb.drawCircle(cx, cy, pr, baseBg);
 
-        Color outerRing = pressed ? rgba(1.0f, 1.0f, 1.0f, op * 0.98f) : hexColor(hex, op * 0.65f);
-        vb.drawRing(cx, cy, pr, 0.92f, outerRing);
-        vb.drawRing(cx, cy, pr * 0.80f, 0.95f, rgba(1.0f, 1.0f, 1.0f, pressed ? op * 0.85f : op * 0.25f));
+        Color outerRing = pressed ? rgba(1.0f, 1.0f, 1.0f, op * 0.95f) : rgba(0.85f, 0.90f, 0.96f, op * 0.45f);
+        vb.drawRing(cx, cy, pr, 0.93f, outerRing);
+        vb.drawRing(cx, cy, pr * 0.80f, 0.96f, rgba(1.0f, 1.0f, 1.0f, pressed ? op * 0.80f : op * 0.18f));
 
-        Color glyphCol = pressed ? rgba(1.0f, 1.0f, 1.0f, op) : rgba(0.92f, 0.95f, 1.0f, op * 0.92f);
+        Color glyphCol = pressed ? rgba(1.0f, 1.0f, 1.0f, op) : rgba(0.95f, 0.97f, 1.0f, op * 0.90f);
         if (specialGlyph == 1) {
-            vb.drawCyclone(cx, cy - 5.0f * scale, pr * 0.40f, glyphCol, 0.0f);
-            vb.drawText("Y • SPIN", cx, cy + pr * 0.58f, 0.22f * scale, glyphCol, 1);
+            vb.drawCyclone(cx, cy - 5.0f * scale, pr * 0.38f, glyphCol, 0.0f);
+            vb.drawText("SPIN", cx, cy + pr * 0.58f, 0.20f * scale, glyphCol, 1);
         } else if (specialGlyph == 2) {
             float arm = pr * 0.38f;
-            vb.drawLine(cx - arm, cy, cx + arm, cy, 2.4f * scale, glyphCol);
-            vb.drawLine(cx, cy - arm, cx, cy + arm, 2.4f * scale, glyphCol);
+            vb.drawLine(cx - arm, cy, cx + arm, cy, 2.2f * scale, glyphCol);
+            vb.drawLine(cx, cy - arm, cx, cy + arm, 2.2f * scale, glyphCol);
         } else {
-            float tSize = (r > 48.0f * scale) ? (0.64f * scale) : (0.54f * scale);
-            vb.drawText(label, cx, cy + 11.0f * scale, tSize, glyphCol, 1);
+            float tSize = (r > 48.0f * scale) ? (0.60f * scale) : (0.50f * scale);
+            vb.drawText(label, cx, cy + 10.0f * scale, tSize, glyphCol, 1);
         }
     };
 
-    drawBtn(bl.bx, bl.by, bl.br, "B", 0xF59E0B, touchHandler.btnBPressed());
-    drawBtn(bl.ax, bl.ay, bl.ar, "A", 0x38BDF8, touchHandler.btnAPressed());
-    drawBtn(bl.spinX, bl.spinY, bl.spinR, "Y", 0x34D399, touchHandler.btnSpinPressed(), 1);
-    drawBtn(bl.zx, bl.zy, bl.zr, "ZL", 0xA78BFA, touchHandler.btnZPressed());
+    drawBtn(bl.bx, bl.by, bl.br, "B", 0xE2E8F0, touchHandler.btnBPressed());
+    drawBtn(bl.ax, bl.ay, bl.ar, "A", 0x93C5FD, touchHandler.btnAPressed());
+    drawBtn(bl.spinX, bl.spinY, bl.spinR, "Y", 0xE2E8F0, touchHandler.btnSpinPressed(), 1);
+    drawBtn(bl.zx, bl.zy, bl.zr, "ZL", 0xE2E8F0, touchHandler.btnZPressed());
 }
 
 void OverlayRenderer::renderDpad(VertexBatcher& vb, float dpadX, float dpadY, float scale,
                                 float op, const TouchInputHandler& touchHandler) {
     float dialR = 56.0f * scale, armDist = 36.0f * scale, chevronR = 14.0f * scale;
 
-    vb.drawCircle(dpadX, dpadY, dialR, rgba(0.06f, 0.08f, 0.13f, op * 0.32f));
-    vb.drawRing(dpadX, dpadY, dialR, 0.95f, rgba(0.55f, 0.75f, 1.0f, op * 0.42f));
+    vb.drawCircle(dpadX, dpadY, dialR, rgba(0.04f, 0.05f, 0.07f, op * 0.22f));
+    vb.drawRing(dpadX, dpadY, dialR, 0.95f, rgba(0.85f, 0.90f, 0.96f, op * 0.35f));
 
     float dIn = 20.0f * scale, dOut = dialR * 0.88f, diag = 0.7071f;
-    Color divCol = rgba(1.0f, 1.0f, 1.0f, op * 0.16f);
-    vb.drawLine(dpadX + dIn * diag, dpadY + dIn * diag, dpadX + dOut * diag, dpadY + dOut * diag, 1.4f * scale, divCol);
-    vb.drawLine(dpadX - dIn * diag, dpadY + dIn * diag, dpadX - dOut * diag, dpadY + dOut * diag, 1.4f * scale, divCol);
-    vb.drawLine(dpadX + dIn * diag, dpadY - dIn * diag, dpadX + dOut * diag, dpadY - dOut * diag, 1.4f * scale, divCol);
-    vb.drawLine(dpadX - dIn * diag, dpadY - dIn * diag, dpadX - dOut * diag, dpadY - dOut * diag, 1.4f * scale, divCol);
+    Color divCol = rgba(1.0f, 1.0f, 1.0f, op * 0.12f);
+    vb.drawLine(dpadX + dIn * diag, dpadY + dIn * diag, dpadX + dOut * diag, dpadY + dOut * diag, 1.2f * scale, divCol);
+    vb.drawLine(dpadX - dIn * diag, dpadY + dIn * diag, dpadX - dOut * diag, dpadY + dOut * diag, 1.2f * scale, divCol);
+    vb.drawLine(dpadX + dIn * diag, dpadY - dIn * diag, dpadX + dOut * diag, dpadY - dOut * diag, 1.2f * scale, divCol);
+    vb.drawLine(dpadX - dIn * diag, dpadY - dIn * diag, dpadX - dOut * diag, dpadY - dOut * diag, 1.2f * scale, divCol);
 
     auto drawSector = [&](float cx, float cy, float rot, bool pressed) {
         if (pressed) {
-            vb.drawCircle(cx, cy, 20.0f * scale, rgba(0.22f, 0.74f, 0.97f, op * 0.80f));
-            vb.drawRing(cx, cy, 20.0f * scale, 0.88f, rgba(1.0f, 1.0f, 1.0f, op * 0.95f));
+            vb.drawCircle(cx, cy, 20.0f * scale, rgba(0.22f, 0.26f, 0.35f, op * 0.80f));
+            vb.drawRing(cx, cy, 20.0f * scale, 0.90f, rgba(1.0f, 1.0f, 1.0f, op * 0.95f));
         }
-        Color cCol = pressed ? rgba(1.0f, 1.0f, 1.0f, op) : rgba(0.85f, 0.92f, 1.0f, op * 0.75f);
+        Color cCol = pressed ? rgba(1.0f, 1.0f, 1.0f, op) : rgba(0.90f, 0.94f, 1.0f, op * 0.80f);
         vb.drawChevron(cx, cy, pressed ? chevronR * 1.15f : chevronR, cCol, rot);
     };
 
@@ -232,9 +232,9 @@ void OverlayRenderer::renderDpad(VertexBatcher& vb, float dpadX, float dpadY, fl
     drawSector(dpadX, dpadY + armDist, 1.5707963f, touchHandler.btnDpadDown());
 
     float hubR = 18.0f * scale;
-    vb.drawCircle(dpadX, dpadY, hubR, rgba(0.09f, 0.13f, 0.22f, op * 0.80f));
-    vb.drawRing(dpadX, dpadY, hubR, 0.88f, rgba(0.55f, 0.75f, 1.0f, op * 0.55f));
-    vb.drawCameraIcon(dpadX, dpadY, 11.0f * scale, rgba(0.85f, 0.93f, 1.0f, op * 0.90f));
+    vb.drawCircle(dpadX, dpadY, hubR, rgba(0.08f, 0.10f, 0.14f, op * 0.75f));
+    vb.drawRing(dpadX, dpadY, hubR, 0.90f, rgba(0.85f, 0.90f, 0.96f, op * 0.45f));
+    vb.drawCameraIcon(dpadX, dpadY, 11.0f * scale, rgba(0.90f, 0.94f, 1.0f, op * 0.85f));
 }
 
 

@@ -129,13 +129,15 @@ void VertexBatcher::drawText(const char* text, float x, float baseline, float si
 void VertexBatcher::drawM3Switch(float x, float y, float swW, float swH, bool on) {
     float r = swH * 0.5f;
     if (on) {
-        drawRoundRect(x, y, x + swW, y + swH, r, rgba(0.043f, 0.341f, 0.816f, 1.0f));
+        drawRoundRect(x, y, x + swW, y + swH, r, rgba(0.22f, 0.28f, 0.38f, 0.95f));
+        drawRoundRect(x, y, x + swW, y + swH, r, rgba(0.80f, 0.85f, 0.95f, 0.25f));
         float thumbR = r * 0.70f;
         drawCircle(x + swW - r, y + r, thumbR, rgba(1.0f, 1.0f, 1.0f, 1.0f));
     } else {
-        drawRoundRect(x, y, x + swW, y + swH, r, rgba(0.28f, 0.31f, 0.36f, 0.65f));
+        drawRoundRect(x, y, x + swW, y + swH, r, rgba(0.12f, 0.14f, 0.17f, 0.75f));
+        drawRoundRect(x, y, x + swW, y + swH, r, rgba(0.80f, 0.85f, 0.95f, 0.10f));
         float thumbR = r * 0.55f;
-        drawCircle(x + r, y + r, thumbR, rgba(0.70f, 0.74f, 0.80f, 1.0f));
+        drawCircle(x + r, y + r, thumbR, rgba(0.55f, 0.60f, 0.68f, 1.0f));
     }
 }
 

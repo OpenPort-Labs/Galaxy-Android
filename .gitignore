@@ -56,5 +56,16 @@ current_*.png
 out_*.png
 save_*.png
 *.bin
+!assets/galaxy_shader_manifest.bin
 *.bdl
 platform/mobile/libs/
+
+# Caches and temporary scratch files
+.cache/
+.freebuff/
+*.tmp
+*.bak
+*.orig
+*.log
+.DS_Store
+Thumbs.db

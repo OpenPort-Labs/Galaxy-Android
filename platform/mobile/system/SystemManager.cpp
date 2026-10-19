@@ -174,6 +174,7 @@ void SystemManager::returnToLauncher(android_app* app) {
         env->DeleteLocalRef(clazz);
     }
     if (attached) vm->DetachCurrentThread();
+    ANativeActivity_finish(app->activity);
 }
 
 static android_app* sSavedApp = nullptr;

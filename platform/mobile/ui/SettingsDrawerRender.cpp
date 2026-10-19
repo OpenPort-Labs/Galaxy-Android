@@ -12,9 +12,9 @@ namespace mobile_ui {
 
 void SettingsMenuHandler::drawSegmentedGroup(VertexBatcher& vb, float x, float y, float grpW, float grpH,
                                              const char* const* labels, int count, int activeIdx, float uiScale) {
-    float r = 12.0f * uiScale;
-    vb.drawRoundRect(x, y, x + grpW, y + grpH, r, rgba(0.149f, 0.157f, 0.180f, 0.95f));
-    vb.drawRoundRect(x, y, x + grpW, y + grpH, r, rgba(0.267f, 0.278f, 0.310f, 0.50f));
+    float r = 10.0f * uiScale;
+    vb.drawRoundRect(x, y, x + grpW, y + grpH, r, rgba(0.10f, 0.12f, 0.14f, 0.90f));
+    vb.drawRoundRect(x, y, x + grpW, y + grpH, r, rgba(0.80f, 0.85f, 0.92f, 0.12f));
 
     float segW = grpW / (float)count;
     for (int i = 0; i < count; i++) {
@@ -22,12 +22,13 @@ void SettingsMenuHandler::drawSegmentedGroup(VertexBatcher& vb, float x, float y
         float sx1 = sx0 + segW;
         bool active = (i == activeIdx);
         if (active) {
-            vb.drawRoundRect(sx0 + 2.0f, y + 2.0f, sx1 - 2.0f, y + grpH - 2.0f, r - 2.0f, rgba(0.043f, 0.341f, 0.816f, 1.0f));
-            vb.drawText(labels[i], (sx0 + sx1) * 0.5f, y + grpH * 0.64f, 0.36f * uiScale, rgba(1.0f, 1.0f, 1.0f, 1.0f), 1);
+            vb.drawRoundRect(sx0 + 2.0f, y + 2.0f, sx1 - 2.0f, y + grpH - 2.0f, r - 2.0f, rgba(0.22f, 0.26f, 0.32f, 0.95f));
+            vb.drawRoundRect(sx0 + 2.0f, y + 2.0f, sx1 - 2.0f, y + grpH - 2.0f, r - 2.0f, rgba(0.80f, 0.85f, 0.92f, 0.20f));
+            vb.drawText(labels[i], (sx0 + sx1) * 0.5f, y + grpH * 0.63f, 0.32f * uiScale, rgba(0.98f, 0.99f, 1.0f, 1.0f), 1);
         } else {
-            vb.drawText(labels[i], (sx0 + sx1) * 0.5f, y + grpH * 0.64f, 0.36f * uiScale, rgba(0.761f, 0.776f, 0.812f, 0.95f), 1);
+            vb.drawText(labels[i], (sx0 + sx1) * 0.5f, y + grpH * 0.63f, 0.32f * uiScale, rgba(0.60f, 0.64f, 0.70f, 0.85f), 1);
             if (i > 0 && (i - 1) != activeIdx) {
-                vb.drawRoundRect(sx0 - 0.5f, y + 6.0f, sx0 + 0.5f, y + grpH - 6.0f, 0.0f, rgba(0.267f, 0.278f, 0.310f, 0.40f));
+                vb.drawRoundRect(sx0 - 0.5f, y + 6.0f, sx0 + 0.5f, y + grpH - 6.0f, 0.0f, rgba(0.80f, 0.85f, 0.92f, 0.08f));
             }
         }
     }
@@ -47,9 +48,9 @@ void SettingsMenuHandler::renderDrawer(VertexBatcher& vb, int screenW, int scree
     float drawerX = (mDrawerAnim - 1.0f) * drawerW;
     float cogRot = mDrawerAnim * 1.5707963f;
 
-    vb.drawRoundRect(0, 0, w, h, 0.0f, rgba(0.0f, 0.0f, 0.0f, mDrawerAnim * 0.58f));
-    vb.drawRoundRect(drawerX - 60.0f, 0.0f, drawerX + drawerW, h, 26.0f * uiScale, rgba(0.07f, 0.08f, 0.11f, 0.98f));
-    vb.drawRoundRect(drawerX + drawerW - 1.5f, 0.0f, drawerX + drawerW, h, 0.0f, rgba(0.25f, 0.30f, 0.42f, 0.60f));
+    vb.drawRoundRect(0, 0, w, h, 0.0f, rgba(0.0f, 0.0f, 0.0f, mDrawerAnim * 0.55f));
+    vb.drawRoundRect(drawerX - 60.0f, 0.0f, drawerX + drawerW, h, 20.0f * uiScale, rgba(0.07f, 0.08f, 0.10f, 0.98f));
+    vb.drawRoundRect(drawerX + drawerW - 1.0f, 0.0f, drawerX + drawerW, h, 0.0f, rgba(0.80f, 0.85f, 0.92f, 0.15f));
 
     float padX = 20.0f * uiScale;
     float contentW = drawerW - padX * 2.0f;
@@ -61,10 +62,7 @@ void SettingsMenuHandler::renderDrawer(VertexBatcher& vb, int screenW, int scree
     mDrawerScrollY = std::max(0.0f, std::min(mDrawerScrollY, maxScroll));
     float swW = 48.0f * uiScale, swH = 26.0f * uiScale;
 
-    Color themeColor = (mSettingsTab == 0) ? rgba(0.20f, 0.85f, 1.0f, 1.0f) :
-                       (mSettingsTab == 1) ? rgba(0.70f, 0.55f, 1.0f, 1.0f) :
-                       (mSettingsTab == 2) ? rgba(0.25f, 0.90f, 0.65f, 1.0f) :
-                                             rgba(1.0f, 0.78f, 0.25f, 1.0f);
+    Color themeColor = rgba(0.85f, 0.88f, 0.94f, 1.0f);
 
     size_t rowCount = 0;
     const MenuRowDef* rows = getTabRows(mSettingsTab, rowCount);
@@ -84,17 +82,17 @@ void SettingsMenuHandler::renderDrawer(VertexBatcher& vb, int screenW, int scree
         float rowX1 = drawerX + drawerW - padX;
 
         if (r.type == ROW_SECTION) {
-            vb.drawRoundRect(rowX0, drawY + 8.0f * uiScale, rowX0 + 3.5f * uiScale, drawY + 26.0f * uiScale, 2.0f * uiScale, themeColor);
-            vb.drawText(r.title, rowX0 + 10.0f * uiScale, drawY + 19.0f * uiScale, 0.33f * uiScale, themeColor, 0);
+            vb.drawRoundRect(rowX0, drawY + 8.0f * uiScale, rowX0 + 3.0f * uiScale, drawY + 24.0f * uiScale, 1.5f * uiScale, themeColor);
+            vb.drawText(r.title, rowX0 + 8.0f * uiScale, drawY + 18.0f * uiScale, 0.32f * uiScale, themeColor, 0);
             if (r.subtitle && r.subtitle[0]) {
-                vb.drawText(r.subtitle, rowX0 + 10.0f * uiScale, drawY + 31.0f * uiScale, 0.24f * uiScale, rgba(0.60f, 0.66f, 0.76f, 0.80f), 0);
+                vb.drawText(r.subtitle, rowX0 + 8.0f * uiScale, drawY + 30.0f * uiScale, 0.22f * uiScale, rgba(0.55f, 0.60f, 0.68f, 0.80f), 0);
             }
         } else if (r.type == ROW_SWITCH) {
-            vb.drawRoundRect(rowX0, drawY + 2.0f, rowX1, drawY + rowH - 2.0f, 12.0f * uiScale, rgba(0.12f, 0.14f, 0.18f, 0.75f));
-            vb.drawRoundRect(rowX0, drawY + 2.0f, rowX1, drawY + rowH - 2.0f, 12.0f * uiScale, rgba(0.22f, 0.26f, 0.35f, 0.40f));
-            vb.drawText(r.title, rowX0 + 12.0f * uiScale, drawY + 19.0f * uiScale, 0.36f * uiScale, rgba(0.92f, 0.93f, 0.96f, 1.0f), 0);
+            vb.drawRoundRect(rowX0, drawY + 2.0f, rowX1, drawY + rowH - 2.0f, 10.0f * uiScale, rgba(0.11f, 0.12f, 0.15f, 0.75f));
+            vb.drawRoundRect(rowX0, drawY + 2.0f, rowX1, drawY + rowH - 2.0f, 10.0f * uiScale, rgba(0.80f, 0.85f, 0.92f, 0.08f));
+            vb.drawText(r.title, rowX0 + 12.0f * uiScale, drawY + 19.0f * uiScale, 0.34f * uiScale, rgba(0.94f, 0.95f, 0.97f, 1.0f), 0);
             if (r.subtitle && r.subtitle[0]) {
-                vb.drawText(r.subtitle, rowX0 + 12.0f * uiScale, drawY + 33.0f * uiScale, 0.25f * uiScale, rgba(0.68f, 0.72f, 0.80f, 0.85f), 0);
+                vb.drawText(r.subtitle, rowX0 + 12.0f * uiScale, drawY + 32.0f * uiScale, 0.23f * uiScale, rgba(0.60f, 0.64f, 0.70f, 0.80f), 0);
             }
 
             bool swOn = false;

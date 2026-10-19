@@ -216,6 +216,11 @@ void port_perf_gpu_wait(int64_t ns);   // GPU time after submission (simulation)
 void port_perf_update(int64_t ns);   // taking a frame and preparing it
 void port_perf_present(int64_t ns);  // swapchain acquire/submit/present
 void port_perf_pace(int64_t ns);     // time the frame-rate pacer slept on purpose
+void port_perf_shader_compile(int64_t ns);  // runtime shader compile duration
+void port_perf_pipeline_create(int64_t ns); // runtime graphics pipeline creation duration
+void port_perf_queue_wait(int64_t ns);     // fence/queue submission wait duration
+void port_perf_scene_transition(const char* scene); // scene change tracker
+void port_perf_menu_event(int opened);     // menu opened/closed tracker
 
 #ifdef __cplusplus
 }

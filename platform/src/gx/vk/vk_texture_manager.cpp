@@ -78,6 +78,7 @@ void VkRenderer::uploadTextures(VkCommandBuffer cmd, const std::vector<std::shar
         VkTexture vt;
         VkBuffer stagingBuf;
         VkDeviceMemory stagingMem;
+        VkDeviceSize stagingSize;
     };
     std::vector<UploadItem> pending;
 
@@ -202,10 +203,11 @@ void VkRenderer::uploadTextures(VkCommandBuffer cmd, const std::vector<std::shar
 
         VkBuffer stagingBuf = VK_NULL_HANDLE;
         VkDeviceMemory stagingMem = VK_NULL_HANDLE;
-        if (!createBuffer(totalBytes, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+        const VkDeviceSize uploadBytes = requiredBytes;
+        if (!createBuffer(uploadBytes, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                           VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                           stagingBuf, stagingMem)) {
-            LOGE("uploadTextures: createBuffer failed for staging buffer (%zu bytes)", totalBytes);
+            LOGE("uploadTextures: createBuffer failed for staging buffer (%llu bytes)", (unsigned long long)uploadBytes);
             vkDestroyImageView(mDevice, vt.view, nullptr);
             vkFreeMemory(mDevice, vt.memory, nullptr);
             vkDestroyImage(mDevice, vt.image, nullptr);
@@ -214,9 +216,9 @@ void VkRenderer::uploadTextures(VkCommandBuffer cmd, const std::vector<std::shar
         }
 
         void* mapped = nullptr;
-        VkResult mapRes = vkMapMemory(mDevice, stagingMem, 0, totalBytes, 0, &mapped);
+        VkResult mapRes = vkMapMemory(mDevice, stagingMem, 0, uploadBytes, 0, &mapped);
         if (mapRes != VK_SUCCESS || !mapped) {
-            LOGE("uploadTextures: vkMapMemory failed (%d) for staging buffer (%zu bytes)", (int)mapRes, totalBytes);
+            LOGE("uploadTextures: vkMapMemory failed (%d) for staging buffer (%llu bytes)", (int)mapRes, (unsigned long long)uploadBytes);
             vkDestroyBuffer(mDevice, stagingBuf, nullptr);
             vkFreeMemory(mDevice, stagingMem, nullptr);
             vkDestroyImageView(mDevice, vt.view, nullptr);
@@ -226,9 +228,9 @@ void VkRenderer::uploadTextures(VkCommandBuffer cmd, const std::vector<std::shar
             continue;
         }
 
-        memcpy(mapped, img->rgba.data(), totalBytes);
+        memcpy(mapped, img->rgba.data(), uploadBytes);
         vkUnmapMemory(mDevice, stagingMem);
-        pending.push_back({img, vt, stagingBuf, stagingMem});
+        pending.push_back({img, vt, stagingBuf, stagingMem, uploadBytes});
     }
 
     if (pending.empty()) return;
@@ -253,15 +255,27 @@ void VkRenderer::uploadTextures(VkCommandBuffer cmd, const std::vector<std::shar
         std::vector<VkBufferImageCopy> regions(item.vt.levels);
         VkDeviceSize offset = 0;
         uint32_t w = item.vt.width, h = item.vt.height;
+        bool regionSafe = true;
         for (uint32_t l = 0; l < item.vt.levels; l++) {
+            VkDeviceSize levelBytes = (VkDeviceSize)w * h * 4;
+            if (offset + levelBytes > item.stagingSize) {
+                LOGE("uploadTextures: copy region bounds overflow level %u: offset %llu + bytes %llu > total %llu",
+                     l, (unsigned long long)offset, (unsigned long long)levelBytes, (unsigned long long)item.stagingSize);
+                regionSafe = false;
+                break;
+            }
             regions[l].bufferOffset = offset;
             regions[l].imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
             regions[l].imageSubresource.mipLevel = l;
             regions[l].imageSubresource.layerCount = 1;
             regions[l].imageExtent = {w, h, 1};
-            offset += (VkDeviceSize)w * h * 4;
+            offset += levelBytes;
             w = w > 1 ? w / 2 : 1;
             h = h > 1 ? h / 2 : 1;
+        }
+        if (!regionSafe) {
+            sUploadFailed++;
+            continue;
         }
 
         vkCmdCopyBufferToImage(cmd, item.stagingBuf, item.vt.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,

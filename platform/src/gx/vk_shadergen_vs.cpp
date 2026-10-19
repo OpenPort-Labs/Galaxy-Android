@@ -85,7 +85,7 @@ std::string genVulkanVertexShader(const ShaderUid& u) {
     o.w("    }\n");
     if (u.cutaway) o.w("    v_eye = vec3(0.0, 0.0, 1.0e6);\n");
     o.w("  }\n");
-    o.w("  gl_Position = vec4(clipPos.x, -clipPos.y, clipPos.z * 0.5 + clipPos.w * 0.5, clipPos.w);\n");
+    o.w("  gl_Position = vec4(clipPos.x, -clipPos.y, clamp(clipPos.z * 0.5 + clipPos.w * 0.5, 0.0, clipPos.w), clipPos.w);\n");
     o.w("  v_viewz = pos.z;\n");
 
     o.w("  vec4 vclr0 = %s;\n", (f & VF_CLR0) ? "a_clr0" : "vec4(1.0)");

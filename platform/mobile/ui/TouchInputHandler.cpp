@@ -146,21 +146,27 @@ bool TouchInputHandler::handleTouch(const AInputEvent* event, PortPadState& pad,
     float stickBaseR = 95.0f * scale;
     float stickMaxR = 100.0f * scale;
 
-    if (action == AMOTION_EVENT_ACTION_UP || action == AMOTION_EVENT_ACTION_CANCEL) {
-        reset();
-        pad.stickX = pad.stickY = 0.0f;
-        pad.buttons &= ~0x3C1F;
+    if (action == AMOTION_EVENT_ACTION_DOWN) {
+        mTouchPointerId = AMotionEvent_getPointerId(event, 0);
+        mTouchStartX = AMotionEvent_getX(event, 0);
+        mTouchStartY = AMotionEvent_getY(event, 0);
+        mTouchStartTime = currentTimeMs();
+    }
 
+    if (action == AMOTION_EVENT_ACTION_UP || action == AMOTION_EVENT_ACTION_CANCEL) {
         if (mTouchPointerId >= 0) {
             int64_t dur = currentTimeMs() - mTouchStartTime;
             float px = AMotionEvent_getX(event, pointerIndex);
             float py = AMotionEvent_getY(event, pointerIndex);
             float fdx = px - mTouchStartX, fdy = py - mTouchStartY;
-            if (port_is_title_screen() && dur < 350 && (fdx * fdx + fdy * fdy <= 45.0f * uiScale * 45.0f * uiScale)) {
+            if (dur < 350 && (fdx * fdx + fdy * fdy <= 45.0f * uiScale * 45.0f * uiScale)) {
                 mTapPendingFrames = 6;
             }
             mTouchPointerId = -1;
         }
+        reset();
+        pad.stickX = pad.stickY = 0.0f;
+        pad.buttons &= ~0x3C1F;
         return true;
     }
 
@@ -285,9 +291,13 @@ bool TouchInputHandler::handleTouch(const AInputEvent* event, PortPadState& pad,
                          dpadX, dpadY, dpadTotalR, vpX, vpY, vpW, vpH, touchButtons);
 
 
-    if (mTapPendingFrames > 0 && port_is_title_screen()) {
-        touchButtons |= 0x0C00;
-        mBtnBPressed = mBtnAPressed = true;
+    if (mTapPendingFrames > 0) {
+        touchButtons |= 0x0800; // Button A
+        mBtnAPressed = true;
+        if (port_is_title_screen()) {
+            touchButtons |= 0x0400; // Button B
+            mBtnBPressed = true;
+        }
     }
 
     pad.buttons = (pad.buttons & ~0x3C1F) | touchButtons;

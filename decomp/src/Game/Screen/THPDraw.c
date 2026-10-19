@@ -104,6 +104,7 @@ void THPGXSetTexObjFilter(GXTexFilter filter) {
 }
 
 void THPGXYuv2RgbDraw(u8* y_data, u8* u_data, u8* v_data, s16 x, s16 y, s16 textureWidth, s16 textureHeight, s16 polygonWidth, s16 polygonHeight) {
+    if (!y_data || !u_data || !v_data || textureWidth <= 0 || textureHeight <= 0) return;
     GXTexObj tobj0, tobj1, tobj2;
     GXTexFilter filter = THPGXGetTexObjFilter();
     GXInitTexObj(&tobj0, y_data, textureWidth, textureHeight, GX_TF_I8, GX_CLAMP, GX_CLAMP, GX_FALSE);

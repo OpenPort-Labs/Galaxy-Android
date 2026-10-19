@@ -14,6 +14,8 @@
 #include "Game/System/SaveDataHandleSequence.hpp"
 #include "Game/System/StorySequenceExecutor.hpp"
 #include "Game/System/UserFile.hpp"
+#include "Game/Util/EventUtil.hpp"
+#include "Game/Util/SceneUtil.hpp"
 #include "Game/Util/SingletonHolder.hpp"
 #include "Game/Util/StringUtil.hpp"
 
@@ -310,6 +312,13 @@ namespace GameSequenceFunction {
         GameSequenceProgress* progress = ::getGameSequenceProgress();
         if (progress != nullptr && progress->getGalaxyCometScheduler() != nullptr) {
             progress->getGalaxyCometScheduler()->updateStateToGameData();
+        }
+
+        if (!MR::isStageAstroLocation()) {
+            s32 stageBits = MR::getStarPieceNum();
+            if (stageBits > 0) {
+                GameDataFunction::addStockedStarPiece(stageBits);
+            }
         }
 
         seq->startQuickSaveAnywhere();

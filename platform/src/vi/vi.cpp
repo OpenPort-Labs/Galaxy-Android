@@ -86,14 +86,19 @@ static void viClock() {
         }
         next += period;
         now = port_host_time_ns();
-        if (now > next + period * 4) {
-            next = now + period;  // resync after a long stall instead of bursting
+        if (now > next + period * 2) {
+            next = now + period;  // resync after a stall instead of bursting
         }
         if (sPaused.load()) {
             continue;  // no retrace: the game stays in VIWaitForRetrace
         }
-        if (now - sExternalAt.load() < period * 4) {
-            continue;  // the display times the retraces
+        // If the display/presenter recently raised a retrace within this cadence window,
+        // let the display drive retrace pacing. But if the display has not fired for
+        // more than 85% of a period, the fallback clock MUST fire so the game thread
+        // is never starved in VIWaitForRetrace (eliminating the ~12 FPS lockup).
+        int64_t lastRaised = sRaisedAt.load();
+        if (now - lastRaised < (int64_t)(period * 0.85)) {
+            continue;
         }
         raiseRetrace();
     }

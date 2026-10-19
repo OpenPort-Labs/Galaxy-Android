@@ -12,7 +12,7 @@ void FramePacer::sync(android_app* app, int targetFps, float gameSpeed) {
     if (targetFps > 144) targetFps = 144;
 
     int effectiveFps = targetFps;
-    if (gameSpeed > 1.05f) {
+    if (gameSpeed > 0.1f && (gameSpeed > 1.05f || gameSpeed < 0.95f)) {
         effectiveFps = (int)((float)targetFps * gameSpeed);
     }
     int64_t framePeriodNs = 1000000000ll / (effectiveFps > 0 ? effectiveFps : 60);
@@ -69,7 +69,7 @@ void FramePacer::sync(android_app* app, int targetFps, float gameSpeed) {
 
 bool FramePacer::shouldPresentSlot(int targetFps, float gameSpeed, int64_t nowNs) const {
     if (targetFps <= 60) return false;
-    int effectiveFps = (gameSpeed > 1.05f) ? (int)((float)targetFps * gameSpeed) : targetFps;
+    int effectiveFps = (gameSpeed > 0.1f && (gameSpeed > 1.05f || gameSpeed < 0.95f)) ? (int)((float)targetFps * gameSpeed) : targetFps;
     int64_t framePeriodNs = 1000000000ll / (effectiveFps > 0 ? effectiveFps : 60);
     return (nowNs - mLastPresentNs >= framePeriodNs);
 }

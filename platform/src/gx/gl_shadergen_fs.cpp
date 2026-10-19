@@ -180,7 +180,7 @@ std::string genFragmentShader(const ShaderUid& u) {
         }
     }
 
-    o.w("  ivec4 outi = ivec4(clamp(%s.rgb, ivec3(0), ivec3(255)), int(uint(%s.a) & 255u));\n", kDest[lastColorDest], kDest[lastAlphaDest]);
+    o.w("  ivec4 outi = clamp(ivec4(%s.rgb, %s.a), ivec4(0), ivec4(255));\n", kDest[lastColorDest], kDest[lastAlphaDest]);
     o.w("  vec4 outc = vec4(outi) / 255.0;\n");
     // Alpha test.
     {

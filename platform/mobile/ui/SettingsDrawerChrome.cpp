@@ -11,7 +11,7 @@ void SettingsMenuHandler::drawDrawerChrome(
     vb.drawRoundRect(drawerX - 60.0f, 0.0f, drawerX + drawerW, contentTop, 0.0f, rgba(0.07f, 0.08f, 0.11f, 1.0f));
     vb.drawCogwheel(drawerX + padX + 14.0f * uiScale, 28.0f * uiScale, 14.0f * uiScale, rgba(0.20f, 0.85f, 1.0f, 1.0f), cogRot);
     vb.drawText("SUPER MARIO GALAXY", drawerX + padX + 36.0f * uiScale, 26.0f * uiScale, 0.40f * uiScale, rgba(0.95f, 0.96f, 0.98f, 1.0f), 0);
-    vb.drawText("v0.0.4-beta TESTER BUILD • PLUS", drawerX + padX + 36.0f * uiScale, 38.0f * uiScale, 0.23f * uiScale, rgba(0.20f, 0.85f, 1.0f, 0.90f), 0);
+    vb.drawText("v0.0.4-gamma TESTER BUILD • PLUS", drawerX + padX + 36.0f * uiScale, 38.0f * uiScale, 0.23f * uiScale, rgba(0.20f, 0.85f, 1.0f, 0.90f), 0);
 
     // Active Backend tag pill
     const char* backendTag = (activeBackend == 1) ? "VULKAN 1.0" : "GLES 3.2";

@@ -1,3 +1,49 @@
+# GalaxyAndroid v0.0.4-gamma — Community Beta Tester Build
+
+Beta tester release delivering the verified Vulkan shader inventory and graphics pipeline prewarming architecture, canonical `PipelineKey` unification, multi-stage startup compilation, durability and corruption recovery, and texture staging safety.
+
+> [!IMPORTANT]
+> **Mandatory Requirement for Testers: Discord Membership**:
+> For all testers, it is necessary and mandatory to join our official Discord server to report issues, submit logs, discuss test builds, and receive real-time support:
+> - **Official Tester Discord**: [https://discord.gg/H3qdNWYu2](https://discord.gg/H3qdNWYu2)
+> 
+> *Notice: Bug reports and support requests must go through Discord or GitHub Issues. Do not send bug reports via email; emails are not monitored for technical support.*
+
+---
+
+### Highlights & Engineering Improvements in v0.0.4-gamma
+
+#### 1. Canonical Vulkan Pipeline-Key Construction & Unification
+- **Zero Runtime Key Drift**: Eliminated divergent, ad-hoc bit shifting by introducing `DecodedPipelineKey`, `encodePipelineKey()`, and `decodePipelineKey()`.
+- **Unified Pipeline Creation**: Runtime `getPipeline()` and offline `prewarmExactPipeline()` now decode from the identical `PipelineKey` representation, ensuring prewarmed pipelines match runtime lookups bit-for-bit with 0 duplicate allocations.
+- **Topology & Culling Bit Disambiguation**: Resolved bit conflicts where topology indices previously overlapped with culling face bitmasks.
+
+#### 2. Pipeline Prewarm Correctness & False-Success Elimination
+- **Explicit Prewarm Result Accounting**: Introduced `PrewarmResult` (`Reused`, `Created`, `SpirvUnavailable`, `CompilationPending`, `PlaceholderReturned`, `CreationFailed`, `UnsupportedState`).
+- **Placeholder Fallback Rejection**: Placeholder stubs returned during in-flight shader compilation are strictly prohibited from counting as successfully created game pipelines.
+- **Measurable Startup Readiness**: `verifyStartupReadiness()` audits essential pipeline stubs and title screen variants, ensuring all required graphics pipelines are published on the Vulkan device before allowing gameplay to boot.
+
+#### 3. Two-Stage Compilation & Loading Pipeline
+- **Stage A (Parallel SPIR-V Compilation)**: Compiles missing bytecode in parallel using bounded worker concurrency (up to 4 hardware threads) during `initCaches()`.
+- **Stage B (Vulkan Graphics Pipeline Prewarm)**: Warms the active Vulkan device and render pass before gameplay commences.
+- **Phase Timing & Diagnostics**: Accurately records Stage A and Stage B elapsed milliseconds, reporting cache hits, fresh compiles, and pipeline reuse.
+
+#### 4. Offline Material Discovery & Manifest Cooker
+- **Asset Material Cooker**: Introduced `tools/cook/generate_shader_manifest.py` to parse J3D `MAT3` chunks from models (`.bmd`, `.bdl`) and archives into versioned `galaxy_shader_manifest.bin`.
+- **Explicit Gap Diagnostics**: When running without cooked manifests, `scanAssetDirectory()` records unparsed archives as explicit gaps rather than claiming false full-game coverage.
+
+#### 5. Durable Binary Cache Serialization & Stale Invalidation
+- **Field-by-Field Encoding**: Replaced fragile in-memory C++ struct dumping with stable binary serialization (Magic: `0x55535450`, Schema: `2`, Build: `20261019`).
+- **Data Integrity & Corruption Recovery**: Added FNV1a-32 checksums, strict 512-byte string bounds checks (resolving reader desynchronization on corrupt records), and atomic `.tmp` replacement.
+- **Active Invalidation**: Active `invalidateIfStale()` purging stale binary caches whenever shader generator versions change.
+
+#### 6. Texture Upload Bounds & Mip-Chain Safety
+- **Extent & Memory Fit Validation**: Strict bounds checks ensuring all `VkBufferImageCopy` offsets and extents fit inside allocated staging buffers.
+- **Failure Cleanup**: Immediate destruction of partially allocated Vulkan handles upon creation/mapping failure.
+- **Deferred Destruction**: Staging buffers are held until `waitInFlightSubmissions()` confirms GPU fence completion.
+
+---
+
 # GalaxyAndroid v0.0.4-alpha — Community Tester Build
 
 Alpha test release introducing the modular sub-300 LOC Vulkan translation architecture, THP cutscene video crash guards, full touch control optimizations, and community tester feedback channels.

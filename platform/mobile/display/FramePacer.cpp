@@ -27,9 +27,8 @@ void FramePacer::sync(android_app* app, int targetFps, float gameSpeed) {
     if (nowNs < targetNs) {
         int64_t waitNs = targetNs - nowNs;
         int64_t sleepRecordedNs = 0;
-        // Sleep for coarse wait time leaving ~1ms kernel slack
         if (waitNs > 1500000ll) {
-            int64_t coarseSleepNs = waitNs - 1000000ll;
+            int64_t coarseSleepNs = waitNs - 500000ll;
             struct timespec req;
             req.tv_sec = coarseSleepNs / 1000000000ll;
             req.tv_nsec = coarseSleepNs % 1000000000ll;
@@ -38,11 +37,21 @@ void FramePacer::sync(android_app* app, int targetFps, float gameSpeed) {
             sleepRecordedNs = port_host_time_ns() - sleepStartNs;
         }
 
-        // Bounded yield loop for remaining slack (capped to avoid spin lock)
-        int yieldCount = 0;
-        while (port_host_time_ns() < targetNs && yieldCount < 16) {
-            sched_yield();
-            yieldCount++;
+        while (true) {
+            int64_t rem = targetNs - port_host_time_ns();
+            if (rem <= 0) break;
+            if (rem > 250000ll) {
+                struct timespec req;
+                req.tv_sec = 0;
+                req.tv_nsec = rem - 100000ll;
+                nanosleep(&req, nullptr);
+            } else if (rem > 50000ll) {
+                sched_yield();
+            } else {
+#if defined(__aarch64__) || defined(__arm__)
+                asm volatile("yield" ::: "memory");
+#endif
+            }
         }
 
         if (sleepRecordedNs > 0) {

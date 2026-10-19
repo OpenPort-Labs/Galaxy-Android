@@ -97,6 +97,9 @@ bool VkRenderer::init(ANativeWindow* window) {
         vkGetImageMemoryRequirements(mDevice, mDummyTexture.image, &memReqs);
         uint32_t memType = findMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
         if (memType == ~0u) {
+            memType = findMemoryType(memReqs.memoryTypeBits, 0);
+        }
+        if (memType == ~0u) {
             LOGE("Failed to find memory type for dummy texture");
             shutdown();
             return false;

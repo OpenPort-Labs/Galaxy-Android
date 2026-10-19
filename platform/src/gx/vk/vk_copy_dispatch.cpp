@@ -93,7 +93,7 @@ void VkRenderer::executeCopyItem(VkCommandBuffer cmd, const Item& it, const Prep
             dh = (dh + 1) / 2;
         }
         if (dw < 1) dw = 1;
-        if (dh < 1) dw = 1;
+        if (dh < 1) dh = 1;
         uint64_t key = copyKey(0, (cp[3] & 0xFFFFFF) << 5);
         VkCopyTex& dst = getCopyTex(key, dw, dh);
         if (dst.image != VK_NULL_HANDLE && dw > 0 && dh > 0) {

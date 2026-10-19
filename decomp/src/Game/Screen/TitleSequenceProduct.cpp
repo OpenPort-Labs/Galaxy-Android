@@ -79,7 +79,7 @@ void TitleSequenceProduct::exeBgmPrepare() {
         MR::startStageBGM("STM_TITLE", true);
     }
 
-    if (MR::isPreparedStageBgm()) {
+    if (MR::isPreparedStageBgm() || MR::isStep(this, 30)) {
         setNerve(GET_NERVE_ANON(TitleSequenceProductLogoFadein));
     }
 }
@@ -91,7 +91,7 @@ void TitleSequenceProduct::exeLogoFadein() {
         MR::unlockStageBGM();
     }
 
-    if (MR::isAnimStopped(mLogoLayout, 0)) {
+    if (MR::isAnimStopped(mLogoLayout, 0) || MR::isStep(this, 180)) {
         setNerve(GET_NERVE_ANON(TitleSequenceProductLogoWait));
     }
 }
@@ -126,7 +126,8 @@ void TitleSequenceProduct::exeLogoDisplay() {
     mAButtonChecker->update(MR::testCorePadButtonA(WPAD_CHAN0));
     mBButtonChecker->update(MR::testCorePadButtonB(WPAD_CHAN0));
 
-    if (mAButtonChecker->getLevel() && mBButtonChecker->getLevel()) {
+    if ((mAButtonChecker->getLevel() && mBButtonChecker->getLevel()) ||
+        mAButtonChecker->getOnTrigger()) {
         MR::stopStageBGM(75);
         MR::startSystemSE("SE_SY_GAME_START");
         MR::startCSSound("CS_CLICK_CLOSE", nullptr, 0);

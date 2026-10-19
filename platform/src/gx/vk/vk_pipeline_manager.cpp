@@ -66,7 +66,7 @@ PipelineKey pipelineKeyFor(const Item& it, const ShaderUid& uid) {
                      ((uint32_t)blend.srcAlpha << 11) | ((uint32_t)blend.dstAlpha << 16);
     key.blendState2 = (uint32_t)blend.colorOp | ((uint32_t)blend.alphaOp << 2) | ((it.colorMask & 15) << 4) |
                       (blend.constantAlpha << 8);
-    key.rasterState = (it.cull ? 1 : 0) | ((it.cullFace & 3) << 1) | ((it.prim & 7) << 4);
+    key.rasterState = (it.cull ? 1 : 0) | ((it.cullFace & 0xF) << 1) | ((it.prim & 7) << 5);
     return key;
 }
 
@@ -176,8 +176,15 @@ VkPipeline VkRenderer::createPipeline(const Item& it, const PipelineKey& key, co
     VkPipelineRasterizationStateCreateInfo rsci{};
     rsci.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
     rsci.depthClampEnable = VK_FALSE;
-    rsci.polygonMode = VK_POLYGON_MODE_FILL;
-    rsci.cullMode = it.cull ? ((it.cullFace == 0x0404) ? VK_CULL_MODE_FRONT_BIT : VK_CULL_MODE_BACK_BIT) : VK_CULL_MODE_NONE;
+    if (!it.cull) {
+        rsci.cullMode = VK_CULL_MODE_NONE;
+    } else if (it.cullFace == 0x0408) {
+        rsci.cullMode = VK_CULL_MODE_FRONT_AND_BACK;
+    } else if (it.cullFace == 0x0404) {
+        rsci.cullMode = VK_CULL_MODE_FRONT_BIT;
+    } else {
+        rsci.cullMode = VK_CULL_MODE_BACK_BIT;
+    }
     rsci.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     rsci.lineWidth = 1.0f;
 

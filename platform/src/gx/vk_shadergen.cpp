@@ -214,7 +214,7 @@ void prewarmCommonShaders() {
     {
         std::lock_guard<std::mutex> lock(sSpirvCacheLock);
         if (!sSpirvCacheLoaded) loadSpirvCacheLocked();
-        if (sSpirvCache.size() >= 30) {
+        if (sSpirvCache.size() >= 8) {
             port_log("vk_shadergen: prewarmCommonShaders skipped (%zu cached shaders already present)", sSpirvCache.size());
             return;
         }
@@ -225,9 +225,9 @@ void prewarmCommonShaders() {
 
     uids.push_back(ShaderUid{});
 
-    for (uint32_t chans = 0; chans <= 2; chans++) {
-        for (uint32_t texGens = 0; texGens <= 2; texGens++) {
-            for (uint32_t tevStages = 1; tevStages <= 3; tevStages++) {
+    for (uint32_t chans = 0; chans <= 1; chans++) {
+        for (uint32_t texGens = 0; texGens <= 1; texGens++) {
+            for (uint32_t tevStages = 1; tevStages <= 1; tevStages++) {
                 for (uint32_t hud = 0; hud <= 1; hud++) {
                     ShaderUid u{};
                     u.numChans = chans;

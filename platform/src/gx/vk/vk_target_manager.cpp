@@ -41,6 +41,9 @@ VkTarget VkRenderer::createTarget(int w, int h) {
 
     uint32_t colorMemType = findMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
     if (colorMemType == ~0u) {
+        colorMemType = findMemoryType(memReqs.memoryTypeBits, 0);
+    }
+    if (colorMemType == ~0u) {
         LOGE("Failed to find suitable device memory type for target color image");
         destroyTarget(t);
         return {};
@@ -81,6 +84,9 @@ VkTarget VkRenderer::createTarget(int w, int h) {
 
     vkGetImageMemoryRequirements(mDevice, t.depthImage, &memReqs);
     uint32_t depthMemType = findMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    if (depthMemType == ~0u) {
+        depthMemType = findMemoryType(memReqs.memoryTypeBits, 0);
+    }
     if (depthMemType == ~0u) {
         LOGE("Failed to find suitable device memory type for target depth image");
         destroyTarget(t);
@@ -226,6 +232,9 @@ VkCopyTex& VkRenderer::getCopyTex(uint64_t key, int w, int h) {
             VkMemoryRequirements mr;
             vkGetImageMemoryRequirements(mDevice, c.image, &mr);
             uint32_t memType = findMemoryType(mr.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+            if (memType == ~0u) {
+                memType = findMemoryType(mr.memoryTypeBits, 0);
+            }
             if (memType != ~0u) {
                 VkMemoryAllocateInfo ai{};
                 ai.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;

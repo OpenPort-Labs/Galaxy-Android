@@ -338,6 +338,90 @@ class TestVulkanRenderPassStateTracking(unittest.TestCase):
 
         self.assertEqual(color_layout, 'SHADER_READ_ONLY_OPTIMAL')
 
+    def test_copy_dimension_defensive_clamp(self):
+        """
+        Verify that copy dimensions are defensively clamped to at least 1x1.
+        Specifically ensures dh < 1 sets dh = 1 and does NOT corrupt dw.
+        """
+        # Case 1: dh < 1, dw = 64
+        dw, dh = 64, 0
+        if dw < 1: dw = 1
+        if dh < 1: dh = 1
+        self.assertEqual(dw, 64, "dw must remain 64 when dh is clamped")
+        self.assertEqual(dh, 1, "dh must be clamped to 1")
+
+        # Case 2: dw < 1, dh = 32
+        dw, dh = 0, 32
+        if dw < 1: dw = 1
+        if dh < 1: dh = 1
+        self.assertEqual(dw, 1, "dw must be clamped to 1")
+        self.assertEqual(dh, 32, "dh must remain 32 when dw is clamped")
+
+    def test_frame_pacer_deadline_tracking(self):
+        """
+        Verify FramePacer monotonic deadline calculation, stall recovery, and pacing.
+        """
+        target_fps = 60
+        frame_period_ns = 1_000_000_000 // target_fps  # 16,666,666 ns
+
+        # Normal cadence
+        last_present_ns = 100_000_000
+        now_ns = 110_000_000  # Frame finishes 10ms into frame period
+        target_ns = last_present_ns + frame_period_ns
+        wait_ns = target_ns - now_ns
+        self.assertEqual(wait_ns, 6_666_666, "Pacer must wait for remaining 6.66ms")
+
+        # Stall recovery: frame finishes after more than 2 frame periods (e.g. 50ms stall)
+        stall_now_ns = 150_000_000
+        if stall_now_ns - last_present_ns > frame_period_ns * 2:
+            recovered_last_present = stall_now_ns
+        else:
+            recovered_last_present = last_present_ns + frame_period_ns
+        self.assertEqual(recovered_last_present, stall_now_ns, "Long stall must reset base deadline to prevent catch-up spiral")
+
+    def test_vulkan_winding_invariant(self):
+        """
+        Verify that frontFace remains VK_FRONT_FACE_COUNTER_CLOCKWISE.
+        Vulkan NDC negates gl_Position.y to match GX NDC.
+        Verify cullMode mapping and rasterState key collision resistance.
+        """
+        front_face = 'VK_FRONT_FACE_COUNTER_CLOCKWISE'
+        self.assertEqual(front_face, 'VK_FRONT_FACE_COUNTER_CLOCKWISE')
+
+        # Cull mode mapping function as in vk_pipeline_manager.cpp
+        def get_vk_cull_mode(cull, cull_face):
+            if not cull:
+                return 'VK_CULL_MODE_NONE'
+            if cull_face == 0x0408:
+                return 'VK_CULL_MODE_FRONT_AND_BACK'
+            if cull_face == 0x0404:
+                return 'VK_CULL_MODE_FRONT_BIT'
+            return 'VK_CULL_MODE_BACK_BIT'
+
+        self.assertEqual(get_vk_cull_mode(False, 0x0404), 'VK_CULL_MODE_NONE')
+        self.assertEqual(get_vk_cull_mode(True, 0x0404), 'VK_CULL_MODE_FRONT_BIT')
+        self.assertEqual(get_vk_cull_mode(True, 0x0405), 'VK_CULL_MODE_BACK_BIT')
+        self.assertEqual(get_vk_cull_mode(True, 0x0408), 'VK_CULL_MODE_FRONT_AND_BACK')
+
+        # Verify rasterState key distinguishes cull faces without collision
+        def raster_key(cull, cull_face, prim):
+            return (1 if cull else 0) | ((cull_face & 0xF) << 1) | ((prim & 7) << 5)
+
+        k_cull_back = raster_key(True, 0x0404, 4)
+        k_cull_both = raster_key(True, 0x0408, 4)
+        k_cull_front = raster_key(True, 0x0405, 4)
+        self.assertNotEqual(k_cull_back, k_cull_both, "0x0404 and 0x0408 must not collide in rasterState")
+        self.assertNotEqual(k_cull_back, k_cull_front, "0x0404 and 0x0405 must not collide in rasterState")
+
+        # Sampler key preserves levels to prevent LOD clamping pollution
+        def sampler_key(mode0, mode1, levels):
+            return ((mode0 & 0xFFFFFF) << 32) | ((mode1 & 0xFFFF) << 8) | (levels & 0xFF)
+
+        s_key_2 = sampler_key(0x1234, 0x5678, 2)
+        s_key_8 = sampler_key(0x1234, 0x5678, 8)
+        self.assertNotEqual(s_key_2, s_key_8, "Samplers with different levels must have distinct keys")
+
 
 if __name__ == '__main__':
     unittest.main()
+

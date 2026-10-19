@@ -3,7 +3,7 @@
 namespace gpu {
 
 VkSampler VkRenderer::getSampler(uint32_t mode0, uint32_t mode1, uint32_t levels) {
-    uint64_t key = ((uint64_t)(mode0 & 0xFFFFFF) << 32) | ((mode1 & 0xFFFF) << 8) | (levels > 1 ? 1 : 0);
+    uint64_t key = ((uint64_t)(mode0 & 0xFFFFFF) << 32) | ((uint64_t)(mode1 & 0xFFFF) << 8) | (levels & 0xFF);
     auto it = mSamplers.find(key);
     if (it != mSamplers.end()) return it->second;
 
@@ -107,7 +107,10 @@ void VkRenderer::uploadTextures(VkCommandBuffer cmd, const std::vector<std::shar
         ici.samples = VK_SAMPLE_COUNT_1_BIT;
         ici.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
-        if (vkCreateImage(mDevice, &ici, nullptr, &vt.image) != VK_SUCCESS) continue;
+        if (vkCreateImage(mDevice, &ici, nullptr, &vt.image) != VK_SUCCESS) {
+            LOGE("uploadTextures: vkCreateImage failed %ux%u", vt.width, vt.height);
+            continue;
+        }
 
         VkMemoryRequirements memReqs;
         vkGetImageMemoryRequirements(mDevice, vt.image, &memReqs);
@@ -116,11 +119,16 @@ void VkRenderer::uploadTextures(VkCommandBuffer cmd, const std::vector<std::shar
         mai.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
         mai.allocationSize = memReqs.size;
         mai.memoryTypeIndex = findMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+        if (mai.memoryTypeIndex == ~0u) {
+            mai.memoryTypeIndex = findMemoryType(memReqs.memoryTypeBits, 0);
+        }
         if (mai.memoryTypeIndex == ~0u || vkAllocateMemory(mDevice, &mai, nullptr, &vt.memory) != VK_SUCCESS) {
+            LOGE("uploadTextures: vkAllocateMemory failed (memType=%u, size=%llu)", mai.memoryTypeIndex, (unsigned long long)memReqs.size);
             vkDestroyImage(mDevice, vt.image, nullptr);
             continue;
         }
         if (vkBindImageMemory(mDevice, vt.image, vt.memory, 0) != VK_SUCCESS) {
+            LOGE("uploadTextures: vkBindImageMemory failed");
             vkFreeMemory(mDevice, vt.memory, nullptr);
             vkDestroyImage(mDevice, vt.image, nullptr);
             continue;
@@ -135,6 +143,7 @@ void VkRenderer::uploadTextures(VkCommandBuffer cmd, const std::vector<std::shar
         ivci.subresourceRange.levelCount = vt.levels;
         ivci.subresourceRange.layerCount = 1;
         if (vkCreateImageView(mDevice, &ivci, nullptr, &vt.view) != VK_SUCCESS) {
+            LOGE("uploadTextures: vkCreateImageView failed");
             vkFreeMemory(mDevice, vt.memory, nullptr);
             vkDestroyImage(mDevice, vt.image, nullptr);
             continue;

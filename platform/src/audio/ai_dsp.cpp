@@ -28,6 +28,8 @@ extern "C" void __attribute__((weak)) port_audio_submit(const s16* interleavedLE
     (void)frames;
     (void)rate;
 }
+extern "C" int64_t __attribute__((weak)) port_audio_queued_ns(void) { return -1; }
+extern "C" int __attribute__((weak)) port_audio_underruns(void) { return 0; }
 
 static inline const u8* memPtr(u32 addr) {
     if (addr >= 0x80000000u) {
@@ -43,35 +45,79 @@ static void aiIrq() {
     }
 }
 
-// Blocks of 160 frames (5 ms at 32 kHz, 10 sub-frames).
-static const u32 kAiBlockFrames = 160;
+static void aiClock() {
+#if TARGET_MOBILE
+    const int64_t kTarget = 48000000;  // 48 ms queue headroom on mobile
+    const int64_t kLow = 16000000;
+#else
+    const int64_t kTarget = 32000000;
+    const int64_t kLow = 8000000;
+#endif
+    int64_t next = port_host_time_ns();
+    u32 answered = sDmaLatched.load(std::memory_order_relaxed);
+    u32 blocks = 0, late = 0;
+    int64_t reportAt = next + 10000000000ll, minQueued = INT64_MAX, maxQueued = -1;
+    static const bool logAlways = getenv("PETARI_AUDIOLOG") != nullptr;
 
-static void aiClockThread() {
-    struct timespec next;
-    clock_gettime(CLOCK_MONOTONIC, &next);
     for (;;) {
+        if (!sDmaRunning.load(std::memory_order_relaxed) || port_is_paused()) {
+            port_host_sleep_ns(2000000);
+            next = port_host_time_ns();
+            continue;
+        }
         u32 rate = sSampleRate.load(std::memory_order_relaxed);
-        u64 periodNs = (u64)kAiBlockFrames * 1000000000ull / rate;
-        next.tv_nsec += (long)periodNs;
-        if (next.tv_nsec >= 1000000000l) {
-            next.tv_sec += next.tv_nsec / 1000000000l;
-            next.tv_nsec %= 1000000000l;
-        }
-        clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &next, nullptr);
-
-        if (!sDmaRunning.load(std::memory_order_relaxed)) {
-            continue;
-        }
-        u32 addr = sDmaAddr.load(std::memory_order_relaxed);
         u32 len = sDmaLen.load(std::memory_order_relaxed);
-        if (!addr || !len) {
+        u32 frames = len / 4;
+        int64_t dur = frames ? (int64_t)frames * 1000000000ll / (rate ? rate : 32000) : 5000000;
+        int64_t now = port_host_time_ns();
+        int64_t queued = port_audio_queued_ns();
+        if (queued >= 0) {
+            if (queued > kTarget) {
+                int64_t wait = queued - kTarget;
+                port_host_sleep_ns(wait < 4000000 ? wait : 4000000);
+                continue;
+            }
+        } else if (now < next) {
+            port_host_sleep_ns(next - now);
             continue;
         }
 
-        const s16* src = (const s16*)memPtr(addr);
-        port_audio_submit(src, kAiBlockFrames, rate);
-
+        if (sDmaLatched.load(std::memory_order_relaxed) == answered) {
+            bool slack = queued >= 0 ? queued > kLow : now < next + dur / 2;
+            if (slack) {
+                port_host_sleep_ns(500000);
+                continue;
+            }
+            late++;
+        }
+        answered = sDmaLatched.load(std::memory_order_relaxed);
+        u32 addr = sDmaAddr.load(std::memory_order_relaxed);
+        frames = sDmaLen.load(std::memory_order_relaxed) / 4;
+        if (addr && frames) {
+            port_audio_submit((const s16*)memPtr(addr), frames, rate);
+        }
         port_irq_raise(PORT_IRQ_AI);
+        blocks++;
+        if (queued < minQueued) minQueued = queued;
+        if (queued > maxQueued) maxQueued = queued;
+        next += dur;
+        if (now - next > 100000000) {
+            next = now;
+        }
+        if (now >= reportAt) {
+            static int lastUnderruns = 0;
+            int underruns = port_audio_underruns();
+            if (late || underruns != lastUnderruns || logAlways) {
+                port_log("audio: %u blocks, %u replayed (game late), %d device underruns, queued %.1f-%.1f ms",
+                         blocks, late, underruns - lastUnderruns,
+                         minQueued / 1e6, maxQueued / 1e6);
+            }
+            lastUnderruns = underruns;
+            late = blocks = 0;
+            minQueued = INT64_MAX;
+            maxQueued = -1;
+            reportAt = now + 10000000000ll;
+        }
     }
 }
 
@@ -83,7 +129,7 @@ void AIInit(u8* stack) {
     if (!sAiThreadStarted) {
         sAiThreadStarted = true;
         PortHostAllocScope scope;
-        std::thread(aiClockThread).detach();
+        std::thread(aiClock).detach();
     }
 }
 
@@ -96,7 +142,7 @@ void AIStartDMA(void) {
         sAiThreadStarted = true;
         port_irq_set_handler(PORT_IRQ_AI, aiIrq);
         PortHostAllocScope scope;
-        std::thread(aiClockThread).detach();
+        std::thread(aiClock).detach();
     }
 }
 

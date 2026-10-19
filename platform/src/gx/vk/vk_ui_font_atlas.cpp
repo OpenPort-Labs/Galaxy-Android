@@ -39,6 +39,9 @@ bool VkRenderer::uploadUiFontAtlas() {
     mai.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
     mai.allocationSize = memReqs.size;
     uint32_t fontMemType = findMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    if (fontMemType == ~0u) {
+        fontMemType = findMemoryType(memReqs.memoryTypeBits, 0);
+    }
     mai.memoryTypeIndex = fontMemType;
     if (fontMemType == ~0u) {
         LOGE("UI font atlas: no suitable device memory type");

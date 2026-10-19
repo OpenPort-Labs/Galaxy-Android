@@ -43,6 +43,8 @@ void VkRenderer::executeDrawPass(VkCommandBuffer cmd, const Frame& f, const Prep
     uint32_t lastTexMode0[8]{};
     uint32_t lastTexMode1[8]{};
     bool hasLastTex = false;
+    uint32_t diagDraws = 0, diagHud = 0, diagScSkip = 0, diagRealTex = 0, diagDummyTex = 0;
+    bool diagLog = (mFrameNumber % 300 == 0);
 
     for (const Item& it : items) {
         if (it.type == IT_MARKER) {
@@ -67,6 +69,8 @@ void VkRenderer::executeDrawPass(VkCommandBuffer cmd, const Frame& f, const Prep
         if (it.type != IT_DRAW || !it.idxCount) {
             continue;
         }
+        diagDraws++;
+        if (it.hudSafe) diagHud++;
 
         if (!inRenderPass) {
             VkRenderPassBeginInfo resumeRpInfo = rpInfo;
@@ -121,7 +125,10 @@ void VkRenderer::executeDrawPass(VkCommandBuffer cmd, const Frame& f, const Prep
         if (sy < 0) { sh += sy; sy = 0; }
         if (sx + sw > target.width) sw = target.width - sx;
         if (sy + sh > target.height) sh = target.height - sy;
-        if (sw <= 0 || sh <= 0) continue;
+        if (sw <= 0 || sh <= 0) {
+            diagScSkip++;
+            continue;
+        }
 
         if (vx != lastVx || vy != lastVy || vw != lastVw || vh != lastVh) {
             VkViewport viewport{};
@@ -189,13 +196,16 @@ void VkRenderer::executeDrawPass(VkCommandBuffer cmd, const Frame& f, const Prep
                     if (ti && ti->vkView != 0 && ti->vkVersion == ti->version && ti->vkGeneration == sVkDeviceGeneration) {
                         views[u] = (VkImageView)ti->vkView;
                         samplers[u] = getSampler(it.texMode0[u], it.texMode1[u], ti->levels);
+                        diagRealTex++;
                     } else {
                         views[u] = mDummyTexture.view;
                         samplers[u] = mDummySampler;
+                        diagDummyTex++;
                     }
                 } else {
                     views[u] = mDummyTexture.view;
                     samplers[u] = mDummySampler;
+                    diagDummyTex++;
                 }
             }
             set1 = getSamplerDescriptorSet(views, samplers);
@@ -243,6 +253,11 @@ void VkRenderer::executeDrawPass(VkCommandBuffer cmd, const Frame& f, const Prep
         barrier.subresourceRange.layerCount = 1;
         vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
         target.colorLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    }
+
+    if (diagLog) {
+        LOGI("VkDrawDiag: frame=%llu draws=%u (hud=%u scSkip=%u) realTex=%u dummyTex=%u fTextures=%zu",
+             (unsigned long long)mFrameNumber, diagDraws, diagHud, diagScSkip, diagRealTex, diagDummyTex, f.textures.size());
     }
 }
 

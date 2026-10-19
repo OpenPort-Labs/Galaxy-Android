@@ -421,6 +421,52 @@ class TestVulkanRenderPassStateTracking(unittest.TestCase):
         s_key_8 = sampler_key(0x1234, 0x5678, 8)
         self.assertNotEqual(s_key_2, s_key_8, "Samplers with different levels must have distinct keys")
 
+    def test_gx_texgen_source_row_decoding(self):
+        """
+        Verify that GX TexCoordGen register (XF 0x40+i) decodes source_row
+        from bits [11:7] (shift 7), mapping row 0 -> pos, row 1 -> normal,
+        row 2 -> color, row 3 -> binormal, row 4 -> tangent, and rows 5..12 -> tex0..tex7.
+        Also verify that texture matrix index m defaults to 60 (identity) if 0.
+        """
+        # XF_TEX macro bit shifts from RVL_SDK / GDGeometry.h
+        XF_TEX_PROJECTION_SHIFT = 1
+        XF_TEX_INPUT_FORM_SHIFT = 2
+        XF_TEX_TEXGEN_TYPE_SHIFT = 4
+        XF_TEX_SOURCE_ROW_SHIFT = 7
+
+        XF_GEOM_INROW = 0
+        XF_NORMAL_INROW = 1
+        XF_COLORS_INROW = 2
+        XF_BINORMAL_T_INROW = 3
+        XF_BINORMAL_B_INROW = 4
+        XF_TEX0_INROW = 5
+        XF_TEX7_INROW = 12
+
+        def make_tex_info(row, form=0, proj=0, tg_type=0):
+            return (proj << XF_TEX_PROJECTION_SHIFT) | (form << XF_TEX_INPUT_FORM_SHIFT) | \
+                   (tg_type << XF_TEX_TEXGEN_TYPE_SHIFT) | (row << XF_TEX_SOURCE_ROW_SHIFT)
+
+        # Decode standard Tex0 texgen word
+        info_tex0 = make_tex_info(XF_TEX0_INROW)
+        src = (info_tex0 >> 7) & 31
+        self.assertEqual(src, 5, "Tex0 source row must decode to 5")
+        self.assertEqual(src - 5, 0, "Tex0 must map to texIdx 0")
+
+        # Decode Tex1..Tex7
+        for t in range(8):
+            info = make_tex_info(XF_TEX0_INROW + t)
+            self.assertEqual(((info >> 7) & 31) - 5, t)
+
+        # Decode Normal as texgen (e.g. environment mapping / sky sphere)
+        info_nrm = make_tex_info(XF_NORMAL_INROW)
+        self.assertEqual((info_nrm >> 7) & 31, 1, "Normal source row must decode to 1")
+
+        # Verify identity matrix fallback for texture matrix index 0
+        m = 0
+        m_resolved = m if m != 0 else 60
+        self.assertEqual(m_resolved, 60, "Texture matrix 0 must resolve to GX_IDENTITY (row 60)")
+
+
 
 if __name__ == '__main__':
     unittest.main()

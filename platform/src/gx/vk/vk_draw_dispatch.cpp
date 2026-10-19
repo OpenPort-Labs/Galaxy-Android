@@ -156,9 +156,11 @@ void VkRenderer::executeDrawPass(VkCommandBuffer cmd, const Frame& f, const Prep
         }
         VkPipeline pipeline = getPipeline(it, p.uids[it.uid]);
         if (pipeline == VK_NULL_HANDLE) continue;
+        bool pipelineChanged = false;
         if (pipeline != lastPipeline) {
             vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
             lastPipeline = pipeline;
+            pipelineChanged = true;
         }
 
         vkCmdPushConstants(cmd, mPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(uint32_t), &it.firstOrdinal);
@@ -220,7 +222,7 @@ void VkRenderer::executeDrawPass(VkCommandBuffer cmd, const Frame& f, const Prep
             hasLastTex = true;
         }
 
-        if (set1 != lastSet1) {
+        if (set1 != lastSet1 || pipelineChanged) {
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mPipelineLayout, 1, 1, &set1, 0, nullptr);
             lastSet1 = set1;
         }

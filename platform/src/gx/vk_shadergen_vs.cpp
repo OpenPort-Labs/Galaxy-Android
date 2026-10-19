@@ -141,26 +141,34 @@ std::string genVulkanVertexShader(const ShaderUid& u) {
 
     for (uint32_t i = 0; i < u.numTexGens && i < 8; i++) {
         uint32_t info = u.texMtxInfo[i];
-        uint32_t src = (info >> 4) & 15;
+        uint32_t src = (info >> 7) & 31;
         uint32_t form = (info >> 2) & 3;
         const char* in = "vec4(0.0, 0.0, 1.0, 1.0)";
         char uvBuf[64];
         if (src == 0) in = "vec4(pos, 1.0)";
         else if (src == 1) in = "vec4(nrm, 1.0)";
-        else if (src == 2) in = "vec4(bin, 1.0)";
-        else if (src == 3) in = "vec4(tan, 1.0)";
-        else if (src >= 4 && src <= 11) {
-            int texIdx = src - 4;
+        else if (src == 2) in = (f & VF_CLR0) ? "vec4(a_clr0.rgb, 1.0)" : "vec4(1.0)";
+        else if (src == 3) in = "vec4(bin, 1.0)";
+        else if (src == 4) in = "vec4(tan, 1.0)";
+        else if (src >= 5 && src <= 12) {
+            int texIdx = src - 5;
             if (f & (VF_TEX0 << texIdx)) {
                 snprintf(uvBuf, sizeof(uvBuf), "vec4(a_tex%d, 1.0, 1.0)", texIdx);
                 in = uvBuf;
             }
         }
         o.w("  {\n    vec4 tsrc = %s;\n", in);
-        uint32_t midx = (f & VF_TEXMTX) ? (i < 4 ? ((i == 0 ? 0 : i * 3) + 3) : 0) : 0;
-        (void)midx;
-        o.w("    uint m = (fetch_recs(rb + %uu) >> %uu) & 63u;\n", i < 4 ? (unsigned)kRecMtxIdxA : (unsigned)kRecMtxIdxB,
-            i < 4 ? (unsigned)((i + 1) * 6) : (unsigned)((i - 4) * 6));
+        if (f & VF_TEXMTX) {
+            if (i < 4) {
+                o.w("    uint m = (a_texmtx.x >> %uu) & 63u;\n", i * 8u);
+            } else {
+                o.w("    uint m = (a_texmtx.y >> %uu) & 63u;\n", (i - 4u) * 8u);
+            }
+        } else {
+            o.w("    uint m = (fetch_recs(rb + %uu) >> %uu) & 63u;\n", i < 4 ? (unsigned)kRecMtxIdxA : (unsigned)kRecMtxIdxB,
+                i < 4 ? (unsigned)((i + 1) * 6) : (unsigned)((i - 4) * 6));
+        }
+        o.w("    m = (m != 0u) ? m : 60u;\n");
         o.w("    uint r = slotRow(rb, %uu, m);\n", (unsigned)kRecPosSlots);
         if (form == 0) {
             o.w("    vec2 t = vec2(dot(fetch_rows(r), tsrc), dot(fetch_rows(r + 1u), tsrc));\n");

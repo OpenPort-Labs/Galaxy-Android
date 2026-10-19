@@ -21,7 +21,7 @@
     <string name="btn_reset_driver">Revert to System Driver</string>
     <string name="driver_system_default">System Default (Vulkan)</string>
     <string name="driver_help_text">Turnip/Adreno drivers are supported on Snapdragon processors. System driver is used for Mali/MediaTek chips.</string>
-    <string name="tester_build_title">TESTER BUILD v0.0.4-alpha</string>
+    <string name="tester_build_title">TESTER BUILD v0.0.4-beta</string>
     <string name="tester_build_desc">Mandatory: Testers must join Discord to report bugs, submit cutscene/GPU crash logs, and receive updates.</string>
     <string name="btn_join_discord">Join Tester Discord</string>
 </resources>

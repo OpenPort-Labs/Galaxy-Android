@@ -169,6 +169,7 @@ public:
   VkDescriptorSetLayout mStorageDescLayout = VK_NULL_HANDLE;
   VkDescriptorSetLayout mTextureDescLayout = VK_NULL_HANDLE;
   VkDescriptorPool mDescriptorPool = VK_NULL_HANDLE;
+  VkDescriptorPool mStaticDescPool = VK_NULL_HANDLE;
   VkPipelineLayout mPipelineLayout = VK_NULL_HANDLE;
   VkPipelineCache mPipelineCache = VK_NULL_HANDLE;
 

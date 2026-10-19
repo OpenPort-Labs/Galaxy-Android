@@ -7,14 +7,9 @@
 namespace mobile_display {
 
 void FramePacer::sync(android_app* app, int targetFps, float gameSpeed) {
+    (void)app;
     if (targetFps < 30) targetFps = 30;
     if (targetFps > 144) targetFps = 144;
-
-    if (mCurrentRefreshRate != targetFps) {
-        mCurrentRefreshRate = targetFps;
-        mobile_system::SystemManager::setPreferredRefreshRate(app, (float)targetFps);
-        port_set_display_refresh_rate(targetFps);
-    }
 
     int effectiveFps = targetFps;
     if (gameSpeed > 1.05f) {
@@ -23,7 +18,7 @@ void FramePacer::sync(android_app* app, int targetFps, float gameSpeed) {
     int64_t framePeriodNs = 1000000000ll / (effectiveFps > 0 ? effectiveFps : 60);
 
     int64_t nowNs = port_host_time_ns();
-    if (mLastPresentNs == 0 || (nowNs - mLastPresentNs > framePeriodNs * 4)) {
+    if (mLastPresentNs == 0 || nowNs < mLastPresentNs || (nowNs - mLastPresentNs > framePeriodNs * 2)) {
         mLastPresentNs = nowNs;
         return;
     }
@@ -31,13 +26,27 @@ void FramePacer::sync(android_app* app, int targetFps, float gameSpeed) {
     int64_t targetNs = mLastPresentNs + framePeriodNs;
     if (nowNs < targetNs) {
         int64_t waitNs = targetNs - nowNs;
-        if (waitNs > 1000000ll) {
+        int64_t sleepRecordedNs = 0;
+        // Sleep for coarse wait time leaving ~1ms kernel slack
+        if (waitNs > 1500000ll) {
+            int64_t coarseSleepNs = waitNs - 1000000ll;
             struct timespec req;
-            req.tv_sec = waitNs / 1000000000ll;
-            req.tv_nsec = waitNs % 1000000000ll;
+            req.tv_sec = coarseSleepNs / 1000000000ll;
+            req.tv_nsec = coarseSleepNs % 1000000000ll;
             int64_t sleepStartNs = port_host_time_ns();
             nanosleep(&req, nullptr);
-            port_perf_pace(port_host_time_ns() - sleepStartNs);
+            sleepRecordedNs = port_host_time_ns() - sleepStartNs;
+        }
+
+        // Bounded yield loop for remaining slack (capped to avoid spin lock)
+        int yieldCount = 0;
+        while (port_host_time_ns() < targetNs && yieldCount < 16) {
+            sched_yield();
+            yieldCount++;
+        }
+
+        if (sleepRecordedNs > 0) {
+            port_perf_pace(sleepRecordedNs);
         }
     }
 

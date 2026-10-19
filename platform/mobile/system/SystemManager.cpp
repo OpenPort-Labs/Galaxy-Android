@@ -66,13 +66,18 @@ void SystemManager::installCrashHandlers() {
 
 void SystemManager::pinThreadToPerformanceCores() {
 #if defined(__linux__) || defined(__ANDROID__)
+    // Prompt requirement: use the platform Energy Aware Scheduler (EAS) by default
+    // unless an explicit override is requested via environment or debug property.
+    const char* forceAffinity = getenv("GALAXY_FORCE_CPU_AFFINITY");
+    if (!forceAffinity || strcmp(forceAffinity, "1") != 0) {
+        return;
+    }
+
     int numCores = (int)sysconf(_SC_NPROCESSORS_CONF);
     if (numCores <= 1) return;
 
     int maxFreqs[32] = {0};
-    int overallMax = 0;
-    int overallMin = 0x7FFFFFFF;
-    int validCount = 0;
+    int overallMax = 0, overallMin = 0x7FFFFFFF, validCount = 0;
 
     for (int i = 0; i < numCores && i < 32; i++) {
         char path[64];
@@ -90,12 +95,10 @@ void SystemManager::pinThreadToPerformanceCores() {
         }
     }
 
-    cpu_set_t cpuset;
-    CPU_ZERO(&cpuset);
-    int bigCount = 0;
-
     if (validCount > 1 && overallMax > overallMin) {
-        int threshold = (int)(overallMax * 0.85f);
+        cpu_set_t cpuset;
+        CPU_ZERO(&cpuset);
+        int bigCount = 0, threshold = (int)(overallMax * 0.85f);
         for (int i = 0; i < numCores && i < 32; i++) {
             if (maxFreqs[i] >= threshold) {
                 CPU_SET(i, &cpuset);
@@ -103,12 +106,12 @@ void SystemManager::pinThreadToPerformanceCores() {
             }
         }
         if (bigCount > 0) {
-            sched_setaffinity(0, sizeof(cpu_set_t), &cpuset);
+            int rc = sched_setaffinity(0, sizeof(cpu_set_t), &cpuset);
+            if (rc != 0) {
+                LOGI("pinThreadToPerformanceCores: sched_setaffinity returned %d", rc);
+            }
         }
     }
-    // When sysfs is inaccessible due to Android SELinux, avoid blind CPU pinning
-    // so Android Energy Aware Scheduler (EAS) can dynamically schedule across
-    // big cores and migrate under thermal constraints without lockups.
 #endif
 }
 

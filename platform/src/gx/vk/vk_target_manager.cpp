@@ -146,8 +146,8 @@ void VkRenderer::destroyTarget(VkTarget& target) {
         if (target.colorView != VK_NULL_HANDLE) {
             auto it = mPresentDescSets.find(target.colorView);
             if (it != mPresentDescSets.end()) {
-                if (it->second != VK_NULL_HANDLE && mDescriptorPool != VK_NULL_HANDLE) {
-                    vkFreeDescriptorSets(mDevice, mDescriptorPool, 1, &it->second);
+                if (it->second != VK_NULL_HANDLE && mStaticDescPool != VK_NULL_HANDLE) {
+                    vkFreeDescriptorSets(mDevice, mStaticDescPool, 1, &it->second);
                 }
                 mPresentDescSets.erase(it);
             }

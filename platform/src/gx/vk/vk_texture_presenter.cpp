@@ -32,7 +32,7 @@ void VkRenderer::present(const VkTarget& target, int vpX, int vpY, int vpW, int 
     } else {
         VkDescriptorSetAllocateInfo ai{};
         ai.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-        ai.descriptorPool = mDescriptorPool;
+        ai.descriptorPool = mStaticDescPool;
         ai.descriptorSetCount = 1;
         ai.pSetLayouts = &mPresentDescLayout;
         if (vkAllocateDescriptorSets(mDevice, &ai, &presentSet) == VK_SUCCESS) {

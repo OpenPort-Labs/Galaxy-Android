@@ -58,19 +58,35 @@ bool VkRenderer::createDescriptorLayouts() {
         return false;
     }
 
-    // Descriptor Pool
+    // 1. Static Descriptor Pool (for persistent storage, UI, and presentation sets)
+    VkDescriptorPoolSize staticPoolSizes[] = {
+        {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 32},
+        {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 32},
+        {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 32},
+    };
+
+    VkDescriptorPoolCreateInfo staticPoolInfo{};
+    staticPoolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    staticPoolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
+    staticPoolInfo.poolSizeCount = 3;
+    staticPoolInfo.pPoolSizes = staticPoolSizes;
+    staticPoolInfo.maxSets = 32;
+
+    if (vkCreateDescriptorPool(mDevice, &staticPoolInfo, nullptr, &mStaticDescPool) != VK_SUCCESS) {
+        return false;
+    }
+
+    // 2. Dynamic Sampler Descriptor Pool (dedicated exclusively to transient sampler sets)
     VkDescriptorPoolSize poolSizes[] = {
-        {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1024},
-        {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1024},
-        {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 32768},
+        {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 65536},
     };
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
-    poolInfo.poolSizeCount = 3;
+    poolInfo.poolSizeCount = 1;
     poolInfo.pPoolSizes = poolSizes;
-    poolInfo.maxSets = 4096;
+    poolInfo.maxSets = 8192;
 
     return vkCreateDescriptorPool(mDevice, &poolInfo, nullptr, &mDescriptorPool) == VK_SUCCESS;
 }
@@ -92,11 +108,14 @@ VkDescriptorSet VkRenderer::getSamplerDescriptorSet(const std::array<VkImageView
 
     VkDescriptorSet set = VK_NULL_HANDLE;
     if (vkAllocateDescriptorSets(mDevice, &ai, &set) != VK_SUCCESS) {
-        vkDeviceWaitIdle(mDevice);
+        // Safe recovery: wait for in-flight render fence submissions, reset sampler pool,
+        // and reallocate. Static descriptor sets (SSBOs, UI, Present) in mStaticDescPool
+        // are untouched and remain completely valid!
+        waitInFlightSubmissions("samplerPoolReset");
         vkResetDescriptorPool(mDevice, mDescriptorPool, 0);
         mSamplerDescSets.clear();
-        mPresentDescSets.clear();
         if (vkAllocateDescriptorSets(mDevice, &ai, &set) != VK_SUCCESS) {
+            LOGE("getSamplerDescriptorSet: allocation failed even after pool reset");
             return VK_NULL_HANDLE;
         }
     }

@@ -96,7 +96,7 @@ bool VkRenderer::render(VkTarget& target, const EyeView* eye, VkTarget* hud, Hud
     if (fr.set0 == VK_NULL_HANDLE) {
         VkDescriptorSetAllocateInfo ai{};
         ai.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-        ai.descriptorPool = mDescriptorPool;
+        ai.descriptorPool = mStaticDescPool;
         ai.descriptorSetCount = 1;
         ai.pSetLayouts = &mStorageDescLayout;
         if (vkAllocateDescriptorSets(mDevice, &ai, &fr.set0) != VK_SUCCESS) {

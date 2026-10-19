@@ -29,7 +29,7 @@ void OverlayRenderer::renderPerfHud(VertexBatcher& vb, int screenW, int screenH,
                      perfMon.currentFps(), perfMon.avgFrameTimeMs(),
                      perfMon.cpuUsagePercent(), perfMon.gpuUsagePercent(), perfMon.ramUsageMB());
         } else if (perfMon.gpuUsagePercent() >= 0.0f) {
-            snprintf(buf, sizeof(buf), "%.1f FPS  •  %.1f ms  •  CPU %.0f%%  •  GPU Duty %.0f%%  •  RAM %.0f MB",
+            snprintf(buf, sizeof(buf), "%.1f FPS  •  %.1f ms  •  CPU %.0f%%  •  CPU Sub %.0f%%  •  RAM %.0f MB",
                      perfMon.currentFps(), perfMon.avgFrameTimeMs(),
                      perfMon.cpuUsagePercent(), perfMon.gpuUsagePercent(), perfMon.ramUsageMB());
         } else {

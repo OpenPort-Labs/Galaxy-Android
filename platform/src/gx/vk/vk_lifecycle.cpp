@@ -210,6 +210,10 @@ void VkRenderer::shutdown() {
             vkDestroyDescriptorPool(mDevice, mDescriptorPool, nullptr);
             mDescriptorPool = VK_NULL_HANDLE;
         }
+        if (mStaticDescPool != VK_NULL_HANDLE) {
+            vkDestroyDescriptorPool(mDevice, mStaticDescPool, nullptr);
+            mStaticDescPool = VK_NULL_HANDLE;
+        }
         if (mStorageDescLayout != VK_NULL_HANDLE) {
             vkDestroyDescriptorSetLayout(mDevice, mStorageDescLayout, nullptr);
             mStorageDescLayout = VK_NULL_HANDLE;

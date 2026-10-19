@@ -8,9 +8,6 @@ extern "C" void port_set_game_speed(float speed);
 extern "C" void port_android_vibrate(int ms);
 extern "C" int port_is_post_processing_enabled(void);
 extern "C" void port_set_post_processing_enabled(int enabled);
-extern "C" void port_set_character_choice(int choice);
-extern "C" void port_set_odyssey_moveset(int enabled);
-extern "C" void port_set_coop_mode(int enabled);
 extern "C" void port_set_speedrun_hud_enabled(int enabled);
 extern "C" void port_trigger_savestate_save(void);
 extern "C" void port_trigger_savestate_load(void);
@@ -46,24 +43,6 @@ bool SettingsMenuModActions::dispatch(MenuActionId action, float px, float midX,
         outToastMsg = cur ? "Vulkan Post-Processing: OFF" : "Vulkan FXAA & Cosmic Bloom: ENABLED";
         return true;
     }
-    case ACT_CHARACTER_SELECT: {
-        int idx = std::max(0, std::min(3, (int)(relX / (contentW / 4.0f))));
-        settings.characterChoice = idx;
-        port_set_character_choice(idx);
-        const char* names[] = {"Mario (Standard)", "Luigi (High Jump, Slippery)", "Peach (Hover Float)", "Rosalina (Cosmic Pull)"};
-        outToastMsg = std::string("Playable Hero: ") + names[idx];
-        return true;
-    }
-    case ACT_ODYSSEY_MOVESET:
-        settings.odysseyMoveset = !settings.odysseyMoveset;
-        port_set_odyssey_moveset(settings.odysseyMoveset ? 1 : 0);
-        outToastMsg = settings.odysseyMoveset ? "Odyssey Moveset: ON (Dive, Roll, Boost)" : "Odyssey Moveset: OFF";
-        return true;
-    case ACT_COOP_MODE:
-        settings.coopMode = !settings.coopMode;
-        port_set_coop_mode(settings.coopMode ? 1 : 0);
-        outToastMsg = settings.coopMode ? "2P Co-Op Assist: ON" : "2P Co-Op Assist: OFF";
-        return true;
     case ACT_SAVESTATE_ACTIONS:
         if (px < midX) {
             port_trigger_savestate_save();

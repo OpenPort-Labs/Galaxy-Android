@@ -129,10 +129,6 @@ bool MarioActor::isRequestJump2P() const {
         return false;
     }
 
-    if (port_is_coop_mode() && MR::testCorePadTriggerA(1)) {
-        return true;
-    }
-
     if (MR::isStarPointerPointing2P(this, "\x8e\xe3", true, false) && MR::testCorePadTriggerA(1)) {
         return true;
     }
@@ -372,10 +368,6 @@ bool MarioActor::isRequestSpinJump2P() const {
 
     if (mMario->getMovementStates().jumping && mMario->_430 == 2 && mMario->_10._1F) {
         return false;
-    }
-
-    if (port_is_coop_mode() && (MR::testCorePadTriggerB(1) || MR::testSubPadTriggerZ(1))) {
-        return true;
     }
 
     if (isJumping() && mMario->_3BC > 6 && MR::isStarPointerPointing2P(this, "\x8e\xe3", true, false) && MR::testCorePadTriggerA(1)) {

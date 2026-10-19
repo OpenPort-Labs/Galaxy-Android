@@ -14,6 +14,10 @@ public:
                          Settings& settings, SaveManager& saveMgr,
                          std::string& outToastMsg, bool& outEditMode, bool& outResetLayout,
                          bool& outCloseSettings, const std::string& savePath);
+
+    static void applySliderValue(MenuActionId action, float value, Settings& settings, std::string& outToastMsg);
+    static void applyDropdownSelection(MenuActionId action, int selectedIdx, Settings& settings,
+                                       SaveManager& saveMgr, std::string& outToastMsg);
 };
 
 }  // namespace mobile_ui

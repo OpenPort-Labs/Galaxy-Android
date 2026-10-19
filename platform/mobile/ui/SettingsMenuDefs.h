@@ -42,9 +42,6 @@ enum MenuActionId {
     ACT_SHIELD_CUTSCENES,
     ACT_SHIELD_CONTROLS,
     ACT_CLASSIC_GAMEPAD,
-    ACT_CHARACTER_SELECT,
-    ACT_ODYSSEY_MOVESET,
-    ACT_COOP_MODE,
     ACT_SAVESTATE_ACTIONS,
     ACT_SPEEDRUN_HUD,
     ACT_GAME_SPEED,
@@ -69,6 +66,8 @@ enum MenuActionId {
 enum RowType {
     ROW_SECTION,
     ROW_SWITCH,
+    ROW_SLIDER,
+    ROW_DROPDOWN,
     ROW_SEGMENTED,
     ROW_DUAL_BTN,
     ROW_SINGLE_BTN,
@@ -84,6 +83,10 @@ struct MenuRowDef {
     const char* subtitle;
     int optCount;
     const char* optLabels[6];
+    float minVal;
+    float maxVal;
+    float stepVal;
+    const char* valueFormat;
 };
 
 const MenuRowDef* getTabRows(int tab, size_t& outCount);

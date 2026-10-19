@@ -77,9 +77,6 @@ void Settings::load(const std::string& path) {
             else if (!strcmp(key, "perf_hud")) perfHudMode = std::max(0, std::min(2, (int)val));
             else if (!strcmp(key, "full_touch_mode")) fullTouchMode = (val > 0.5f);
             else if (!strcmp(key, "screen_orientation")) screenOrientationChoice = std::max(0, std::min(2, (int)val));
-            else if (!strcmp(key, "character_choice")) characterChoice = std::max(0, std::min(3, (int)val));
-            else if (!strcmp(key, "odyssey_moveset")) odysseyMoveset = (val > 0.5f);
-            else if (!strcmp(key, "coop_mode")) coopMode = (val > 0.5f);
             else if (!strcmp(key, "speedrun_hud")) speedrunHud = (val > 0.5f);
         }
     }
@@ -145,9 +142,6 @@ void Settings::save(const std::string& path) const {
     fprintf(f, "haptics=%d\n", haptics ? 1 : 0);
     fprintf(f, "target_fps=%d\n", targetFps);
     fprintf(f, "adaptive_fps=%d\n", adaptiveFps ? 1 : 0);
-    fprintf(f, "character_choice=%d\n", characterChoice);
-    fprintf(f, "odyssey_moveset=%d\n", odysseyMoveset ? 1 : 0);
-    fprintf(f, "coop_mode=%d\n", coopMode ? 1 : 0);
     fprintf(f, "speedrun_hud=%d\n", speedrunHud ? 1 : 0);
     fclose(f);
     LOGI("Saved settings to %s", path.c_str());

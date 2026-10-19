@@ -114,17 +114,6 @@ __attribute__((weak)) int port_check_quick_load_request(int* slot) {
 
 __attribute__((weak)) void port_android_vibrate(int ms) { (void)ms; }
 
-static int sCharacterChoice = 0;
-__attribute__((weak)) int port_get_character_choice(void) { return __atomic_load_n(&sCharacterChoice, __ATOMIC_ACQUIRE); }
-__attribute__((weak)) void port_set_character_choice(int c) { __atomic_store_n(&sCharacterChoice, c, __ATOMIC_RELEASE); }
-
-static int sOdysseyMoveset = 1;
-__attribute__((weak)) int port_is_odyssey_moveset(void) { return __atomic_load_n(&sOdysseyMoveset, __ATOMIC_ACQUIRE); }
-__attribute__((weak)) void port_set_odyssey_moveset(int e) { __atomic_store_n(&sOdysseyMoveset, e, __ATOMIC_RELEASE); }
-
-static int sCoopMode = 0;
-__attribute__((weak)) int port_is_coop_mode(void) { return __atomic_load_n(&sCoopMode, __ATOMIC_ACQUIRE); }
-__attribute__((weak)) void port_set_coop_mode(int e) { __atomic_store_n(&sCoopMode, e, __ATOMIC_RELEASE); }
 
 static int sSavestateSaveReq = 0;
 static int sSavestateLoadReq = 0;

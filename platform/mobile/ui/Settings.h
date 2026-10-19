@@ -42,10 +42,7 @@ struct Settings {
     bool modInfiniteHealth = false;
     bool modInfiniteLives = false;
     bool modInfiniteStarBits = false;
-    bool odysseyMoveset = true;
-    int characterChoice = 0;
     bool speedrunHud = false;
-    bool coopMode = false;
 
     // System Settings
     int gameSpeed = 1;

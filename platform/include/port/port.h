@@ -171,13 +171,7 @@ uint64_t port_get_save_generation(void);
 void port_trigger_quick_load(int slot);
 void port_android_vibrate(int ms);
 
-// Gameplay & Mechanics Enhancements (Odyssey moveset, characters, savestates, practice telemetry)
-int port_get_character_choice(void);
-void port_set_character_choice(int charId);
-int port_is_odyssey_moveset(void);
-void port_set_odyssey_moveset(int enabled);
-int port_is_coop_mode(void);
-void port_set_coop_mode(int enabled);
+// Gameplay & Mechanics Enhancements (Savestates, practice telemetry)
 
 void port_trigger_savestate_save(void);
 void port_trigger_savestate_load(void);

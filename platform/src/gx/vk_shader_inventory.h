@@ -15,14 +15,31 @@ namespace gpu {
 class VkRenderer;
 
 struct ShaderInventoryStats {
-    size_t totalDiscovered = 0;
-    size_t spirvCompiled = 0;
-    size_t spirvCached = 0;
-    size_t pipelinesCreated = 0;
-    size_t pipelinesCached = 0;
-    size_t failed = 0;
-    size_t runtimeDiscoveredMissing = 0;
-    size_t inventoryGaps = 0;
+    size_t totalUniqueUids = 0;
+    size_t totalUniqueKeys = 0;
+    size_t canonicalEntries = 0;
+    size_t assetDerivedEntries = 0;
+    size_t runtimeDiscoveredEntries = 0;
+    size_t runtimeShaderUidMisses = 0;
+    size_t runtimePipelineKeyMisses = 0;
+
+    size_t spirvCacheHits = 0;
+    size_t spirvCompilationsCompleted = 0;
+    size_t spirvFailures = 0;
+
+    size_t realPipelinesReused = 0;
+    size_t realPipelinesCreated = 0;
+    size_t pipelineCreationFailures = 0;
+    size_t placeholderPipelineUses = 0;
+
+    size_t entriesNotYetCompiled = 0;
+    size_t entriesNotYetPrewarmed = 0;
+    size_t explicitInventoryGaps = 0;
+
+    double timeSpirvPhaseMs = 0.0;
+    double timePipelinePhaseMs = 0.0;
+
+    bool isAssetManifestLoaded = false;
 };
 
 struct InventoryEntry {
@@ -52,8 +69,15 @@ public:
     // Scan extracted game data directory (ObjectData, StageData, LayoutData)
     void scanAssetDirectory(const std::string& filesDir);
 
-    // Record a runtime-discovered shader or pipeline key
-    void recordRuntimeDiscovery(const ShaderUid& uid, const PipelineKey& key, const char* source = "runtime");
+    // Load binary asset manifest cooked offline or during installation
+    bool loadAssetManifest(const std::string& manifestPath);
+
+    // Separate tracking for runtime ShaderUid misses vs PipelineKey misses
+    void recordRuntimeShaderUidMiss(const ShaderUid& uid, const PipelineKey& key, const char* source = "runtime_uid_miss");
+    void recordRuntimePipelineKeyMiss(const ShaderUid& uid, const PipelineKey& key, const char* source = "runtime_key_miss");
+
+    // Increment placeholder pipeline uses (diagnostics only, never counted as prewarmed)
+    void incrementPlaceholderUses();
 
     // Stage A: Compile all discovered UIDs to SPIR-V in parallel
     void compileAllSpirv(int maxWorkers = 4, std::function<void(int done, int total, const char* msg)> progress = nullptr);
@@ -61,11 +85,14 @@ public:
     // Stage B: Prewarm graphics pipelines with active Vulkan device and render pass
     void prewarmPipelines(VkRenderer& renderer, std::function<void(int done, int total, const char* msg)> progress = nullptr);
 
+    // Startup readiness verification (ensures title screen and essential stubs are prewarmed)
+    bool verifyStartupReadiness() const;
+
     // Query stats and diagnostics
     ShaderInventoryStats stats() const;
     std::string getDiagnostics() const;
 
-    // Durability: persist and reload inventory metadata
+    // Durability: persist and reload inventory metadata with stable field-by-field serialization
     void saveInventory();
     void loadInventory();
 

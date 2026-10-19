@@ -219,4 +219,8 @@ if(ANDROID)
         log
     )
   endif()
+
+  add_executable(vk_inventory_test tests/test_vk_inventory.cpp)
+  target_include_directories(vk_inventory_test PRIVATE platform platform/src platform/include decomp/include)
+  target_link_libraries(vk_inventory_test PRIVATE log)
 endif()

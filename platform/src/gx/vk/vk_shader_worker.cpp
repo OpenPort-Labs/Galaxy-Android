@@ -93,7 +93,7 @@ void VkRenderer::drainCompiledShaders() {
         const Item it = pending->second;
         mShaderPendingItems.erase(pending);
         LOGI("VkRenderer: compiled program for draw %u off the render thread in %.0f ms", it.uid, shader.ms);
-        createPipeline(it, pipelineKeyFor(it, shader.uid), shader.uid, shader.vsSpirv, shader.fsSpirv);
+        createPipeline(pipelineKeyFor(it, shader.uid), shader.vsSpirv, shader.fsSpirv);
         createdCount++;
         auto elapsed = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - drainStart).count();
         if (createdCount >= 4 || elapsed >= 5.0) {

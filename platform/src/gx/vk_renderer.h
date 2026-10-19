@@ -23,6 +23,16 @@
 
 namespace gpu {
 
+enum class PrewarmResult {
+    Reused,               // Existing real pipeline reused from cache
+    Created,              // New real pipeline successfully created
+    SpirvUnavailable,     // SPIR-V bytecode missing or unavailable
+    CompilationPending,   // Shader compilation is currently pending
+    PlaceholderReturned,  // Placeholder returned (never counted as success)
+    CreationFailed,       // vkCreateGraphicsPipelines failed
+    UnsupportedState      // Unsupported state or incompatible render pass
+};
+
 class VkRenderer {
 public:
   static VkRenderer &get();
@@ -91,8 +101,8 @@ public:
   void uploadTextures(VkCommandBuffer cmd,
                       const std::vector<std::shared_ptr<TexImage>> &textures);
   VkPipeline getPipeline(const Item &it, const ShaderUid &uid);
-  VkPipeline createPipeline(const Item &it, const PipelineKey &key,
-                            const ShaderUid &uid,
+  PrewarmResult prewarmExactPipeline(const PipelineKey &key, const ShaderUid &uid);
+  VkPipeline createPipeline(const PipelineKey &key,
                             const std::vector<uint32_t> &vsSpirv,
                             const std::vector<uint32_t> &fsSpirv);
   VkPipeline placeholderPipeline(const Item &it);

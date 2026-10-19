@@ -10,24 +10,52 @@
 #include <sys/stat.h>
 #include <thread>
 #include <atomic>
+#include <algorithm>
 
 namespace gpu {
 
 namespace {
 
-constexpr uint32_t kInventoryMagic = 0x55535450;  // "PTSU"
-constexpr uint32_t kInventoryVersion = 1;
+constexpr uint32_t kInventoryMagic = 0x55535450;      // "PTSU"
+constexpr uint32_t kInventoryVersion = 2;
+constexpr uint32_t kBuildVersion = 20261019;
+constexpr uint32_t kShaderGenVersion = 1;
 
-PipelineKey makeKey(const ShaderUid& uid, uint32_t flags, uint32_t depthState,
-                    uint32_t blendState, uint32_t blendState2, uint32_t rasterState) {
-    PipelineKey k{};
-    k.uid = uid;
-    k.flags = flags;
-    k.depthState = depthState;
-    k.blendState = blendState;
-    k.blendState2 = blendState2;
-    k.rasterState = rasterState;
-    return k;
+static uint32_t fnv1a32(const void* data, size_t size, uint32_t seed = 2166136261u) {
+    const uint8_t* p = (const uint8_t*)data;
+    uint32_t h = seed;
+    for (size_t i = 0; i < size; i++) {
+        h = (h ^ p[i]) * 16777619u;
+    }
+    return h;
+}
+
+PipelineKey makeCanonicalPipelineKey(const ShaderUid& uid, uint32_t vtxFlags, bool depthTest,
+                                     bool depthWrite, VkCompareOp depthOp, bool blendEnable,
+                                     VkBlendFactor srcColor, VkBlendFactor dstColor,
+                                     VkBlendFactor srcAlpha, VkBlendFactor dstAlpha,
+                                     VkCullModeFlags cullMode,
+                                     VkPrimitiveTopology topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST) {
+    DecodedPipelineKey d{};
+    d.uid = uid;
+    d.vtxFlags = vtxFlags;
+    d.depthTest = depthTest;
+    d.depthWrite = depthWrite;
+    d.depthCompareOp = depthOp;
+    d.blendEnable = blendEnable;
+    d.srcColorBlendFactor = srcColor;
+    d.dstColorBlendFactor = dstColor;
+    d.colorBlendOp = VK_BLEND_OP_ADD;
+    d.srcAlphaBlendFactor = srcAlpha;
+    d.dstAlphaBlendFactor = dstAlpha;
+    d.alphaBlendOp = VK_BLEND_OP_ADD;
+    d.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                       VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    d.blendConstantAlpha = 0.0f;
+    d.cullMode = cullMode;
+    d.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    d.topology = topology;
+    return encodePipelineKey(d);
 }
 
 }  // namespace
@@ -46,6 +74,9 @@ void ShaderInventory::init(const std::string& cacheDir, const std::string& dataR
     mInventoryFilePath = cacheDir + "/vk_shader_inventory.bin";
     mDataRoot = dataRoot;
     mInitialized = true;
+
+    // Durability check: invalidate stale cache if build version changed
+    invalidateIfStale(kBuildVersion);
 
     loadInventory();
     populateCanonicalGalaxyInventory();
@@ -73,14 +104,15 @@ void ShaderInventory::addEntry(const ShaderUid& uid, const PipelineKey& key,
     if (mUidIndex.find(uid) == mUidIndex.end()) {
         mUidIndex[uid] = idx;
     }
-    mStats.totalDiscovered = mEntries.size();
+    mStats.totalUniqueKeys = mKeyIndex.size();
+    mStats.totalUniqueUids = mUidIndex.size();
 }
 
 void ShaderInventory::populateCanonicalGalaxyInventory() {
     if (mCanonicalPopulated) return;
     mCanonicalPopulated = true;
 
-    // Standard vertex layouts
+    // Standard vertex layouts in Mario Galaxy
     const uint32_t vtxLayouts[] = {
         0x0001,  // Pos
         0x0041,  // Pos | Tex0
@@ -98,9 +130,15 @@ void ShaderInventory::populateCanonicalGalaxyInventory() {
     for (uint32_t vf : vtxLayouts) {
         ShaderUid stub{};
         stub.vtxFlags = vf;
-        // Depth on/off, cull back/none
-        PipelineKey k1 = makeKey(stub, vf, 0x33, 0x00, 0x0F, 0x20);  // Depth test on, cull back
-        PipelineKey k2 = makeKey(stub, vf, 0x00, 0x00, 0x0F, 0x00);  // Depth test off, cull none
+        // Depth on/off, cull back/none with canonical key builder
+        PipelineKey k1 = makeCanonicalPipelineKey(stub, vf, true, true, VK_COMPARE_OP_LESS_OR_EQUAL,
+                                                 false, VK_BLEND_FACTOR_ONE, VK_BLEND_FACTOR_ZERO,
+                                                 VK_BLEND_FACTOR_ONE, VK_BLEND_FACTOR_ZERO,
+                                                 VK_CULL_MODE_BACK_BIT);
+        PipelineKey k2 = makeCanonicalPipelineKey(stub, vf, false, false, VK_COMPARE_OP_ALWAYS,
+                                                 false, VK_BLEND_FACTOR_ONE, VK_BLEND_FACTOR_ZERO,
+                                                 VK_BLEND_FACTOR_ONE, VK_BLEND_FACTOR_ZERO,
+                                                 VK_CULL_MODE_NONE);
         addEntry(stub, k1, "placeholder_stub", false);
         addEntry(stub, k2, "placeholder_stub", false);
     }
@@ -122,15 +160,17 @@ void ShaderInventory::populateCanonicalGalaxyInventory() {
             u.tevColor[0] = 0x080A00;  // Modulate Tex * Ras
             u.tevAlpha[0] = 0x080A00;
 
-            // Blend: Alpha blending (SRC_ALPHA, ONE_MINUS_SRC_ALPHA)
-            uint32_t blend = blendOn ? (1u | (VK_BLEND_FACTOR_SRC_ALPHA << 1) | (VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA << 6) |
-                                        (VK_BLEND_FACTOR_SRC_ALPHA << 11) | (VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA << 16)) : 0;
-            uint32_t blend2 = 0x0F;  // write RGBA
-            PipelineKey k = makeKey(u, u.vtxFlags, 0x00, blend, blend2, 0x00);  // 2D UI, no cull, no depth
+            VkBlendFactor srcF = blendOn ? VK_BLEND_FACTOR_SRC_ALPHA : VK_BLEND_FACTOR_ONE;
+            VkBlendFactor dstF = blendOn ? VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA : VK_BLEND_FACTOR_ZERO;
+
+            PipelineKey k = makeCanonicalPipelineKey(u, u.vtxFlags, false, false, VK_COMPARE_OP_ALWAYS,
+                                                    blendOn != 0, srcF, dstF, srcF, dstF,
+                                                    VK_CULL_MODE_NONE);
             addEntry(u, k, "title_screen_and_ui", false);
 
-            // Also with depth test on (e.g. 3D title screen logo)
-            PipelineKey kDepth = makeKey(u, u.vtxFlags, 0x33, blend, blend2, 0x20);
+            PipelineKey kDepth = makeCanonicalPipelineKey(u, u.vtxFlags, true, true, VK_COMPARE_OP_LESS_OR_EQUAL,
+                                                         blendOn != 0, srcF, dstF, srcF, dstF,
+                                                         VK_CULL_MODE_BACK_BIT);
             addEntry(u, kDepth, "title_screen_3d_logo", false);
         }
     }
@@ -148,9 +188,11 @@ void ShaderInventory::populateCanonicalGalaxyInventory() {
             u.tevColor[0] = 0x080A00;
             u.tevAlpha[0] = 0x080A00;
 
-            uint32_t depth = 0x31;  // Depth test LEQUAL, depth write 0
-            uint32_t raster = cull ? 0x20 : 0x00;
-            PipelineKey k = makeKey(u, u.vtxFlags, depth, 0x00, 0x0F, raster);
+            VkCullModeFlags cm = cull ? VK_CULL_MODE_BACK_BIT : VK_CULL_MODE_NONE;
+            PipelineKey k = makeCanonicalPipelineKey(u, u.vtxFlags, true, false, VK_COMPARE_OP_LESS_OR_EQUAL,
+                                                    false, VK_BLEND_FACTOR_ONE, VK_BLEND_FACTOR_ZERO,
+                                                    VK_BLEND_FACTOR_ONE, VK_BLEND_FACTOR_ZERO,
+                                                    cm);
             addEntry(u, k, "skybox_and_stardome", false);
         }
     }
@@ -175,13 +217,19 @@ void ShaderInventory::populateCanonicalGalaxyInventory() {
                     u.tevColor[s] = (s == 0) ? 0x080A00 : 0x0F0800;
                     u.tevAlpha[s] = 0x080A00;
                 }
-                PipelineKey k = makeKey(u, u.vtxFlags, 0x33, 0x00, 0x0F, 0x20);  // Depth test+write, cull back
+                PipelineKey k = makeCanonicalPipelineKey(u, u.vtxFlags, true, true, VK_COMPARE_OP_LESS_OR_EQUAL,
+                                                        false, VK_BLEND_FACTOR_ONE, VK_BLEND_FACTOR_ZERO,
+                                                        VK_BLEND_FACTOR_ONE, VK_BLEND_FACTOR_ZERO,
+                                                        VK_CULL_MODE_BACK_BIT);
                 addEntry(u, k, "character_models", false);
 
                 // Variant with Clr0
                 ShaderUid uClr = u;
                 uClr.vtxFlags = 0x4057;
-                PipelineKey kClr = makeKey(uClr, uClr.vtxFlags, 0x33, 0x00, 0x0F, 0x20);
+                PipelineKey kClr = makeCanonicalPipelineKey(uClr, uClr.vtxFlags, true, true, VK_COMPARE_OP_LESS_OR_EQUAL,
+                                                           false, VK_BLEND_FACTOR_ONE, VK_BLEND_FACTOR_ZERO,
+                                                           VK_BLEND_FACTOR_ONE, VK_BLEND_FACTOR_ZERO,
+                                                           VK_CULL_MODE_BACK_BIT);
                 addEntry(uClr, kClr, "character_models_clr0", false);
             }
         }
@@ -202,7 +250,10 @@ void ShaderInventory::populateCanonicalGalaxyInventory() {
             if (alphaTest) {
                 u.alphaFunc = 0x04;  // Greater (cutout)
             }
-            PipelineKey k = makeKey(u, u.vtxFlags, 0x33, 0x00, 0x0F, 0x20);
+            PipelineKey k = makeCanonicalPipelineKey(u, u.vtxFlags, true, true, VK_COMPARE_OP_LESS_OR_EQUAL,
+                                                    false, VK_BLEND_FACTOR_ONE, VK_BLEND_FACTOR_ZERO,
+                                                    VK_BLEND_FACTOR_ONE, VK_BLEND_FACTOR_ZERO,
+                                                    VK_CULL_MODE_BACK_BIT);
             addEntry(u, k, "planet_terrain", false);
         }
     }
@@ -219,27 +270,117 @@ void ShaderInventory::populateCanonicalGalaxyInventory() {
         u.tevColor[0] = 0x080A00;
         u.tevAlpha[0] = 0x080A00;
 
-        uint32_t blend = 0;
-        if (blendMode == 0) {
-            // Additive (SRC_ALPHA, ONE)
-            blend = 1u | (VK_BLEND_FACTOR_SRC_ALPHA << 1) | (VK_BLEND_FACTOR_ONE << 6) |
-                    (VK_BLEND_FACTOR_SRC_ALPHA << 11) | (VK_BLEND_FACTOR_ONE << 16);
-        } else {
-            // Standard alpha
-            blend = 1u | (VK_BLEND_FACTOR_SRC_ALPHA << 1) | (VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA << 6) |
-                    (VK_BLEND_FACTOR_SRC_ALPHA << 11) | (VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA << 16);
-        }
-        PipelineKey k = makeKey(u, u.vtxFlags, 0x31, blend, 0x0F, 0x00);  // Depth test, depth write off, cull none
+        VkBlendFactor srcF = VK_BLEND_FACTOR_SRC_ALPHA;
+        VkBlendFactor dstF = (blendMode == 0) ? VK_BLEND_FACTOR_ONE : VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+
+        PipelineKey k = makeCanonicalPipelineKey(u, u.vtxFlags, true, false, VK_COMPARE_OP_LESS_OR_EQUAL,
+                                                true, srcF, dstF, srcF, dstF,
+                                                VK_CULL_MODE_NONE);
         addEntry(u, k, "particles_and_starbits", false);
     }
 
     port_log("vk_shader_inventory: populated canonical Galaxy catalog (%zu unique pipeline keys)", mEntries.size());
 }
 
+bool ShaderInventory::loadAssetManifest(const std::string& manifestPath) {
+    FILE* f = fopen(manifestPath.c_str(), "rb");
+    if (!f) return false;
+
+    uint32_t header[5] = {0};
+    if (fread(header, sizeof(uint32_t), 5, f) != 5) {
+        fclose(f);
+        return false;
+    }
+
+    if (header[0] != kInventoryMagic || header[1] != kInventoryVersion || header[2] != kBuildVersion) {
+        fclose(f);
+        port_log("vk_shader_inventory: manifest header version mismatch (%s)", manifestPath.c_str());
+        return false;
+    }
+
+    uint32_t count = header[3];
+    uint32_t expectedHeaderCrc = header[4];
+    uint32_t actualHeaderCrc = fnv1a32(header, 4 * sizeof(uint32_t));
+    if (expectedHeaderCrc != actualHeaderCrc) {
+        fclose(f);
+        port_log("vk_shader_inventory: manifest header checksum failed (%s)", manifestPath.c_str());
+        return false;
+    }
+
+    size_t loaded = 0;
+    for (uint32_t i = 0; i < count; i++) {
+        ShaderUid uid{};
+        uint32_t keyFields[5] = {0};
+        uint8_t flagsByte = 0;
+        uint16_t strLen = 0;
+
+        if (fread(&uid, sizeof(uid), 1, f) != 1 ||
+            fread(keyFields, sizeof(uint32_t), 5, f) != 5 ||
+            fread(&flagsByte, sizeof(flagsByte), 1, f) != 1 ||
+            fread(&strLen, sizeof(strLen), 1, f) != 1) {
+            break;
+        }
+
+        if (strLen > 512) {
+            break;  // Corrupt record, stop safely
+        }
+
+        std::string src;
+        if (strLen > 0) {
+            src.resize(strLen);
+            if (fread(&src[0], 1, strLen, f) != strLen) {
+                break;
+            }
+        }
+
+        uint32_t recCrc = 0;
+        if (fread(&recCrc, sizeof(recCrc), 1, f) != 1) {
+            break;
+        }
+
+        uint32_t checkH = fnv1a32(&uid, sizeof(uid));
+        checkH = fnv1a32(keyFields, sizeof(keyFields), checkH);
+        checkH = fnv1a32(&flagsByte, 1, checkH);
+        checkH = fnv1a32(&strLen, 2, checkH);
+        if (strLen > 0) checkH = fnv1a32(src.data(), strLen, checkH);
+        if (checkH != recCrc) {
+            break;
+        }
+
+        PipelineKey key{};
+        key.uid = uid;
+        key.flags = keyFields[0];
+        key.depthState = keyFields[1];
+        key.blendState = keyFields[2];
+        key.blendState2 = keyFields[3];
+        key.rasterState = keyFields[4];
+
+        addEntry(uid, key, src.empty() ? "asset_manifest" : ("asset:" + src), false);
+        loaded++;
+    }
+
+    fclose(f);
+    mStats.assetDerivedEntries = loaded;
+    mStats.isAssetManifestLoaded = (loaded > 0);
+    port_log("vk_shader_inventory: loaded %zu asset-derived materials from manifest %s",
+             loaded, manifestPath.c_str());
+    return loaded > 0;
+}
+
 void ShaderInventory::scanAssetDirectory(const std::string& filesDir) {
+    // 1. First look for pre-cooked full-game manifest
+    std::string candidate1 = filesDir + "/galaxy_shader_manifest.bin";
+    std::string candidate2 = mCacheDir + "/galaxy_shader_manifest.bin";
+    std::string candidate3 = mDataRoot + "/galaxy_shader_manifest.bin";
+
+    if (loadAssetManifest(candidate1) || loadAssetManifest(candidate2) || loadAssetManifest(candidate3)) {
+        return;
+    }
+
     DIR* d = opendir(filesDir.c_str());
     if (!d) {
         mInventoryGapReports.push_back("Asset directory missing or inaccessible: " + filesDir);
+        mStats.explicitInventoryGaps++;
         return;
     }
 
@@ -259,22 +400,38 @@ void ShaderInventory::scanAssetDirectory(const std::string& filesDir) {
     }
     closedir(d);
 
-    port_log("vk_shader_inventory: scanned asset archives in %s: found %zu archives", filesDir.c_str(), arcCount);
+    mStats.explicitInventoryGaps = arcCount;
+    mStats.isAssetManifestLoaded = false;
+    char gapBuf[256];
+    snprintf(gapBuf, sizeof(gapBuf),
+             "Unparsed archives found (%zu .arc files) without cooked manifest; canonical catalog active", arcCount);
+    mInventoryGapReports.push_back(std::string(gapBuf));
+    port_log("vk_shader_inventory: %s", gapBuf);
 }
 
-void ShaderInventory::recordRuntimeDiscovery(const ShaderUid& uid, const PipelineKey& key, const char* source) {
+void ShaderInventory::recordRuntimeShaderUidMiss(const ShaderUid& uid, const PipelineKey& key, const char* source) {
     std::lock_guard<std::mutex> lock(mMutex);
-    auto kit = mKeyIndex.find(key);
-    if (kit != mKeyIndex.end()) {
-        return;
-    }
-
-    mStats.runtimeDiscoveredMissing++;
-    addEntry(uid, key, source ? source : "runtime_observed", true);
-    port_log("vk_shader_inventory: dynamic runtime shader/pipeline discovered: total=%zu", mEntries.size());
-
-    // Save update to disk asynchronously / durably
+    mStats.runtimeShaderUidMisses++;
+    mStats.runtimeDiscoveredEntries++;
+    addEntry(uid, key, source ? source : "runtime_uid_miss", true);
+    port_log("vk_shader_inventory: runtime ShaderUid miss recorded (uid misses: %zu, total keys: %zu)",
+             mStats.runtimeShaderUidMisses, mEntries.size());
     saveInventory();
+}
+
+void ShaderInventory::recordRuntimePipelineKeyMiss(const ShaderUid& uid, const PipelineKey& key, const char* source) {
+    std::lock_guard<std::mutex> lock(mMutex);
+    mStats.runtimePipelineKeyMisses++;
+    mStats.runtimeDiscoveredEntries++;
+    addEntry(uid, key, source ? source : "runtime_key_miss", true);
+    port_log("vk_shader_inventory: runtime PipelineKey miss recorded (key misses: %zu, total keys: %zu)",
+             mStats.runtimePipelineKeyMisses, mEntries.size());
+    saveInventory();
+}
+
+void ShaderInventory::incrementPlaceholderUses() {
+    std::lock_guard<std::mutex> lock(mMutex);
+    mStats.placeholderPipelineUses++;
 }
 
 void ShaderInventory::compileAllSpirv(int maxWorkers, std::function<void(int done, int total, const char* msg)> progress) {
@@ -291,6 +448,8 @@ void ShaderInventory::compileAllSpirv(int maxWorkers, std::function<void(int don
     if (total == 0) return;
 
     port_log("vk_shader_inventory: Stage A: Compiling %d unique shader pairs to SPIR-V...", total);
+    auto start = std::chrono::steady_clock::now();
+
     std::atomic<int> completed{0};
     std::atomic<int> cached{0};
     std::atomic<int> compiled{0};
@@ -323,16 +482,26 @@ void ShaderInventory::compileAllSpirv(int maxWorkers, std::function<void(int don
         if (th.joinable()) th.join();
     }
 
+    auto elapsed = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+
     {
         std::lock_guard<std::mutex> lock(mMutex);
-        mStats.spirvCached = cached.load();
-        mStats.spirvCompiled = compiled.load();
-        mStats.failed = failed.load();
+        mStats.spirvCacheHits = cached.load();
+        mStats.spirvCompilationsCompleted = compiled.load();
+        mStats.spirvFailures = failed.load();
+        mStats.timeSpirvPhaseMs = elapsed;
         mSpirvWarmed = true;
+
+        for (auto& e : mEntries) {
+            std::vector<uint32_t> vs, fs;
+            if (lookupVulkanShader(e.uid, vs, fs)) {
+                e.spirvReady = true;
+            }
+        }
     }
 
-    port_log("vk_shader_inventory: Stage A complete! %d shaders (reused from cache: %d, freshly compiled: %d, failed: %d)",
-             total, cached.load(), compiled.load(), failed.load());
+    port_log("vk_shader_inventory: Stage A complete in %.1f ms! %d shaders (reused from cache: %d, freshly compiled: %d, failed: %d)",
+             elapsed, total, cached.load(), compiled.load(), failed.load());
 }
 
 void ShaderInventory::prewarmPipelines(VkRenderer& renderer, std::function<void(int done, int total, const char* msg)> progress) {
@@ -349,27 +518,44 @@ void ShaderInventory::prewarmPipelines(VkRenderer& renderer, std::function<void(
     auto start = std::chrono::steady_clock::now();
 
     int created = 0;
-    int cached = 0;
-    int failed = 0;
+    int reused = 0;
+    int spirvMiss = 0;
+    int pipeFail = 0;
+    int unsupported = 0;
 
     for (int i = 0; i < total; i++) {
         const auto& entry = entriesCopy[i];
-        Item dummy{};
-        dummy.flags = entry.key.flags;
-        dummy.depthTest = (entry.key.depthState & 1) ? 1 : 0;
-        dummy.depthWrite = (entry.key.depthState & 2) ? 1 : 0;
-        dummy.depthFunc = 0x0200 | ((entry.key.depthState >> 4) & 15);
-        dummy.cull = (entry.key.rasterState & 1) ? 1 : 0;
-        dummy.cullFace = ((entry.key.rasterState >> 1) & 0xF) ? 0x0404 : 0x0405;
-        dummy.prim = (entry.key.rasterState >> 5) & 7;
-        dummy.colorMask = (entry.key.blendState2 >> 4) & 15;
-        dummy.blend = entry.key.blendState & 1;
+        PrewarmResult res = renderer.prewarmExactPipeline(entry.key, entry.uid);
 
-        VkPipeline pipe = renderer.getPipeline(dummy, entry.uid);
-        if (pipe != VK_NULL_HANDLE) {
+        switch (res) {
+        case PrewarmResult::Created:
             created++;
-        } else {
-            failed++;
+            entriesCopy[i].pipelineReady = true;
+            break;
+        case PrewarmResult::Reused:
+            reused++;
+            entriesCopy[i].pipelineReady = true;
+            break;
+        case PrewarmResult::SpirvUnavailable:
+            spirvMiss++;
+            entriesCopy[i].failed = true;
+            entriesCopy[i].failureReason = "SPIR-V unavailable";
+            break;
+        case PrewarmResult::CreationFailed:
+            pipeFail++;
+            entriesCopy[i].failed = true;
+            entriesCopy[i].failureReason = "vkCreateGraphicsPipelines failed";
+            break;
+        case PrewarmResult::UnsupportedState:
+            unsupported++;
+            entriesCopy[i].failed = true;
+            entriesCopy[i].failureReason = "Unsupported state or render pass";
+            break;
+        case PrewarmResult::PlaceholderReturned:
+        case PrewarmResult::CompilationPending:
+            entriesCopy[i].failed = true;
+            entriesCopy[i].failureReason = "Placeholder or pending returned";
+            break;
         }
 
         if (progress && (i % 25 == 0 || i + 1 == total)) {
@@ -382,28 +568,85 @@ void ShaderInventory::prewarmPipelines(VkRenderer& renderer, std::function<void(
 
     {
         std::lock_guard<std::mutex> lock(mMutex);
-        mStats.pipelinesCreated = created;
-        mStats.failed += failed;
+        mEntries = std::move(entriesCopy);
+        mStats.realPipelinesCreated = created;
+        mStats.realPipelinesReused = reused;
+        mStats.pipelineCreationFailures = pipeFail + unsupported;
+        mStats.spirvFailures += spirvMiss;
+        mStats.timePipelinePhaseMs = elapsed;
         mPipelinesWarmed = true;
     }
 
-    port_log("vk_shader_inventory: Stage B complete in %.1f ms! %d pipelines prewarmed (created: %d, failed: %d)",
-             elapsed, total, created, failed);
+    port_log("vk_shader_inventory: Stage B complete in %.1f ms! %d pipelines (created: %d, reused: %d, spirvMissing: %d, failed: %d)",
+             elapsed, total, created, reused, spirvMiss, pipeFail + unsupported);
+
+    saveInventory();
+}
+
+bool ShaderInventory::verifyStartupReadiness() const {
+    std::lock_guard<std::mutex> lock(mMutex);
+    size_t missingEssential = 0;
+    for (const auto& e : mEntries) {
+        if (e.sourceAsset == "placeholder_stub" || e.sourceAsset == "title_screen_and_ui") {
+            if (!e.pipelineReady) {
+                missingEssential++;
+            }
+        }
+    }
+    if (missingEssential > 0) {
+        port_log("vk_shader_inventory: startup readiness check failed: %zu essential startup pipelines not ready",
+                 missingEssential);
+        return false;
+    }
+    port_log("vk_shader_inventory: startup readiness check passed: all essential stubs and title screen pipelines ready");
+    return true;
 }
 
 ShaderInventoryStats ShaderInventory::stats() const {
     std::lock_guard<std::mutex> lock(mMutex);
-    return mStats;
+    ShaderInventoryStats s = mStats;
+    s.totalUniqueKeys = mKeyIndex.size();
+    s.totalUniqueUids = mUidIndex.size();
+
+    size_t canonical = 0, assetDerived = 0, runtime = 0;
+    size_t notCompiled = 0, notPrewarmed = 0;
+    for (const auto& e : mEntries) {
+        if (e.isRuntimeDiscovered) runtime++;
+        else if (e.sourceAsset.rfind("asset:", 0) == 0) assetDerived++;
+        else canonical++;
+
+        if (!e.spirvReady) notCompiled++;
+        if (!e.pipelineReady) notPrewarmed++;
+    }
+    s.canonicalEntries = canonical;
+    s.assetDerivedEntries = assetDerived;
+    s.runtimeDiscoveredEntries = runtime;
+    s.entriesNotYetCompiled = notCompiled;
+    s.entriesNotYetPrewarmed = notPrewarmed;
+    return s;
 }
 
 std::string ShaderInventory::getDiagnostics() const {
     std::lock_guard<std::mutex> lock(mMutex);
-    char buf[512];
+    char buf[1024];
     snprintf(buf, sizeof(buf),
-             "ShaderInventory Stats: Total Discovered: %zu | SPIR-V (Cached: %zu, Compiled: %zu) | "
-             "Pipelines (Created: %zu) | Missing/Runtime: %zu | Failed: %zu",
-             mStats.totalDiscovered, mStats.spirvCached, mStats.spirvCompiled,
-             mStats.pipelinesCreated, mStats.runtimeDiscoveredMissing, mStats.failed);
+             "=== Vulkan Shader Inventory & Prewarm Diagnostics ===\n"
+             "Total Unique Keys: %zu | Total Unique UIDs: %zu\n"
+             "Entries -> Canonical: %zu | Asset-Derived: %zu (Manifest: %s) | Runtime Discovered: %zu\n"
+             "Runtime Misses -> ShaderUid Misses: %zu | PipelineKey Misses: %zu\n"
+             "SPIR-V Compilation -> Cache Hits: %zu | Freshly Compiled: %zu | Failures: %zu | Time: %.1f ms\n"
+             "Pipeline Prewarm -> Reused: %zu | Created: %zu | Creation Failures: %zu | Time: %.1f ms\n"
+             "Diagnostics -> Placeholders Used: %zu | Gaps: %zu\n"
+             "Coverage Status: %s",
+             mKeyIndex.size(), mUidIndex.size(),
+             mStats.canonicalEntries, mStats.assetDerivedEntries,
+             mStats.isAssetManifestLoaded ? "ACTIVE" : "NOT_LOADED",
+             mStats.runtimeDiscoveredEntries,
+             mStats.runtimeShaderUidMisses, mStats.runtimePipelineKeyMisses,
+             mStats.spirvCacheHits, mStats.spirvCompilationsCompleted, mStats.spirvFailures, mStats.timeSpirvPhaseMs,
+             mStats.realPipelinesReused, mStats.realPipelinesCreated, mStats.pipelineCreationFailures, mStats.timePipelinePhaseMs,
+             mStats.placeholderPipelineUses, mStats.explicitInventoryGaps,
+             mStats.isAssetManifestLoaded ? "Full-Game Asset Manifest Covered" : "Canonical Pre-Baked Coverage (Manifest Cooking Pending)");
     return std::string(buf);
 }
 
@@ -413,30 +656,66 @@ void ShaderInventory::saveInventory() {
     FILE* f = fopen(tmpPath.c_str(), "wb");
     if (!f) return;
 
-    uint32_t magic = kInventoryMagic;
-    uint32_t version = kInventoryVersion;
-    uint32_t count = (uint32_t)mEntries.size();
+    uint32_t header[5] = {
+        kInventoryMagic,
+        kInventoryVersion,
+        kBuildVersion,
+        (uint32_t)mEntries.size(),
+        0  // CRC placeholder
+    };
+    header[4] = fnv1a32(header, 4 * sizeof(uint32_t));
 
-    if (fwrite(&magic, sizeof(magic), 1, f) != 1 ||
-        fwrite(&version, sizeof(version), 1, f) != 1 ||
-        fwrite(&count, sizeof(count), 1, f) != 1) {
+    if (fwrite(header, sizeof(uint32_t), 5, f) != 5) {
         fclose(f);
         remove(tmpPath.c_str());
         return;
     }
 
     for (const auto& e : mEntries) {
-        uint32_t strLen = (uint32_t)e.sourceAsset.size();
-        uint8_t isRt = e.isRuntimeDiscovered ? 1 : 0;
-        fwrite(&e.uid, sizeof(e.uid), 1, f);
-        fwrite(&e.key, sizeof(e.key), 1, f);
-        fwrite(&isRt, sizeof(isRt), 1, f);
-        fwrite(&strLen, sizeof(strLen), 1, f);
+        uint32_t keyFields[5] = {
+            e.key.flags,
+            e.key.depthState,
+            e.key.blendState,
+            e.key.blendState2,
+            e.key.rasterState
+        };
+        uint8_t flagsByte = (e.isRuntimeDiscovered ? 1 : 0) |
+                            (e.spirvReady ? 2 : 0) |
+                            (e.pipelineReady ? 4 : 0) |
+                            (e.failed ? 8 : 0);
+        uint16_t strLen = (uint16_t)std::min<size_t>(512, e.sourceAsset.size());
+
+        uint32_t recCrc = fnv1a32(&e.uid, sizeof(e.uid));
+        recCrc = fnv1a32(keyFields, sizeof(keyFields), recCrc);
+        recCrc = fnv1a32(&flagsByte, 1, recCrc);
+        recCrc = fnv1a32(&strLen, 2, recCrc);
+        if (strLen > 0) recCrc = fnv1a32(e.sourceAsset.data(), strLen, recCrc);
+
+        if (fwrite(&e.uid, sizeof(e.uid), 1, f) != 1 ||
+            fwrite(keyFields, sizeof(uint32_t), 5, f) != 5 ||
+            fwrite(&flagsByte, sizeof(flagsByte), 1, f) != 1 ||
+            fwrite(&strLen, sizeof(strLen), 1, f) != 1) {
+            fclose(f);
+            remove(tmpPath.c_str());
+            return;
+        }
+
         if (strLen > 0) {
-            fwrite(e.sourceAsset.data(), 1, strLen, f);
+            if (fwrite(e.sourceAsset.data(), 1, strLen, f) != strLen) {
+                fclose(f);
+                remove(tmpPath.c_str());
+                return;
+            }
+        }
+
+        if (fwrite(&recCrc, sizeof(recCrc), 1, f) != 1) {
+            fclose(f);
+            remove(tmpPath.c_str());
+            return;
         }
     }
 
+    fflush(f);
     fclose(f);
     rename(tmpPath.c_str(), mInventoryFilePath.c_str());
 }
@@ -446,43 +725,106 @@ void ShaderInventory::loadInventory() {
     FILE* f = fopen(mInventoryFilePath.c_str(), "rb");
     if (!f) return;
 
-    uint32_t magic = 0, version = 0, count = 0;
-    if (fread(&magic, sizeof(magic), 1, f) != 1 || magic != kInventoryMagic ||
-        fread(&version, sizeof(version), 1, f) != 1 || version != kInventoryVersion ||
-        fread(&count, sizeof(count), 1, f) != 1) {
+    uint32_t header[5] = {0};
+    if (fread(header, sizeof(uint32_t), 5, f) != 5) {
         fclose(f);
         return;
     }
 
+    if (header[0] != kInventoryMagic || header[1] != kInventoryVersion || header[2] != kBuildVersion) {
+        fclose(f);
+        return;
+    }
+
+    uint32_t expectedHdrCrc = header[4];
+    uint32_t actualHdrCrc = fnv1a32(header, 4 * sizeof(uint32_t));
+    if (expectedHdrCrc != actualHdrCrc) {
+        fclose(f);
+        return;
+    }
+
+    uint32_t count = header[3];
     for (uint32_t i = 0; i < count; i++) {
         ShaderUid uid{};
-        PipelineKey key{};
-        uint8_t isRt = 0;
-        uint32_t strLen = 0;
+        uint32_t keyFields[5] = {0};
+        uint8_t flagsByte = 0;
+        uint16_t strLen = 0;
+
         if (fread(&uid, sizeof(uid), 1, f) != 1 ||
-            fread(&key, sizeof(key), 1, f) != 1 ||
-            fread(&isRt, sizeof(isRt), 1, f) != 1 ||
+            fread(keyFields, sizeof(uint32_t), 5, f) != 5 ||
+            fread(&flagsByte, sizeof(flagsByte), 1, f) != 1 ||
             fread(&strLen, sizeof(strLen), 1, f) != 1) {
-            break;
+            break;  // Truncation recovery
+        }
+
+        if (strLen > 512) {
+            break;  // Prevent buffer overrun or reader desynchronization
         }
 
         std::string src;
-        if (strLen > 0 && strLen < 1024) {
+        if (strLen > 0) {
             src.resize(strLen);
             if (fread(&src[0], 1, strLen, f) != strLen) {
                 break;
             }
         }
-        addEntry(uid, key, src, isRt != 0);
+
+        uint32_t recCrc = 0;
+        if (fread(&recCrc, sizeof(recCrc), 1, f) != 1) {
+            break;
+        }
+
+        uint32_t checkH = fnv1a32(&uid, sizeof(uid));
+        checkH = fnv1a32(keyFields, sizeof(keyFields), checkH);
+        checkH = fnv1a32(&flagsByte, 1, checkH);
+        checkH = fnv1a32(&strLen, 2, checkH);
+        if (strLen > 0) checkH = fnv1a32(src.data(), strLen, checkH);
+        if (checkH != recCrc) {
+            break;  // Corruption detected, stop safely at last valid record
+        }
+
+        PipelineKey key{};
+        key.uid = uid;
+        key.flags = keyFields[0];
+        key.depthState = keyFields[1];
+        key.blendState = keyFields[2];
+        key.blendState2 = keyFields[3];
+        key.rasterState = keyFields[4];
+
+        addEntry(uid, key, src, (flagsByte & 1) != 0);
     }
+
     fclose(f);
     port_log("vk_shader_inventory: loaded %zu persistent inventory entries from %s",
              mEntries.size(), mInventoryFilePath.c_str());
 }
 
 void ShaderInventory::invalidateIfStale(uint32_t currentBuildVersion) {
-    (void)currentBuildVersion;
-    // Clears in-memory and disk inventory if version mismatch detected
+    if (mInventoryFilePath.empty()) return;
+    FILE* f = fopen(mInventoryFilePath.c_str(), "rb");
+    if (!f) return;
+
+    uint32_t header[5] = {0};
+    bool stale = false;
+    if (fread(header, sizeof(uint32_t), 5, f) == 5) {
+        if (header[0] != kInventoryMagic || header[1] != kInventoryVersion || header[2] != currentBuildVersion) {
+            stale = true;
+        }
+    } else {
+        stale = true;
+    }
+    fclose(f);
+
+    if (stale) {
+        port_log("vk_shader_inventory: cache is stale (build version mismatch); invalidating %s",
+                 mInventoryFilePath.c_str());
+        remove(mInventoryFilePath.c_str());
+        mEntries.clear();
+        mUidIndex.clear();
+        mKeyIndex.clear();
+        mStats = ShaderInventoryStats{};
+        mCanonicalPopulated = false;
+    }
 }
 
 }  // namespace gpu

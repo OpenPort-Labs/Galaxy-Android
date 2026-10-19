@@ -23,6 +23,11 @@ bool VulkanLifecycle::bringUp(ANativeWindow* window, int& screenW, int& screenH,
     // Stage B: Prewarm graphics pipelines before gameplay commences
     gpu::ShaderInventory::get().prewarmPipelines(gpu::VkRenderer::get());
 
+    // Verify startup readiness before permitting gameplay
+    if (!gpu::ShaderInventory::get().verifyStartupReadiness()) {
+        LOGW("Vulkan startup readiness check reported missing essential pipelines; falling back or proceeding with caution");
+    }
+
     mobile_ui::UIOverlay::get().setActiveBackend(1);
     mobile_ui::UIOverlay::get().setGpuRendererName(gpu::VkRenderer::get().deviceName());
     screenW = ANativeWindow_getWidth(window);
@@ -92,6 +97,8 @@ void VulkanLifecycle::initCaches(const std::string& internalPath) {
     gpu::setVulkanShaderCachePath((internalPath + "/vk_shaders.bin").c_str());
     gpu::ShaderInventory::get().init(internalPath, "/sdcard/GalaxyData");
     gpu::prewarmCommonShaders();
+    // Stage A: Compile missing SPIR-V shaders before device bringup with bounded workers (4 threads)
+    gpu::ShaderInventory::get().compileAllSpirv(4);
 }
 
 }  // namespace mobile_render

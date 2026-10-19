@@ -61,16 +61,37 @@ static DrawBlendState blendStateFor(const Item& it) {
 
 PipelineKey pipelineKeyFor(const Item& it, const ShaderUid& uid) {
     const DrawBlendState blend = blendStateFor(it);
-    PipelineKey key{};
-    key.uid = uid;
-    key.flags = it.flags;
-    key.depthState = (it.depthTest ? 1 : 0) | ((it.depthTest && it.depthWrite ? 1 : 0) << 1) | ((it.depthFunc & 15) << 4);
-    key.blendState = (blend.on ? 1u : 0u) | ((uint32_t)blend.srcColor << 1) | ((uint32_t)blend.dstColor << 6) |
-                     ((uint32_t)blend.srcAlpha << 11) | ((uint32_t)blend.dstAlpha << 16);
-    key.blendState2 = (uint32_t)blend.colorOp | ((uint32_t)blend.alphaOp << 2) | ((it.colorMask & 15) << 4) |
-                      (blend.constantAlpha << 8);
-    key.rasterState = (it.cull ? 1 : 0) | ((it.cullFace & 0xF) << 1) | ((it.prim & 7) << 5);
-    return key;
+    DecodedPipelineKey d{};
+    d.uid = uid;
+    d.vtxFlags = it.flags;
+    d.depthTest = (it.depthTest != 0);
+    d.depthWrite = (it.depthTest && it.depthWrite);
+    d.depthCompareOp = (VkCompareOp)(it.depthFunc & 7);
+    d.blendEnable = blend.on;
+    d.srcColorBlendFactor = blend.srcColor;
+    d.dstColorBlendFactor = blend.dstColor;
+    d.colorBlendOp = blend.colorOp;
+    d.srcAlphaBlendFactor = blend.srcAlpha;
+    d.dstAlphaBlendFactor = blend.dstAlpha;
+    d.alphaBlendOp = blend.alphaOp;
+    d.colorWriteMask = (it.colorMask & 1 ? VK_COLOR_COMPONENT_R_BIT : 0) |
+                       (it.colorMask & 2 ? VK_COLOR_COMPONENT_G_BIT : 0) |
+                       (it.colorMask & 4 ? VK_COLOR_COMPONENT_B_BIT : 0) |
+                       (it.colorMask & 8 ? VK_COLOR_COMPONENT_A_BIT : 0);
+    d.blendConstantAlpha = it.dstAlphaValue;
+    if (!it.cull) {
+        d.cullMode = VK_CULL_MODE_NONE;
+    } else if (it.cullFace == 0x0408) {
+        d.cullMode = VK_CULL_MODE_FRONT_AND_BACK;
+    } else if (it.cullFace == 0x0404) {
+        d.cullMode = VK_CULL_MODE_FRONT_BIT;
+    } else {
+        d.cullMode = VK_CULL_MODE_BACK_BIT;
+    }
+    d.topology = (it.prim == 1) ? VK_PRIMITIVE_TOPOLOGY_LINE_LIST :
+                 ((it.prim == 0) ? VK_PRIMITIVE_TOPOLOGY_POINT_LIST : VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+    d.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    return encodePipelineKey(d);
 }
 
 VkPipeline VkRenderer::getPipeline(const Item& it, const ShaderUid& uid) {
@@ -80,18 +101,49 @@ VkPipeline VkRenderer::getPipeline(const Item& it, const ShaderUid& uid) {
 
     std::vector<uint32_t> vsSpirv, fsSpirv;
     if (!lookupVulkanShader(uid, vsSpirv, fsSpirv)) {
-        ShaderInventory::get().recordRuntimeDiscovery(uid, key, "runtime_miss");
+        ShaderInventory::get().recordRuntimeShaderUidMiss(uid, key, "runtime_uid_miss");
         if (mShaderFailed.count(uid)) {
             return placeholderPipeline(it);
         }
         requestShader(uid, it);
         return placeholderPipeline(it);
     }
-    return createPipeline(it, key, uid, vsSpirv, fsSpirv);
+
+    ShaderInventory::get().recordRuntimePipelineKeyMiss(uid, key, "runtime_key_miss");
+    return createPipeline(key, vsSpirv, fsSpirv);
+}
+
+PrewarmResult VkRenderer::prewarmExactPipeline(const PipelineKey& key, const ShaderUid& uid) {
+    if (mDevice == VK_NULL_HANDLE || mEfbRenderPass == VK_NULL_HANDLE) {
+        return PrewarmResult::UnsupportedState;
+    }
+
+    auto pit = mPipelines.find(key);
+    if (pit != mPipelines.end() && pit->second != VK_NULL_HANDLE) {
+        return PrewarmResult::Reused;
+    }
+
+    std::vector<uint32_t> vsSpirv, fsSpirv;
+    if (!lookupVulkanShader(uid, vsSpirv, fsSpirv)) {
+        if (mShaderFailed.count(uid)) {
+            return PrewarmResult::SpirvUnavailable;
+        }
+        if (!compileVulkanShader(uid, vsSpirv, fsSpirv)) {
+            mShaderFailed.insert(uid);
+            return PrewarmResult::SpirvUnavailable;
+        }
+    }
+
+    VkPipeline pipeline = createPipeline(key, vsSpirv, fsSpirv);
+    if (pipeline == VK_NULL_HANDLE) {
+        return PrewarmResult::CreationFailed;
+    }
+    return PrewarmResult::Created;
 }
 
 VkPipeline VkRenderer::placeholderPipeline(const Item& it) {
     sPlaceholderDraws++;
+    ShaderInventory::get().incrementPlaceholderUses();
     if (sPlaceholderDraws == 1 || sPlaceholderDraws % 500 == 0) {
         LOGW("VkRenderer: %llu draws currently utilizing placeholder fallback pipelines", (unsigned long long)sPlaceholderDraws);
     }
@@ -107,12 +159,12 @@ VkPipeline VkRenderer::placeholderPipeline(const Item& it) {
         !compileVulkanShader(stub, vsSpirv, fsSpirv)) {
         return VK_NULL_HANDLE;
     }
-    return createPipeline(it, key, stub, vsSpirv, fsSpirv);
+    return createPipeline(key, vsSpirv, fsSpirv);
 }
 
-VkPipeline VkRenderer::createPipeline(const Item& it, const PipelineKey& key, const ShaderUid& uid,
+VkPipeline VkRenderer::createPipeline(const PipelineKey& key,
                                       const std::vector<uint32_t>& vsSpirv, const std::vector<uint32_t>& fsSpirv) {
-    const DrawBlendState blend = blendStateFor(it);
+    const DecodedPipelineKey dec = decodePipelineKey(key);
     auto buildStart = std::chrono::steady_clock::now();
     auto spirvDone = buildStart;
 
@@ -147,18 +199,18 @@ VkPipeline VkRenderer::createPipeline(const Item& it, const PipelineKey& key, co
     };
 
     addAttr(0, VK_FORMAT_R32G32B32_SFLOAT, 12);
-    if (it.flags & VF_POSMTX) addAttr(1, VK_FORMAT_R32_UINT, 4);
-    if (it.flags & VF_NRM) addAttr(2, VK_FORMAT_R32G32B32_SFLOAT, 12);
-    if (it.flags & VF_NBT) {
+    if (dec.vtxFlags & VF_POSMTX) addAttr(1, VK_FORMAT_R32_UINT, 4);
+    if (dec.vtxFlags & VF_NRM) addAttr(2, VK_FORMAT_R32G32B32_SFLOAT, 12);
+    if (dec.vtxFlags & VF_NBT) {
         addAttr(3, VK_FORMAT_R32G32B32_SFLOAT, 12);
         addAttr(4, VK_FORMAT_R32G32B32_SFLOAT, 12);
     }
-    if (it.flags & VF_CLR0) addAttr(5, VK_FORMAT_R8G8B8A8_UNORM, 4);
-    if (it.flags & VF_CLR1) addAttr(6, VK_FORMAT_R8G8B8A8_UNORM, 4);
+    if (dec.vtxFlags & VF_CLR0) addAttr(5, VK_FORMAT_R8G8B8A8_UNORM, 4);
+    if (dec.vtxFlags & VF_CLR1) addAttr(6, VK_FORMAT_R8G8B8A8_UNORM, 4);
     for (int i = 0; i < 8; i++) {
-        if (it.flags & (VF_TEX0 << i)) addAttr(7 + i, VK_FORMAT_R32G32_SFLOAT, 8);
+        if (dec.vtxFlags & (VF_TEX0 << i)) addAttr(7 + i, VK_FORMAT_R32G32_SFLOAT, 8);
     }
-    if (it.flags & VF_TEXMTX) addAttr(15, VK_FORMAT_R32G32_UINT, 8);
+    if (dec.vtxFlags & VF_TEXMTX) addAttr(15, VK_FORMAT_R32G32_UINT, 8);
 
     VkVertexInputBindingDescription bindDesc{};
     bindDesc.binding = 0;
@@ -174,8 +226,7 @@ VkPipeline VkRenderer::createPipeline(const Item& it, const PipelineKey& key, co
 
     VkPipelineInputAssemblyStateCreateInfo iaci{};
     iaci.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
-    iaci.topology = (it.prim == 1) ? VK_PRIMITIVE_TOPOLOGY_LINE_LIST :
-                    ((it.prim == 0) ? VK_PRIMITIVE_TOPOLOGY_POINT_LIST : VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+    iaci.topology = dec.topology;
 
     VkPipelineViewportStateCreateInfo vpsi{};
     vpsi.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
@@ -185,16 +236,8 @@ VkPipeline VkRenderer::createPipeline(const Item& it, const PipelineKey& key, co
     VkPipelineRasterizationStateCreateInfo rsci{};
     rsci.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
     rsci.depthClampEnable = VK_FALSE;
-    if (!it.cull) {
-        rsci.cullMode = VK_CULL_MODE_NONE;
-    } else if (it.cullFace == 0x0408) {
-        rsci.cullMode = VK_CULL_MODE_FRONT_AND_BACK;
-    } else if (it.cullFace == 0x0404) {
-        rsci.cullMode = VK_CULL_MODE_FRONT_BIT;
-    } else {
-        rsci.cullMode = VK_CULL_MODE_BACK_BIT;
-    }
-    rsci.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    rsci.cullMode = dec.cullMode;
+    rsci.frontFace = dec.frontFace;
     rsci.lineWidth = 1.0f;
 
     VkPipelineMultisampleStateCreateInfo msci{};
@@ -203,39 +246,26 @@ VkPipeline VkRenderer::createPipeline(const Item& it, const PipelineKey& key, co
 
     VkPipelineDepthStencilStateCreateInfo dssci{};
     dssci.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-    dssci.depthTestEnable = it.depthTest ? VK_TRUE : VK_FALSE;
-    dssci.depthWriteEnable = (it.depthTest && it.depthWrite) ? VK_TRUE : VK_FALSE;
-
-    switch (it.depthFunc) {
-    case 0x0200: dssci.depthCompareOp = VK_COMPARE_OP_NEVER; break;
-    case 0x0201: dssci.depthCompareOp = VK_COMPARE_OP_LESS; break;
-    case 0x0202: dssci.depthCompareOp = VK_COMPARE_OP_EQUAL; break;
-    case 0x0203: dssci.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL; break;
-    case 0x0204: dssci.depthCompareOp = VK_COMPARE_OP_GREATER; break;
-    case 0x0205: dssci.depthCompareOp = VK_COMPARE_OP_NOT_EQUAL; break;
-    case 0x0206: dssci.depthCompareOp = VK_COMPARE_OP_GREATER_OR_EQUAL; break;
-    default: dssci.depthCompareOp = VK_COMPARE_OP_ALWAYS; break;
-    }
+    dssci.depthTestEnable = dec.depthTest ? VK_TRUE : VK_FALSE;
+    dssci.depthWriteEnable = dec.depthWrite ? VK_TRUE : VK_FALSE;
+    dssci.depthCompareOp = dec.depthCompareOp;
 
     VkPipelineColorBlendAttachmentState cbAttachment{};
-    cbAttachment.colorWriteMask = (it.colorMask & 1 ? VK_COLOR_COMPONENT_R_BIT : 0) |
-                                  (it.colorMask & 2 ? VK_COLOR_COMPONENT_G_BIT : 0) |
-                                  (it.colorMask & 4 ? VK_COLOR_COMPONENT_B_BIT : 0) |
-                                  (it.colorMask & 8 ? VK_COLOR_COMPONENT_A_BIT : 0);
-    cbAttachment.blendEnable = blend.on ? VK_TRUE : VK_FALSE;
-    cbAttachment.srcColorBlendFactor = blend.srcColor;
-    cbAttachment.dstColorBlendFactor = blend.dstColor;
-    cbAttachment.colorBlendOp = blend.colorOp;
-    cbAttachment.srcAlphaBlendFactor = blend.srcAlpha;
-    cbAttachment.dstAlphaBlendFactor = blend.dstAlpha;
-    cbAttachment.alphaBlendOp = blend.alphaOp;
+    cbAttachment.colorWriteMask = dec.colorWriteMask;
+    cbAttachment.blendEnable = dec.blendEnable ? VK_TRUE : VK_FALSE;
+    cbAttachment.srcColorBlendFactor = dec.srcColorBlendFactor;
+    cbAttachment.dstColorBlendFactor = dec.dstColorBlendFactor;
+    cbAttachment.colorBlendOp = dec.colorBlendOp;
+    cbAttachment.srcAlphaBlendFactor = dec.srcAlphaBlendFactor;
+    cbAttachment.dstAlphaBlendFactor = dec.dstAlphaBlendFactor;
+    cbAttachment.alphaBlendOp = dec.alphaBlendOp;
 
     VkPipelineColorBlendStateCreateInfo cbci{};
     cbci.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
     cbci.attachmentCount = 1;
     cbci.pAttachments = &cbAttachment;
     cbci.blendConstants[0] = cbci.blendConstants[1] = cbci.blendConstants[2] = 0.0f;
-    cbci.blendConstants[3] = it.dstAlphaValue;
+    cbci.blendConstants[3] = dec.blendConstantAlpha;
 
     VkDynamicState dynStates[] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
     VkPipelineDynamicStateCreateInfo dsci{};
@@ -279,7 +309,7 @@ VkPipeline VkRenderer::createPipeline(const Item& it, const PipelineKey& key, co
     auto built = std::chrono::steady_clock::now();
     const double totalMs = std::chrono::duration<double, std::milli>(built - buildStart).count();
     if (totalMs >= 10.0) {
-        LOGI("VkRenderer: pipeline uid=%u built in %.1f ms (GLSL->SPIR-V %.1f ms, driver %.1f ms)", it.uid, totalMs,
+        LOGI("VkRenderer: pipeline built in %.1f ms (GLSL->SPIR-V %.1f ms, driver %.1f ms)", totalMs,
              std::chrono::duration<double, std::milli>(spirvDone - buildStart).count(),
              std::chrono::duration<double, std::milli>(built - spirvDone).count());
     }

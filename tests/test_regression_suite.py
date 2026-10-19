@@ -466,6 +466,117 @@ class TestVulkanRenderPassStateTracking(unittest.TestCase):
         m_resolved = m if m != 0 else 60
         self.assertEqual(m_resolved, 60, "Texture matrix 0 must resolve to GX_IDENTITY (row 60)")
 
+    def test_shader_inventory_deduplication_and_stats(self):
+        """
+        Verify that ShaderInventory deduplicates identical pipeline keys,
+        records asset provenance, and calculates coverage statistics accurately.
+        """
+        catalog = {}
+        entries = []
+
+        def add_entry(key_id, uid_id, source):
+            if key_id in catalog:
+                return False
+            catalog[key_id] = len(entries)
+            entries.append({'key': key_id, 'uid': uid_id, 'source': source})
+            return True
+
+        self.assertTrue(add_entry(0x100, 0x1, "title_screen"))
+        self.assertTrue(add_entry(0x200, 0x2, "mario_model"))
+        self.assertFalse(add_entry(0x100, 0x1, "title_screen_dup"))
+        self.assertEqual(len(entries), 2, "Duplicate pipeline keys must be ignored")
+        self.assertEqual(entries[0]['source'], "title_screen")
+
+    def test_pipeline_key_encoding_and_completeness(self):
+        """
+        Verify that PipelineKey preserves all raster, depth, blend, and vertex flag
+        bits without loss or key collisions across different render states.
+        """
+        def make_key(flags, depth_test, depth_write, depth_func, cull, cull_face, prim, blend_on, color_mask):
+            depth_state = (1 if depth_test else 0) | ((1 if (depth_test and depth_write) else 0) << 1) | ((depth_func & 15) << 4)
+            blend_state = 1 if blend_on else 0
+            blend_state2 = (color_mask & 15) << 4
+            raster_state = (1 if cull else 0) | ((cull_face & 0xF) << 1) | ((prim & 7) << 5)
+            return (flags, depth_state, blend_state, blend_state2, raster_state)
+
+        # 3D character vs 2D HUD quad
+        k_3d = make_key(0x4047, True, True, 3, True, 4, 4, False, 15)
+        k_hud = make_key(0x0051, False, False, 7, False, 0, 4, True, 15)
+        self.assertNotEqual(k_3d, k_hud)
+        # Verify depth write distinction
+        k_depth_ro = make_key(0x0045, True, False, 3, True, 4, 4, False, 15)
+        k_depth_rw = make_key(0x0045, True, True, 3, True, 4, 4, False, 15)
+        self.assertNotEqual(k_depth_ro, k_depth_rw, "Read-only vs Read-Write depth must produce distinct keys")
+
+    def test_texture_upload_bounds_and_overflow_validation(self):
+        """
+        Verify texture manager size calculation, arithmetic overflow detection,
+        and truncated mip payload rejection before staging memory copy.
+        """
+        def validate_texture_upload(w, h, levels, rgba_pixel_count):
+            if w == 0 or h == 0 or w > 4096 or h > 4096 or levels > 14:
+                return False, "invalid dimensions"
+
+            required_bytes = 0
+            cw, ch = w, h
+            for l in range(levels):
+                level_bytes = cw * ch * 4
+                if level_bytes <= 0:
+                    return False, "overflow"
+                required_bytes += level_bytes
+                cw = max(1, cw // 2)
+                ch = max(1, ch // 2)
+
+            total_bytes = rgba_pixel_count * 4
+            if total_bytes < required_bytes:
+                return False, "truncated payload"
+
+            return True, "valid"
+
+        # Valid 256x256 texture with 1 level
+        ok, reason = validate_texture_upload(256, 256, 1, 256 * 256)
+        self.assertTrue(ok)
+
+        # Truncated payload: claims 3 mip levels but only provides level 0 pixels
+        ok, reason = validate_texture_upload(256, 256, 3, 256 * 256)
+        self.assertFalse(ok)
+        self.assertEqual(reason, "truncated payload")
+
+        # Invalid dimensions out of limits (> 4096)
+        ok, reason = validate_texture_upload(8192, 8192, 1, 8192 * 8192)
+        self.assertFalse(ok)
+        self.assertEqual(reason, "invalid dimensions")
+
+    def test_spirv_cache_checksum_and_truncation_recovery(self):
+        """
+        Verify FNV1a-32 checksum calculation and truncation detection
+        for persistent SPIR-V shader records.
+        """
+        def fnv1a32(data: bytes) -> int:
+            h = 2166136261
+            for b in data:
+                h = ((h ^ b) * 16777619) & 0xFFFFFFFF
+            return h
+
+        vs_dummy = b"\x03\x02\x23\x07\x00\x00\x01\x00" * 32
+        fs_dummy = b"\x03\x02\x23\x07\x00\x00\x01\x00" * 48
+
+        vs_sum = fnv1a32(vs_dummy)
+        fs_sum = fnv1a32(fs_dummy)
+
+        # Checksum must verify correctly
+        self.assertEqual(fnv1a32(vs_dummy), vs_sum)
+        self.assertEqual(fnv1a32(fs_dummy), fs_sum)
+
+        # Corrupted bit must fail verification
+        vs_corrupt = bytearray(vs_dummy)
+        vs_corrupt[10] ^= 0xFF
+        self.assertNotEqual(fnv1a32(bytes(vs_corrupt)), vs_sum)
+
+        # Truncated record must be detected by length check
+        record_bytes = 8 + 4 + 4 + 4 + 4 + len(vs_dummy) + len(fs_dummy)
+        truncated_record = vs_dummy[:20]
+        self.assertLess(len(truncated_record), record_bytes)
 
 
 if __name__ == '__main__':

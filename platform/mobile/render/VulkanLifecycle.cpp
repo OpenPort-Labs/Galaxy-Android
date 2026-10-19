@@ -6,6 +6,7 @@
 #include "../ui/UIOverlay.h"
 #include "gx/gl_renderer.h"
 #include "gx/vk_shadergen.h"
+#include "gx/vk_shader_inventory.h"
 #include "port/port.h"
 
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, "GalaxyVulkan", __VA_ARGS__)
@@ -18,6 +19,9 @@ bool VulkanLifecycle::bringUp(ANativeWindow* window, int& screenW, int& screenH,
                               gpu::VkTarget& target, mobile_display::ViewportManager& vpMgr) {
     if (!window) return false;
     if (!gpu::VkRenderer::get().init(window)) return false;
+
+    // Stage B: Prewarm graphics pipelines before gameplay commences
+    gpu::ShaderInventory::get().prewarmPipelines(gpu::VkRenderer::get());
 
     mobile_ui::UIOverlay::get().setActiveBackend(1);
     mobile_ui::UIOverlay::get().setGpuRendererName(gpu::VkRenderer::get().deviceName());
@@ -86,6 +90,7 @@ void VulkanLifecycle::initCaches(const std::string& internalPath) {
     gpu::setShaderCachePath((internalPath + "/shaders.bin").c_str());
     gpu::setVkPipelineCachePath((internalPath + "/vk_pipeline_cache.bin").c_str());
     gpu::setVulkanShaderCachePath((internalPath + "/vk_shaders.bin").c_str());
+    gpu::ShaderInventory::get().init(internalPath, "/sdcard/GalaxyData");
     gpu::prewarmCommonShaders();
 }
 

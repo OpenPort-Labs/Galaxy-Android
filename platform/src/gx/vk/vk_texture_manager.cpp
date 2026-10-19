@@ -57,10 +57,19 @@ VkSampler VkRenderer::getSampler(uint32_t mode0, uint32_t mode1, uint32_t levels
     }
 
     VkSampler s = VK_NULL_HANDLE;
-    vkCreateSampler(mDevice, &sci, nullptr, &s);
+    VkResult res = vkCreateSampler(mDevice, &sci, nullptr, &s);
+    if (res != VK_SUCCESS || s == VK_NULL_HANDLE) {
+        LOGE("getSampler: vkCreateSampler failed (res=%d)", (int)res);
+        return mDummySampler;
+    }
     mSamplers[key] = s;
     return s;
 }
+
+static uint64_t sUploadAttempted = 0;
+static uint64_t sUploadFailed = 0;
+static uint64_t sUploadRecorded = 0;
+static uint64_t sUploadBytes = 0;
 
 void VkRenderer::uploadTextures(VkCommandBuffer cmd, const std::vector<std::shared_ptr<TexImage>>& textures) {
     if (cmd == VK_NULL_HANDLE) return;
@@ -74,6 +83,44 @@ void VkRenderer::uploadTextures(VkCommandBuffer cmd, const std::vector<std::shar
 
     for (const auto& img : textures) {
         if (!img || img->rgba.empty() || img->width == 0 || img->height == 0) continue;
+        sUploadAttempted++;
+
+        if (img->width > 4096 || img->height > 4096 || img->levels > 14) {
+            LOGE("uploadTextures: texture dimensions %ux%u (%u levels) out of hardware limits",
+                 img->width, img->height, img->levels);
+            sUploadFailed++;
+            continue;
+        }
+
+        const uint32_t levels = img->levels ? img->levels : 1;
+        VkDeviceSize requiredBytes = 0;
+        uint32_t cw = img->width, ch = img->height;
+        bool overflow = false;
+        for (uint32_t l = 0; l < levels; l++) {
+            VkDeviceSize levelBytes = (VkDeviceSize)cw * ch * 4;
+            if (levelBytes == 0 || (levelBytes / (cw * 4) != ch)) {
+                overflow = true;
+                break;
+            }
+            requiredBytes += levelBytes;
+            cw = cw > 1 ? cw / 2 : 1;
+            ch = ch > 1 ? ch / 2 : 1;
+        }
+
+        if (overflow) {
+            LOGE("uploadTextures: arithmetic overflow calculating required size for %ux%u", img->width, img->height);
+            sUploadFailed++;
+            continue;
+        }
+
+        const size_t totalBytes = img->rgba.size() * sizeof(uint32_t);
+        if (totalBytes < (size_t)requiredBytes) {
+            LOGE("uploadTextures: buffer size mismatch for %ux%u (%u levels): rgba has %zu bytes, need %llu",
+                 img->width, img->height, levels, totalBytes, (unsigned long long)requiredBytes);
+            sUploadFailed++;
+            continue;
+        }
+
         bool sameDevice = (img->vkGeneration == sVkDeviceGeneration);
         if (img->vkImage != 0 && img->vkVersion == img->version && sameDevice) {
             continue;
@@ -91,7 +138,7 @@ void VkRenderer::uploadTextures(VkCommandBuffer cmd, const std::vector<std::shar
         VkTexture vt{};
         vt.width = img->width;
         vt.height = img->height;
-        vt.levels = img->levels ? img->levels : 1;
+        vt.levels = levels;
         vt.version = img->version;
 
         VkImageCreateInfo ici{};
@@ -109,6 +156,7 @@ void VkRenderer::uploadTextures(VkCommandBuffer cmd, const std::vector<std::shar
 
         if (vkCreateImage(mDevice, &ici, nullptr, &vt.image) != VK_SUCCESS) {
             LOGE("uploadTextures: vkCreateImage failed %ux%u", vt.width, vt.height);
+            sUploadFailed++;
             continue;
         }
 
@@ -125,12 +173,14 @@ void VkRenderer::uploadTextures(VkCommandBuffer cmd, const std::vector<std::shar
         if (mai.memoryTypeIndex == ~0u || vkAllocateMemory(mDevice, &mai, nullptr, &vt.memory) != VK_SUCCESS) {
             LOGE("uploadTextures: vkAllocateMemory failed (memType=%u, size=%llu)", mai.memoryTypeIndex, (unsigned long long)memReqs.size);
             vkDestroyImage(mDevice, vt.image, nullptr);
+            sUploadFailed++;
             continue;
         }
         if (vkBindImageMemory(mDevice, vt.image, vt.memory, 0) != VK_SUCCESS) {
             LOGE("uploadTextures: vkBindImageMemory failed");
             vkFreeMemory(mDevice, vt.memory, nullptr);
             vkDestroyImage(mDevice, vt.image, nullptr);
+            sUploadFailed++;
             continue;
         }
 
@@ -146,26 +196,39 @@ void VkRenderer::uploadTextures(VkCommandBuffer cmd, const std::vector<std::shar
             LOGE("uploadTextures: vkCreateImageView failed");
             vkFreeMemory(mDevice, vt.memory, nullptr);
             vkDestroyImage(mDevice, vt.image, nullptr);
+            sUploadFailed++;
             continue;
         }
 
-        size_t totalBytes = img->rgba.size() * sizeof(uint32_t);
         VkBuffer stagingBuf = VK_NULL_HANDLE;
         VkDeviceMemory stagingMem = VK_NULL_HANDLE;
-        if (createBuffer(totalBytes, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                         stagingBuf, stagingMem)) {
-            void* mapped = nullptr;
-            if (vkMapMemory(mDevice, stagingMem, 0, totalBytes, 0, &mapped) == VK_SUCCESS) {
-                memcpy(mapped, img->rgba.data(), totalBytes);
-                vkUnmapMemory(mDevice, stagingMem);
-            }
-            pending.push_back({img, vt, stagingBuf, stagingMem});
-        } else {
+        if (!createBuffer(totalBytes, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                          stagingBuf, stagingMem)) {
+            LOGE("uploadTextures: createBuffer failed for staging buffer (%zu bytes)", totalBytes);
             vkDestroyImageView(mDevice, vt.view, nullptr);
             vkFreeMemory(mDevice, vt.memory, nullptr);
             vkDestroyImage(mDevice, vt.image, nullptr);
+            sUploadFailed++;
+            continue;
         }
+
+        void* mapped = nullptr;
+        VkResult mapRes = vkMapMemory(mDevice, stagingMem, 0, totalBytes, 0, &mapped);
+        if (mapRes != VK_SUCCESS || !mapped) {
+            LOGE("uploadTextures: vkMapMemory failed (%d) for staging buffer (%zu bytes)", (int)mapRes, totalBytes);
+            vkDestroyBuffer(mDevice, stagingBuf, nullptr);
+            vkFreeMemory(mDevice, stagingMem, nullptr);
+            vkDestroyImageView(mDevice, vt.view, nullptr);
+            vkFreeMemory(mDevice, vt.memory, nullptr);
+            vkDestroyImage(mDevice, vt.image, nullptr);
+            sUploadFailed++;
+            continue;
+        }
+
+        memcpy(mapped, img->rgba.data(), totalBytes);
+        vkUnmapMemory(mDevice, stagingMem);
+        pending.push_back({img, vt, stagingBuf, stagingMem});
     }
 
     if (pending.empty()) return;
@@ -220,6 +283,14 @@ void VkRenderer::uploadTextures(VkCommandBuffer cmd, const std::vector<std::shar
         item.img->vkGeneration = sVkDeviceGeneration;
 
         mStagingBuffersToFree.push_back({item.stagingBuf, item.stagingMem});
+        sUploadRecorded++;
+        sUploadBytes += (item.img->rgba.size() * sizeof(uint32_t));
+    }
+
+    if (sUploadRecorded % 200 == 0) {
+        LOGI("VkRenderer textures: %llu attempted, %llu recorded, %llu failed, %llu KB staged",
+             (unsigned long long)sUploadAttempted, (unsigned long long)sUploadRecorded,
+             (unsigned long long)sUploadFailed, (unsigned long long)(sUploadBytes / 1024));
     }
 }
 

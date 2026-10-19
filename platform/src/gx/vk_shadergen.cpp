@@ -1,5 +1,6 @@
 #include "vk_shadergen.h"
 #include "vk_shadergen_common.h"
+#include "vk_shader_inventory.h"
 
 #include <cstdint>
 #include <cstdio>
@@ -9,6 +10,11 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#if !defined(_WIN32)
+#include <unistd.h>
+#else
+#include <io.h>
+#endif
 
 #include <shaderc/shaderc.hpp>
 
@@ -76,7 +82,8 @@ uint64_t sourceKey(const std::string& vs, const std::string& fs) {
 void loadSpirvCacheLocked() {
     sSpirvCacheLoaded = true;
     if (sSpirvCachePath.empty()) return;
-    FILE* f = fopen(sSpirvCachePath.c_str(), "rb");
+    FILE* f = fopen(sSpirvCachePath.c_str(), "rb+");
+    if (!f) f = fopen(sSpirvCachePath.c_str(), "rb");
     if (!f) return;
 
     char magic[4] = {0};
@@ -88,28 +95,58 @@ void loadSpirvCacheLocked() {
     }
     sSpirvCacheHeaderWritten = true;
 
+    long lastValidPos = ftell(f);
+    bool hadTruncation = false;
+
     for (;;) {
+        long recordStart = ftell(f);
         uint64_t key = 0;
         uint32_t vsBytes = 0, fsBytes = 0, vsSum = 0, fsSum = 0;
         if (fread(&key, sizeof(key), 1, f) != 1 || fread(&vsBytes, sizeof(vsBytes), 1, f) != 1 ||
             fread(&fsBytes, sizeof(fsBytes), 1, f) != 1 || fread(&vsSum, sizeof(vsSum), 1, f) != 1 ||
             fread(&fsSum, sizeof(fsSum), 1, f) != 1) {
+            if (recordStart != 0 && !feof(f)) {
+                hadTruncation = true;
+            }
             break;
         }
         if (vsBytes == 0 || fsBytes == 0 || (vsBytes & 3u) || (fsBytes & 3u) || vsBytes > kSpirvCacheMaxBytes ||
             fsBytes > kSpirvCacheMaxBytes) {
+            hadTruncation = true;
             break;
         }
         SpirvPair pair;
         pair.vs.resize(vsBytes / 4);
         pair.fs.resize(fsBytes / 4);
         if (fread(pair.vs.data(), 1, vsBytes, f) != vsBytes || fread(pair.fs.data(), 1, fsBytes, f) != fsBytes) {
+            hadTruncation = true;
             break;
         }
-        if (fnv1a32(pair.vs.data(), vsBytes) != vsSum || fnv1a32(pair.fs.data(), fsBytes) != fsSum) continue;
+        if (fnv1a32(pair.vs.data(), vsBytes) != vsSum || fnv1a32(pair.fs.data(), fsBytes) != fsSum) {
+            hadTruncation = true;
+            continue;
+        }
         sSpirvCache[key] = std::move(pair);
+        lastValidPos = ftell(f);
     }
     fclose(f);
+
+    if (hadTruncation && lastValidPos > 0) {
+        FILE* truncF = fopen(sSpirvCachePath.c_str(), "rb+");
+        if (truncF) {
+            (void)fseek(truncF, lastValidPos, SEEK_SET);
+#if defined(_WIN32)
+            int fd = _fileno(truncF);
+            if (fd >= 0) (void)_chsize(fd, lastValidPos);
+#else
+            int fd = fileno(truncF);
+            if (fd >= 0) (void)ftruncate(fd, lastValidPos);
+#endif
+            fclose(truncF);
+            port_log("vk_shadergen: recovered from truncated shader cache at offset %ld", lastValidPos);
+        }
+    }
+
     port_log("vk_shadergen: %zu compiled shader programs reused from %s", sSpirvCache.size(), sSpirvCachePath.c_str());
 }
 
@@ -214,48 +251,11 @@ void prewarmCommonShaders() {
     {
         std::lock_guard<std::mutex> lock(sSpirvCacheLock);
         if (!sSpirvCacheLoaded) loadSpirvCacheLocked();
-        if (sSpirvCache.size() >= 8) {
-            port_log("vk_shadergen: prewarmCommonShaders skipped (%zu cached shaders already present)", sSpirvCache.size());
-            return;
-        }
     }
 
-    port_log("vk_shadergen: prewarming common Galaxy shaders into permanent cache...");
-    std::vector<ShaderUid> uids;
-
-    uids.push_back(ShaderUid{});
-
-    for (uint32_t chans = 0; chans <= 1; chans++) {
-        for (uint32_t texGens = 0; texGens <= 1; texGens++) {
-            for (uint32_t tevStages = 1; tevStages <= 1; tevStages++) {
-                for (uint32_t hud = 0; hud <= 1; hud++) {
-                    ShaderUid u{};
-                    u.numChans = chans;
-                    u.numTexGens = texGens;
-                    u.numTevStages = tevStages;
-                    u.hud = hud;
-                    for (uint32_t c = 0; c < chans && c < 2; c++) {
-                        u.colorCtrl[c] = 0x0001;
-                        u.alphaCtrl[c] = 0x0001;
-                    }
-                    for (uint32_t s = 0; s < tevStages; s++) {
-                        u.tevColor[s] = 0x0F0800;
-                        u.tevAlpha[s] = 0x0F0800;
-                    }
-                    uids.push_back(u);
-                }
-            }
-        }
-    }
-
-    int count = 0;
-    std::vector<uint32_t> vs, fs;
-    for (const auto& u : uids) {
-        if (compileVulkanShader(u, vs, fs)) {
-            count++;
-        }
-    }
-    port_log("vk_shadergen: prewarm completed (%d common shaders compiled and saved to disk)", count);
+    port_log("vk_shadergen: inventory-based shader prewarm starting...");
+    ShaderInventory::get().populateCanonicalGalaxyInventory();
+    ShaderInventory::get().compileAllSpirv(4);
 }
 
 }  // namespace gpu

@@ -1,6 +1,9 @@
 #include "gx/vk/vk_common.h"
+#include "gx/vk_shader_inventory.h"
 
 namespace gpu {
+
+static uint64_t sPlaceholderDraws = 0;
 
 static VkBlendFactor vkBlendFactor(uint32_t glFactor) {
     switch (glFactor) {
@@ -77,6 +80,7 @@ VkPipeline VkRenderer::getPipeline(const Item& it, const ShaderUid& uid) {
 
     std::vector<uint32_t> vsSpirv, fsSpirv;
     if (!lookupVulkanShader(uid, vsSpirv, fsSpirv)) {
+        ShaderInventory::get().recordRuntimeDiscovery(uid, key, "runtime_miss");
         if (mShaderFailed.count(uid)) {
             return placeholderPipeline(it);
         }
@@ -87,6 +91,11 @@ VkPipeline VkRenderer::getPipeline(const Item& it, const ShaderUid& uid) {
 }
 
 VkPipeline VkRenderer::placeholderPipeline(const Item& it) {
+    sPlaceholderDraws++;
+    if (sPlaceholderDraws == 1 || sPlaceholderDraws % 500 == 0) {
+        LOGW("VkRenderer: %llu draws currently utilizing placeholder fallback pipelines", (unsigned long long)sPlaceholderDraws);
+    }
+
     ShaderUid stub{};
     stub.vtxFlags = it.flags;
     const PipelineKey key = pipelineKeyFor(it, stub);

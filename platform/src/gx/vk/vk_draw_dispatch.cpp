@@ -68,6 +68,23 @@ void VkRenderer::executeDrawPass(VkCommandBuffer cmd, const Frame& f, const Prep
             continue;
         }
 
+        if (!inRenderPass) {
+            VkRenderPassBeginInfo resumeRpInfo = rpInfo;
+            resumeRpInfo.renderPass = mEfbLoadRenderPass;
+            resumeRpInfo.clearValueCount = 0;
+            resumeRpInfo.pClearValues = nullptr;
+            vkCmdBeginRenderPass(cmd, &resumeRpInfo, VK_SUBPASS_CONTENTS_INLINE);
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mPipelineLayout, 0, 1, &fr.set0, 0, nullptr);
+            vkCmdBindIndexBuffer(cmd, fr.ibo, 0, VK_INDEX_TYPE_UINT32);
+            inRenderPass = true;
+            lastPipeline = VK_NULL_HANDLE;
+            lastSet1 = VK_NULL_HANDLE;
+            lastVOffset = ~(VkDeviceSize)0;
+            lastVx = lastVy = lastVw = lastVh = -1;
+            lastSx = lastSy = lastSw = lastSh = -1;
+            hasLastTex = false;
+        }
+
         int vx, vy, vw, vh;
         int sx, sy, sw, sh;
         float targetAspect = (float)target.width / (float)target.height;

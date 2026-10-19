@@ -178,9 +178,28 @@ void VkRenderer::destroyTarget(VkTarget& target) {
     target = {};
 }
 
+void VkRenderer::invalidateSamplerDescSetsForView(VkImageView view) {
+    if (view == VK_NULL_HANDLE) return;
+    for (auto it = mSamplerDescSets.begin(); it != mSamplerDescSets.end();) {
+        bool hasView = false;
+        for (int u = 0; u < 8; u++) {
+            if (it->first.views[u] == view) { hasView = true; break; }
+        }
+        if (hasView) {
+            if (it->second.set != VK_NULL_HANDLE && mDescriptorPool != VK_NULL_HANDLE) {
+                vkFreeDescriptorSets(mDevice, mDescriptorPool, 1, &it->second.set);
+            }
+            it = mSamplerDescSets.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
+
 VkCopyTex& VkRenderer::getCopyTex(uint64_t key, int w, int h) {
     VkCopyTex& c = mCopies[key];
     if (c.image != VK_NULL_HANDLE && (c.w != w || c.h != h)) {
+        invalidateSamplerDescSetsForView(c.view);
         queueVkTextureDelete((uint64_t)c.image, (uint64_t)c.memory, (uint64_t)c.view);
         c.view = VK_NULL_HANDLE;
         c.image = VK_NULL_HANDLE;
@@ -234,6 +253,7 @@ void VkRenderer::evictCopies(uint64_t currentFrame) {
     const uint64_t kKeepFrames = 16;
     for (auto it = mCopies.begin(); it != mCopies.end();) {
         if (it->first != kXfbCopyKey && it->second.frame + kKeepFrames < currentFrame) {
+            invalidateSamplerDescSetsForView(it->second.view);
             queueVkTextureDelete((uint64_t)it->second.image, (uint64_t)it->second.memory, (uint64_t)it->second.view);
             it = mCopies.erase(it);
         } else {

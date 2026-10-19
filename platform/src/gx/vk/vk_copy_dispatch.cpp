@@ -27,6 +27,7 @@ void VkRenderer::executeCopyItem(VkCommandBuffer cmd, const Item& it, const Prep
         if (dw > 0 && dh > 0) {
             VkCopyTex& xfb = getCopyTex(kXfbCopyKey, dw, dh);
             if (xfb.image != VK_NULL_HANDLE) {
+                VkImageLayout oldLayout = inRenderPass ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
                 if (inRenderPass) {
                     vkCmdEndRenderPass(cmd);
                     inRenderPass = false;
@@ -35,7 +36,7 @@ void VkRenderer::executeCopyItem(VkCommandBuffer cmd, const Item& it, const Prep
                 barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
                 barrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
                 barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-                barrier.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                barrier.oldLayout = oldLayout;
                 barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
                 barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
                 barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
@@ -71,10 +72,10 @@ void VkRenderer::executeCopyItem(VkCommandBuffer cmd, const Item& it, const Prep
                 vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &dstBarrier);
 
                 barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-                barrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+                barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
                 barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-                barrier.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-                vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+                barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
 
                 xfb.frame = p.number;
             }
@@ -90,6 +91,7 @@ void VkRenderer::executeCopyItem(VkCommandBuffer cmd, const Item& it, const Prep
         uint64_t key = copyKey(0, (cp[3] & 0xFFFFFF) << 5);
         VkCopyTex& dst = getCopyTex(key, dw, dh);
         if (dst.image != VK_NULL_HANDLE && dw > 0 && dh > 0) {
+            VkImageLayout oldLayout = inRenderPass ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
             if (inRenderPass) {
                 vkCmdEndRenderPass(cmd);
                 inRenderPass = false;
@@ -98,7 +100,7 @@ void VkRenderer::executeCopyItem(VkCommandBuffer cmd, const Item& it, const Prep
             barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
             barrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
             barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-            barrier.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            barrier.oldLayout = oldLayout;
             barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
             barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
             barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
@@ -143,18 +145,17 @@ void VkRenderer::executeCopyItem(VkCommandBuffer cmd, const Item& it, const Prep
         }
     }
 
-    if (!inRenderPass) {
-        VkRenderPassBeginInfo resumeRpInfo = rpInfo;
-        resumeRpInfo.renderPass = mEfbLoadRenderPass;
-        resumeRpInfo.clearValueCount = 0;
-        resumeRpInfo.pClearValues = nullptr;
-        vkCmdBeginRenderPass(cmd, &resumeRpInfo, VK_SUBPASS_CONTENTS_INLINE);
-        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mPipelineLayout, 0, 1, &fr.set0, 0, nullptr);
-        vkCmdBindIndexBuffer(cmd, fr.ibo, 0, VK_INDEX_TYPE_UINT32);
-        inRenderPass = true;
-    }
-
     if (clear && !toXfb) {
+        if (!inRenderPass) {
+            VkRenderPassBeginInfo resumeRpInfo = rpInfo;
+            resumeRpInfo.renderPass = mEfbLoadRenderPass;
+            resumeRpInfo.clearValueCount = 0;
+            resumeRpInfo.pClearValues = nullptr;
+            vkCmdBeginRenderPass(cmd, &resumeRpInfo, VK_SUBPASS_CONTENTS_INLINE);
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mPipelineLayout, 0, 1, &fr.set0, 0, nullptr);
+            vkCmdBindIndexBuffer(cmd, fr.ibo, 0, VK_INDEX_TYPE_UINT32);
+            inRenderPass = true;
+        }
         u32 cm = it.copyCmode;
         bool colorUpd = (cm >> 3) & 1, alphaUpd = (cm >> 4) & 1, zUpd = (it.copyZmode >> 4) & 1;
         VkClearAttachment clearAtts[2]{};

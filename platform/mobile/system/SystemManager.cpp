@@ -101,16 +101,13 @@ void SystemManager::pinThreadToPerformanceCores() {
                 bigCount++;
             }
         }
-    } else if (numCores >= 8) {
-        for (int i = numCores / 2; i < numCores; i++) {
-            CPU_SET(i, &cpuset);
-            bigCount++;
+        if (bigCount > 0) {
+            sched_setaffinity(0, sizeof(cpu_set_t), &cpuset);
         }
     }
-
-    if (bigCount > 0) {
-        sched_setaffinity(0, sizeof(cpu_set_t), &cpuset);
-    }
+    // When sysfs is inaccessible due to Android SELinux, avoid blind CPU pinning
+    // so Android Energy Aware Scheduler (EAS) can dynamically schedule across
+    // big cores and migrate under thermal constraints without lockups.
 #endif
 }
 

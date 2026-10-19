@@ -108,6 +108,7 @@ public:
   VkShaderModule createShaderModule(const uint32_t *code, size_t sizeBytes);
   VkCopyTex &getCopyTex(uint64_t key, int w, int h);
   void evictCopies(uint64_t currentFrame);
+  void invalidateSamplerDescSetsForView(VkImageView view);
 
   bool uploadUiFontAtlas();
   void executeCopyItem(VkCommandBuffer cmd, const Item &it, const Prepared &p,

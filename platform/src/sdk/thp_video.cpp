@@ -153,7 +153,8 @@ s32 readHuffman(Decoder& d, const u8*& c, const u8* end) {
     return 0;
 }
 
-s32 readFrameHeader(Decoder& d, const u8*& c) {
+s32 readFrameHeader(Decoder& d, const u8*& c, const u8* end) {
+    if (c + 17 > end) return kErrBadSyntax;
     c += 2;
     if (*c++ != 8) {
         return kErrBadPrecision;
@@ -175,7 +176,8 @@ s32 readFrameHeader(Decoder& d, const u8*& c) {
     return 0;
 }
 
-s32 readScanHeader(Decoder& d, const u8*& c) {
+s32 readScanHeader(Decoder& d, const u8*& c, const u8* end) {
+    if (c + 14 > end) return kErrBadSyntax;
     c += 2;
     if (*c++ != 3) {
         return kErrBadComponents;
@@ -436,7 +438,7 @@ s32 THPVideoDecode(void* file, void* tileY, void* tileU, void* tileV, void* work
         case 0xD8:  // SOI
             break;
         case 0xC0:  // SOF0
-            status = readFrameHeader(d, c);
+            status = readFrameHeader(d, c, end);
             break;
         case 0xC4:  // DHT
             status = readHuffman(d, c, end);
@@ -450,7 +452,7 @@ s32 THPVideoDecode(void* file, void* tileY, void* tileU, void* tileV, void* work
             c += 4;
             break;
         case 0xDA:  // SOS: the entropy-coded data follows
-            status = readScanHeader(d, c);
+            status = readScanHeader(d, c, end);
             if (status == 0) {
                 if (!d.width || !d.height) {
                     return kErrBadSyntax;

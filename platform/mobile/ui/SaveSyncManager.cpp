@@ -5,6 +5,21 @@
 #include <sys/stat.h>
 #include <vector>
 
+static bool writeAtomic(const std::string& path, const uint8_t* buf, size_t sz) {
+    if (!buf || sz == 0) return false;
+    std::string tmp = path + ".tmp";
+    FILE* out = fopen(tmp.c_str(), "wb");
+    if (!out) return false;
+    size_t written = fwrite(buf, 1, sz, out);
+    fflush(out);
+    fclose(out);
+    if (written != sz) {
+        remove(tmp.c_str());
+        return false;
+    }
+    return rename(tmp.c_str(), path.c_str()) == 0;
+}
+
 namespace mobile_ui {
 
 bool SaveSyncManager::exportSave(const std::string& savePath, std::string& outToastMsg) {
@@ -54,18 +69,12 @@ bool SaveSyncManager::exportSave(const std::string& savePath, std::string& outTo
     std::string dstSave2 = "/sdcard/Download/GameData.bin";
     std::string dstDolphin = "/sdcard/Download/GameData_Dolphin.bin";
 
-    FILE* out1 = fopen(dstSave1.c_str(), "wb");
-    FILE* out2 = fopen(dstSave2.c_str(), "wb");
-    if (out1) { fwrite(data.data(), 1, data.size(), out1); fclose(out1); }
-    if (out2) { fwrite(data.data(), 1, data.size(), out2); fclose(out2); }
+    writeAtomic(dstSave1, data.data(), data.size());
+    writeAtomic(dstSave2, data.data(), data.size());
 
     std::vector<uint8_t> dolphinData;
     if (DolphinSaveConverter::convertNativeToDolphin(data.data(), data.size(), dolphinData)) {
-        FILE* outDol = fopen(dstDolphin.c_str(), "wb");
-        if (outDol) {
-            fwrite(dolphinData.data(), 1, dolphinData.size(), outDol);
-            fclose(outDol);
-        }
+        writeAtomic(dstDolphin, dolphinData.data(), dolphinData.size());
     }
 
     outToastMsg = "Exported to Download/ (includes Dolphin save)!";
@@ -110,39 +119,44 @@ bool SaveSyncManager::importSave(const std::string& savePath, std::string& outTo
     }
     fclose(in);
 
-    if (data.empty()) {
-        outToastMsg = "Save file in Downloads is empty!";
+    if (data.size() < 0x140) {
+        outToastMsg = "Save file is too small or invalid!";
         return false;
     }
 
     bool wasDolphin = false;
     if (DolphinSaveConverter::isDolphinSave(data.data(), data.size())) {
         std::vector<uint8_t> nativeData;
-        if (DolphinSaveConverter::convertDolphinToNative(data.data(), data.size(), nativeData)) {
-            data = std::move(nativeData);
-            wasDolphin = true;
+        if (!DolphinSaveConverter::convertDolphinToNative(data.data(), data.size(), nativeData)) {
+            outToastMsg = "Failed to convert Dolphin save (corrupt or invalid)!";
+            return false;
         }
+        data = std::move(nativeData);
+        wasDolphin = true;
+    } else if (!DolphinSaveConverter::isNativeSave(data.data(), data.size())) {
+        outToastMsg = "Save format unrecognized or corrupted!";
+        return false;
     }
 
     const char* titles[] = {"524d4750", "524d4745", "524d474a", "524d474b"};
     mkdir((saveRoot + "/title").c_str(), 0770);
     mkdir((saveRoot + "/title/00010000").c_str(), 0770);
+    bool anySuccess = false;
     for (const char* t : titles) {
         std::string dir = saveRoot + "/title/00010000/" + t + "/data";
         mkdir((saveRoot + "/title/00010000/" + t).c_str(), 0770);
         mkdir(dir.c_str(), 0770);
-        FILE* out = fopen((dir + "/GameData.bin").c_str(), "wb");
-        if (out) { fwrite(data.data(), 1, data.size(), out); fclose(out); }
-        FILE* outOld = fopen((dir + "/save.bin").c_str(), "wb");
-        if (outOld) { fwrite(data.data(), 1, data.size(), outOld); fclose(outOld); }
+        anySuccess |= writeAtomic(dir + "/GameData.bin", data.data(), data.size());
+        writeAtomic(dir + "/save.bin", data.data(), data.size());
     }
 
     mkdir("/sdcard/GalaxyData", 0770);
     mkdir("/sdcard/GalaxyData/saves", 0770);
-    FILE* outExt = fopen("/sdcard/GalaxyData/saves/GameData.bin", "wb");
-    if (outExt) {
-        fwrite(data.data(), 1, data.size(), outExt);
-        fclose(outExt);
+    writeAtomic("/sdcard/GalaxyData/saves/GameData.bin", data.data(), data.size());
+
+    if (!anySuccess) {
+        outToastMsg = "Failed to write save data to storage!";
+        return false;
     }
 
     outToastMsg = wasDolphin ? "Imported & converted Dolphin save successfully!" : "Imported save data successfully!";

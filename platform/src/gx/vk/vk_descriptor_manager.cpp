@@ -92,7 +92,13 @@ VkDescriptorSet VkRenderer::getSamplerDescriptorSet(const std::array<VkImageView
 
     VkDescriptorSet set = VK_NULL_HANDLE;
     if (vkAllocateDescriptorSets(mDevice, &ai, &set) != VK_SUCCESS) {
-        return VK_NULL_HANDLE;
+        vkDeviceWaitIdle(mDevice);
+        vkResetDescriptorPool(mDevice, mDescriptorPool, 0);
+        mSamplerDescSets.clear();
+        mPresentDescSets.clear();
+        if (vkAllocateDescriptorSets(mDevice, &ai, &set) != VK_SUCCESS) {
+            return VK_NULL_HANDLE;
+        }
     }
 
     std::array<VkDescriptorImageInfo, 8> imageInfos{};

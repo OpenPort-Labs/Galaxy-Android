@@ -84,16 +84,18 @@ static void convertSpnChunk(uint8_t* p, uint32_t sz, bool fromBe) {
         uint16_t bsize = readU16(p + gOff + 2, fromBe);
         writeU16(p + gOff, ghash, !fromBe);
         writeU16(p + gOff + 2, bsize, !fromBe);
+        if (bsize < 4 || gOff > sz - bsize) break;
         if (gOff + 6 <= sz) {
             uint8_t nScen = p[gOff + 4];
             uint32_t sOff = gOff + 6;
             for (uint8_t s = 0; s < nScen && sOff + 2 <= gOff + bsize && sOff + 2 <= sz; s++) {
                 uint16_t sbsize = readU16(p + sOff, fromBe);
                 writeU16(p + sOff, sbsize, !fromBe);
-                sOff += (sbsize > 0) ? sbsize : 2;
+                if (sbsize < 2 || sOff > gOff + bsize - sbsize) break;
+                sOff += sbsize;
             }
         }
-        gOff += (bsize > 0) ? bsize : 4;
+        gOff += bsize;
     }
 }
 
@@ -102,6 +104,7 @@ static void convertGalaChunk(uint8_t* p, uint32_t sz, bool fromBe) {
     uint16_t attNum = readU16(p, fromBe);
     uint16_t numAtt = readU16(p + 2, fromBe);
     uint16_t dsize = readU16(p + 4, fromBe);
+    if (dsize < 4) return;
     writeU16(p, attNum, !fromBe);
     writeU16(p + 2, numAtt, !fromBe);
     writeU16(p + 4, dsize, !fromBe);
@@ -113,8 +116,8 @@ static void convertGalaChunk(uint8_t* p, uint32_t sz, bool fromBe) {
         writeU16(p + aOff + 2, o, !fromBe);
     }
     uint32_t eStart = 6 + (uint32_t)numAtt * 4;
-    for (uint16_t e = 0; e < attNum && (eStart + e * dsize + dsize) <= sz; e++) {
-        uint32_t eOff = eStart + e * dsize;
+    for (uint16_t e = 0; e < attNum && (eStart + (uint32_t)e * dsize + dsize) <= sz; e++) {
+        uint32_t eOff = eStart + (uint32_t)e * dsize;
         uint16_t gname = readU16(p + eOff, fromBe);
         writeU16(p + eOff, gname, !fromBe);
         for (int c = 0; c < 8 && (eOff + 4 + c * 2 + 2) <= sz; c++) {
@@ -129,6 +132,7 @@ static void convertSyscChunk(uint8_t* p, uint32_t sz, bool fromBe) {
     if (sz < 4) return;
     uint16_t nAtt = readU16(p, fromBe);
     uint16_t dSz = readU16(p + 2, fromBe);
+    if (dSz < 4) return;
     writeU16(p, nAtt, !fromBe);
     writeU16(p + 2, dSz, !fromBe);
     for (uint16_t a = 0; a < nAtt && (4 + a * 4 + 4) <= sz; a++) {
@@ -158,7 +162,7 @@ bool DolphinSaveConverter::processSave(const uint8_t* inData, size_t inSize,
     uint32_t ver = readU32(buf + 4, fromDolphin);
     uint32_t numFiles = readU32(buf + 8, fromDolphin);
     uint32_t fileSize = readU32(buf + 12, fromDolphin);
-    if (ver != 2 || numFiles != 19 || fileSize > inSize) return false;
+    if (ver != 2 || numFiles != 19 || fileSize < 0x140 || fileSize > inSize) return false;
 
     writeU32(buf + 4, ver, !fromDolphin);
     writeU32(buf + 8, numFiles, !fromDolphin);
@@ -168,7 +172,7 @@ bool DolphinSaveConverter::processSave(const uint8_t* inData, size_t inSize,
         uint32_t metaOff = 16 + i * 16;
         uint32_t off = readU32(buf + metaOff + 12, fromDolphin);
         writeU32(buf + metaOff + 12, off, !fromDolphin);
-        if (off + 4 > inSize) continue;
+        if (off > inSize || 4 > inSize - off) continue;
 
         uint8_t nChunks = buf[off + 1];
         uint32_t cOff = off + 4;
@@ -176,12 +180,13 @@ bool DolphinSaveConverter::processSave(const uint8_t* inData, size_t inSize,
             uint8_t s0 = buf[cOff], s1 = buf[cOff + 1], s2 = buf[cOff + 2], s3 = buf[cOff + 3];
             uint32_t h = readU32(buf + cOff + 4, fromDolphin);
             uint32_t sz = readU32(buf + cOff + 8, fromDolphin);
+            if (sz < 12 || sz > inSize || cOff > inSize - sz) return false;
             buf[cOff] = s3; buf[cOff + 1] = s2; buf[cOff + 2] = s1; buf[cOff + 3] = s0;
             writeU32(buf + cOff + 4, h, !fromDolphin);
             writeU32(buf + cOff + 8, sz, !fromDolphin);
 
             uint32_t pOff = cOff + 12;
-            uint32_t pSz = (sz >= 12) ? sz - 12 : 0;
+            uint32_t pSz = sz - 12;
             char sigStr[5] = { (char)(fromDolphin ? s0 : s3),
                                (char)(fromDolphin ? s1 : s2),
                                (char)(fromDolphin ? s2 : s1),

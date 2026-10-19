@@ -16,6 +16,8 @@
 #include "port/port.h"
 #include "revolution/types.h"
 
+#include "audio_resample.h"
+
 namespace {
 
 std::mutex sLock;  // the stream, the resampler and the WAV file
@@ -25,36 +27,7 @@ std::atomic<bool> sDisconnected{false};
 int32_t sDeviceRate = 0;
 std::vector<s16> sLR, sOut;
 
-// Stereo resampling with 4-point cubic (Catmull-Rom) interpolation, across
-// block boundaries.
-struct Resampler {
-    s16 hist[3][2] = {};  // the previous block's last 3 frames
-    double pos = 1.0;     // next output position; index 0 = hist[0]
-
-    void process(const s16* in, u32 frames, double step, std::vector<s16>& out) {
-        auto at = [&](int k, int c) -> float { return k < 3 ? hist[k][c] : in[(k - 3) * 2 + c]; };
-        int total = (int)frames + 3;
-        for (;;) {
-            int i = (int)pos;
-            if (i + 2 >= total) break;
-            float t = (float)(pos - i);
-            for (int c = 0; c < 2; c++) {
-                float p0 = at(i - 1, c), p1 = at(i, c), p2 = at(i + 1, c), p3 = at(i + 2, c);
-                float v = p1 + 0.5f * t * (p2 - p0 + t * (2.0f * p0 - 5.0f * p1 + 4.0f * p2 - p3 + t * (3.0f * (p1 - p2) + p3 - p0)));
-                out.push_back((s16)(v < -32768.0f ? -32768.0f : v > 32767.0f ? 32767.0f : v));
-            }
-            pos += step;
-        }
-        s16 last[3][2];
-        for (int k = 0; k < 3; k++) {
-            last[k][0] = (s16)at(total - 3 + k, 0);
-            last[k][1] = (s16)at(total - 3 + k, 1);
-        }
-        memcpy(hist, last, sizeof(hist));
-        pos -= frames;
-    }
-};
-Resampler sResampler;
+AudioResampler sResampler;
 
 // Interleaved L/R frames at the device rate: written by port_audio_submit,
 // read by the data callback.  Positions count frames and wrap freely.
@@ -84,32 +57,6 @@ void applySkipGain(s16* lr, u32 frames, u32 rate) {
     }
 }
 
-// Wii remote speaker PCM (6 kHz mono), mixed into the output.
-const u32 kSpeakerRate = 6000;
-std::mutex sSpkLock;
-s16 sSpk[4096];
-u32 sSpkRead = 0, sSpkWrite = 0;  // ring positions (free-running)
-double sSpkPhase = 0.0;
-
-void mixSpeaker(s16* lr, u32 frames, u32 rate) {
-    std::lock_guard<std::mutex> lock(sSpkLock);
-    double step = (double)kSpeakerRate / (double)rate;
-    for (u32 i = 0; i < frames; i++) {
-        if (sSpkWrite - sSpkRead < 2) break;
-        u32 a = sSpkRead & 4095, b = (sSpkRead + 1) & 4095;
-        float s = sSpk[a] + (sSpk[b] - sSpk[a]) * (float)sSpkPhase;
-        s *= 0.8f;  // speaker sounds sit a little under the main mix
-        for (int c = 0; c < 2; c++) {
-            int v = lr[i * 2 + c] + (int)s;
-            lr[i * 2 + c] = (s16)(v < -32768 ? -32768 : v > 32767 ? 32767 : v);
-        }
-        sSpkPhase += step;
-        while (sSpkPhase >= 1.0) {
-            sSpkPhase -= 1.0;
-            sSpkRead++;
-        }
-    }
-}
 
 void writeWavHeader(FILE* f, u32 frames, u32 rate) {
     u32 dataBytes = frames * 4;
@@ -226,7 +173,7 @@ bool openStream(u32 rate) {
     int32_t desired = (cap > 0) ? std::min(burst * 3, cap) : burst * 3;
     AAudioStream_setBufferSizeInFrames(sStream, desired);
     sRingRead.store(sRingWrite.load());
-    sResampler = Resampler();
+    sResampler = AudioResampler();
     r = AAudioStream_requestStart(sStream);
     if (r != AAUDIO_OK) {
         port_log("audio: AAudio requestStart failed: %s", AAudio_convertResultToText(r));
@@ -247,7 +194,7 @@ extern "C" void port_audio_submit(const s16* rightLeft, u32 frames, u32 rate) {
         sLR[i * 2] = rightLeft[i * 2 + 1];
         sLR[i * 2 + 1] = rightLeft[i * 2];
     }
-    mixSpeaker(sLR.data(), frames, rate);
+    port_audio_mix_speaker(sLR.data(), frames, rate);
     applySkipGain(sLR.data(), frames, rate);
 
     static bool wavChecked = false;
@@ -306,14 +253,6 @@ extern "C" void port_audio_submit(const s16* rightLeft, u32 frames, u32 rate) {
     sRingWrite.store(w + outFrames, std::memory_order_release);
 }
 
-extern "C" void port_speaker_push(const s16* samples, int count) {
-    std::lock_guard<std::mutex> lock(sSpkLock);
-    for (int i = 0; i < count; i++) {
-        if (sSpkWrite - sSpkRead >= 4096) sSpkRead++;  // drop the oldest when the output stalls
-        sSpk[sSpkWrite & 4095] = samples[i];
-        sSpkWrite++;
-    }
-}
 
 // Times the device found the ring empty while the game was running.
 extern "C" int port_audio_underruns(void) { return sUnderruns.load(); }

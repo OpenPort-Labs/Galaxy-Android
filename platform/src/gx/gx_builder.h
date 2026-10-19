@@ -132,7 +132,15 @@ struct Builder {
     u32 screenTexGens(const Frame& f, const Item& it, u32 first, const ShaderUid& uid);
     u32 uidFor(const ShaderUid& uid);
     void appendIndices(u32 kind, u32 base, u32 count);
+    void emitDraw(u32 prim, u32 flags, u32 first, u32 count, u32& ordinal);
     void build(std::shared_ptr<const Frame> frame, Prepared& out);
 };
+
+inline float bitsToFloat(u32 v) {
+    float f;
+    memcpy(&f, &v, 4);
+    return f;
+}
+
 
 }  // namespace gpu

@@ -57,6 +57,9 @@ void MobileApp::handleAppCmd(int32_t cmd) {
             mobile_ui::UIOverlay::get().setActiveBackend(0);
         }
         mobile_system::SystemManager::enforceOrientation(mAndroid, mobile_ui::UIOverlay::get().settings().screenOrientationChoice);
+        int initialFps = mobile_ui::UIOverlay::get().settings().targetFps;
+        if (mobile_ui::UIOverlay::get().settings().batterySaver) initialFps = 30;
+        mobile_system::SystemManager::setPreferredRefreshRate(mAndroid, (float)initialFps);
         mWindowReady = true;
         break;
     }

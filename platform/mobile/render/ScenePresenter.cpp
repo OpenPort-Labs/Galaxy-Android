@@ -132,7 +132,38 @@ void ScenePresenter::presentGles(gpu::Renderer& r, gpu::EfbTarget& target, bool&
         if (settings.batterySaver) targetFps = 30;
         framePacer.sync(app, targetFps, port_get_game_speed());
     } else {
-        usleep(1000);
+        int targetFps = settings.targetFps;
+        if (settings.batterySaver) targetFps = 30;
+        bool uiRedrawNeeded = mobile_ui::UIOverlay::get().needsRedraw() &&
+                              (!gameBooted || port_is_paused() || mobile_ui::UIOverlay::get().isSettingsOpen());
+
+        if (uiRedrawNeeded) {
+            framePacer.sync(app, targetFps, 1.0f);
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+            glViewport(0, 0, screenW, screenH);
+            glDisable(GL_SCISSOR_TEST);
+            glDisable(GL_DEPTH_TEST);
+            glDisable(GL_CULL_FACE);
+            glDisable(GL_BLEND);
+            glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+            glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+            glClear(GL_COLOR_BUFFER_BIT);
+
+            if (targetReady && target.fbo != 0) {
+                vpMgr.update(screenW, screenH, settings.fullscreen);
+                glBindFramebuffer(GL_READ_FRAMEBUFFER, target.fbo);
+                glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+                glBlitFramebuffer(0, 0, target.width, target.height,
+                                  vpMgr.x(), vpMgr.y(), vpMgr.x() + vpMgr.w(), vpMgr.y() + vpMgr.h(),
+                                  GL_COLOR_BUFFER_BIT, GL_LINEAR);
+            }
+
+            mobile_ui::UIOverlay::get().render(screenW, screenH);
+            egl.swapBuffers();
+            mobile_ui::UIOverlay::get().reportFramePresented();
+        } else {
+            usleep(1000);
+        }
     }
 }
 

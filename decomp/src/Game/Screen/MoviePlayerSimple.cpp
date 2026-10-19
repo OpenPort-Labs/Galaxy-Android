@@ -59,15 +59,7 @@ MoviePlayerSimple::~MoviePlayerSimple() {
     }
     if (mMovie) {
         if (mMovie->mBuffer) {
-#ifdef TARGET_PC
-            if (!port_is_game_heap_ptr(mMovie->mBuffer)) {
-                port_host_free(mMovie->mBuffer);
-            } else {
-                delete[] mMovie->mBuffer;
-            }
-#else
             delete[] mMovie->mBuffer;
-#endif
             mMovie->mBuffer = nullptr;
         }
         delete mMovie;
@@ -208,13 +200,21 @@ void MoviePlayerSimple::exeOpen() {
         mMovie->_19 = false;
         setFrameRateDefault();
         u32 needMem = mPlayerWrapper->calcNeedMemory();
-#ifdef TARGET_PC
-        mMovie->mBuffer = (u8*)port_host_alloc(needMem, 32);
-#else
-        mMovie->mBuffer = new (mHeap, 32) u8[needMem];
-#endif
-        if (!mMovie->mBuffer) {
+        if (mHeap && (u32)mHeap->getTotalFreeSize() < needMem + 32) {
+            JKRHeap::destroy(mHeap);
+            mHeap = JKRExpHeap::create(needMem + 0x4000, MR::getCurrentHeap(), false);
+            if (!mHeap) {
+                mHeap = JKRExpHeap::create(needMem + 0x4000, JKRHeap::sRootHeap, false);
+            }
+        }
+        if (mHeap) {
             mMovie->mBuffer = new (mHeap, 32) u8[needMem];
+        }
+        if (!mMovie->mBuffer && MR::getCurrentHeap()) {
+            mMovie->mBuffer = new (MR::getCurrentHeap(), 32) u8[needMem];
+        }
+        if (!mMovie->mBuffer && JKRHeap::sRootHeap) {
+            mMovie->mBuffer = new (JKRHeap::sRootHeap, 32) u8[needMem];
         }
         if (!mMovie->mBuffer) {
             mMovie->mBuffer = new (32) u8[needMem];
@@ -293,15 +293,7 @@ void MoviePlayerSimple::stop() {
     mPlayerWrapper->loadStop();
     mPlayerWrapper->close();
     if (mMovie->mBuffer) {
-#ifdef TARGET_PC
-        if (!port_is_game_heap_ptr(mMovie->mBuffer)) {
-            port_host_free(mMovie->mBuffer);
-        } else {
-            delete[] mMovie->mBuffer;
-        }
-#else
         delete[] mMovie->mBuffer;
-#endif
         mMovie->mBuffer = nullptr;
     }
     MR::endStarPointerMode(this);

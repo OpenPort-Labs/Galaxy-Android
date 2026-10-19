@@ -60,9 +60,9 @@ bool VkRenderer::createDescriptorLayouts() {
 
     // Descriptor Pool
     VkDescriptorPoolSize poolSizes[] = {
-        {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 512},
-        {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 512},
-        {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 8192},
+        {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1024},
+        {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1024},
+        {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 32768},
     };
 
     VkDescriptorPoolCreateInfo poolInfo{};
@@ -70,7 +70,7 @@ bool VkRenderer::createDescriptorLayouts() {
     poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
     poolInfo.poolSizeCount = 3;
     poolInfo.pPoolSizes = poolSizes;
-    poolInfo.maxSets = 2048;
+    poolInfo.maxSets = 4096;
 
     return vkCreateDescriptorPool(mDevice, &poolInfo, nullptr, &mDescriptorPool) == VK_SUCCESS;
 }

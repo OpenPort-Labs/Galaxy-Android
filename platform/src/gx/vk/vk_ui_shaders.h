@@ -37,11 +37,11 @@ void main() {
     float mode = vParams.x;
     float param = vParams.y;
     float alpha = 1.0;
+    vec2 fw2 = fwidth(vUv);
+    float fw = clamp(max(fw2.x, fw2.y), 0.005, 0.05);
 
     if (mode > 0.5 && mode < 1.5) {
         float d = length(vUv);
-        float fw = fwidth(d);
-        if (fw < 0.001) fw = 0.005;
         float outer = smoothstep(1.0, 1.0 - fw, d);
         if (param > 0.0) {
             float inner = smoothstep(param - fw, param, d);
@@ -53,9 +53,7 @@ void main() {
         alpha = texture(uFontTex, vUv).r;
     } else if (mode > 2.5 && mode < 3.5) {
         float d = length(vUv);
-        float fw = fwidth(d);
-        if (fw < 0.001) fw = 0.005;
-        float angle = atan(vUv.y, vUv.x) + param;
+        float angle = atan(vUv.y, vUv.x + 1e-5) + param;
         float teeth = cos(8.0 * angle);
         float rMax = 0.74 + 0.22 * smoothstep(-0.25, 0.25, teeth);
         float outer = smoothstep(rMax, rMax - fw * 1.5, d);
@@ -65,21 +63,17 @@ void main() {
         vec2 p = abs(vUv);
         float lineDist = abs(p.x - p.y) * 0.7071;
         float capDist = max(p.x, p.y);
-        float fw = fwidth(lineDist);
-        if (fw < 0.001) fw = 0.005;
         float line = smoothstep(0.16, 0.16 - fw, lineDist);
         float box = smoothstep(0.65, 0.65 - fw, capDist);
         alpha = line * box;
     } else if (mode > 4.5 && mode < 5.5) {
         float d = length(vUv);
-        float a = atan(vUv.y, vUv.x) + param;
+        float a = atan(vUv.y, vUv.x + 1e-5) + param;
         float aFold = mod(a, 3.14159265);
         float normAngle = clamp((aFold - 0.25) / 2.35, 0.0, 1.0);
         float arcR = mix(0.42, 0.78, normAngle);
         float dArc = abs(d - arcR);
         float thick = mix(0.06, 0.16, normAngle);
-        float fw = fwidth(dArc);
-        if (fw < 0.001) fw = 0.005;
         float arcAlpha = smoothstep(thick, thick - fw * 1.5, dArc);
         float angleMask = smoothstep(0.12, 0.30, aFold) * smoothstep(2.80, 2.60, aFold);
         alpha = arcAlpha * angleMask;
@@ -93,8 +87,6 @@ void main() {
         vec2 pt = vec2(p.x, abs(p.y)) - tip;
         float t = clamp(dot(pt, seg) / dot(seg, seg), 0.0, 1.0);
         float dLine = length(pt - seg * t);
-        float fw = fwidth(dLine);
-        if (fw < 0.001) fw = 0.005;
         float strokeW = 0.16;
         alpha = smoothstep(strokeW, strokeW - fw * 1.5, dLine);
     } else if (mode > 6.5 && mode < 7.5) {
@@ -110,8 +102,6 @@ void main() {
         float distTop = length(max(dTop, 0.0)) + min(max(dTop.x, dTop.y), 0.0) - 0.05;
 
         float bodyUnion = min(distBody, distTop);
-        float fw = fwidth(length(p));
-        if (fw < 0.001) fw = 0.005;
         float fillBody = smoothstep(0.0, -fw * 1.5, bodyUnion);
 
         float dLens = length(p - vec2(0.0, 0.08));
@@ -126,8 +116,6 @@ void main() {
             vec2 b = (vParams.w > 0.5) ? vec2(1.0 - param, aspect - param) : vec2(aspect - param, 1.0 - param);
             vec2 d = p - b;
             float dist = length(max(d, 0.0)) - param;
-            float fw = fwidth(dist);
-            if (fw < 0.001) fw = 0.005;
             alpha = smoothstep(0.0, -fw, dist);
         }
     }

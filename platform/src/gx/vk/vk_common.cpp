@@ -53,7 +53,8 @@ void VkRenderer::flushDeferredDeletes() {
 }
 
 void VkRenderer::trimFrameCaches(uint64_t frame) {
-    const uint64_t kKeepFrames = 4;
+    if (mSamplerDescSets.size() < 1024) return;
+    const uint64_t kKeepFrames = 1200;
     for (auto it = mSamplerDescSets.begin(); it != mSamplerDescSets.end();) {
         if (it->second.set != VK_NULL_HANDLE && it->second.lastUse + kKeepFrames < frame) {
             vkFreeDescriptorSets(mDevice, mDescriptorPool, 1, &it->second.set);

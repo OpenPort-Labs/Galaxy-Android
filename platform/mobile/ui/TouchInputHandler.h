@@ -80,7 +80,8 @@ private:
     bool mFingerDownOnSpin = false, mFingerDownOnPlus = false;
 
     void updateActivePointers(const AInputEvent* event, int32_t action, int32_t pointerIndex,
-                             size_t pointerCount, const Settings& settings, PortPadState& pad,
+                             size_t pointerCount, const Settings& settings, const ButtonLayout& bl,
+                             float plusX, float plusY, float plusR, PortPadState& pad,
                              int& spinFrames, float scale, float stickMaxR, float dpadX,
                              float dpadY, float dpadTotalR, int vpX, int vpY, int vpW, int vpH,
                              uint32_t& touchButtons);

@@ -280,9 +280,9 @@ bool TouchInputHandler::handleTouch(const AInputEvent* event, PortPadState& pad,
         }
     }
 
-    updateActivePointers(event, action, pointerIndex, pointerCount, settings, pad,
-                         spinFrames, scale, stickMaxR, dpadX, dpadY, dpadTotalR,
-                         vpX, vpY, vpW, vpH, touchButtons);
+    updateActivePointers(event, action, pointerIndex, pointerCount, settings, bl,
+                         plusX, plusY, plusR, pad, spinFrames, scale, stickMaxR,
+                         dpadX, dpadY, dpadTotalR, vpX, vpY, vpW, vpH, touchButtons);
 
 
     if (mTapPendingFrames > 0 && port_is_title_screen()) {

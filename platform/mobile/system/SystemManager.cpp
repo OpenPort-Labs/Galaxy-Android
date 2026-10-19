@@ -1,6 +1,7 @@
 #include "SystemManager.h"
 
 #include <android/log.h>
+#include <dlfcn.h>
 #include <jni.h>
 #include <math.h>
 #include <sched.h>
@@ -177,6 +178,14 @@ static android_app* sSavedApp = nullptr;
 void SystemManager::setPreferredRefreshRate(android_app* app, float targetFps) {
     if (app) sSavedApp = app;
     else app = sSavedApp;
+
+    if (app && app->window) {
+        typedef int32_t (*PFN_ANativeWindow_setFrameRate)(ANativeWindow*, float, int8_t);
+        static auto sSetFrameRate = (PFN_ANativeWindow_setFrameRate)dlsym(RTLD_DEFAULT, "ANativeWindow_setFrameRate");
+        if (sSetFrameRate) {
+            sSetFrameRate(app->window, targetFps, 0);
+        }
+    }
 
     static float sLastAppliedFps = -1.0f;
     if (fabsf(sLastAppliedFps - targetFps) < 0.5f) return;

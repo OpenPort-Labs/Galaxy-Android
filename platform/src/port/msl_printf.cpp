@@ -16,6 +16,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "msl_conv.h"
+
 namespace {
 
 struct Out {
@@ -50,35 +52,6 @@ void emit(Out& o, const char* spec, T value) {
         o.put(big, (size_t)n);
         free(big);
     }
-}
-
-// 16-bit string -> UTF-8.
-void wideToUtf8(const uint16_t* s, int maxChars, char* out, size_t cap) {
-    size_t j = 0;
-    for (int i = 0; s[i] && (maxChars < 0 || i < maxChars); i++) {
-        uint32_t c = s[i];
-        char tmp[3];
-        size_t k;
-        if (c < 0x80) {
-            tmp[0] = (char)c;
-            k = 1;
-        } else if (c < 0x800) {
-            tmp[0] = (char)(0xC0 | (c >> 6));
-            tmp[1] = (char)(0x80 | (c & 0x3F));
-            k = 2;
-        } else {
-            tmp[0] = (char)(0xE0 | (c >> 12));
-            tmp[1] = (char)(0x80 | ((c >> 6) & 0x3F));
-            tmp[2] = (char)(0x80 | (c & 0x3F));
-            k = 3;
-        }
-        if (j + k >= cap) {
-            break;
-        }
-        memcpy(out + j, tmp, k);
-        j += k;
-    }
-    out[j] = 0;
 }
 
 enum Len { LEN_NONE, LEN_HH, LEN_H, LEN_L, LEN_LL, LEN_BIG_L, LEN_SIZE };
@@ -220,7 +193,7 @@ extern "C" int port_vsnprintf(char* dst, size_t cap, const char* fmt, va_list ap
             if (len == LEN_L && c >= 0x80) {
                 char utf[4];
                 uint16_t w[2] = {(uint16_t)c, 0};
-                wideToUtf8(w, 1, utf, sizeof(utf));
+                msl_wide_to_utf8(w, 1, utf, sizeof(utf));
                 spec[sl] = 's';
                 spec[sl + 1] = 0;
                 emit(o, spec, (const char*)utf);
@@ -238,7 +211,7 @@ extern "C" int port_vsnprintf(char* dst, size_t cap, const char* fmt, va_list ap
                 const uint16_t* w = va_arg(args, const uint16_t*);
                 char utf[1024];
                 if (w) {
-                    wideToUtf8(w, precision, utf, sizeof(utf));
+                    msl_wide_to_utf8(w, precision, utf, sizeof(utf));
                 } else {
                     utf[0] = 0;
                 }

@@ -79,7 +79,9 @@ ANDROID_NS = "{http://schemas.android.com/apk/res/android}"
 def normalize_fingerprint(value):
     return re.sub(r"[^0-9a-f]", "", value.lower())
 
-def manifest_is_debuggable(path):
+MANIFEST = os.path.join(ROOT, "platform", "mobile", "AndroidManifest.xml")
+
+def manifest_is_debuggable(path=MANIFEST):
     application = ET.parse(path).getroot().find("application")
     return application is not None and application.get(ANDROID_NS + "debuggable") == "true"
 

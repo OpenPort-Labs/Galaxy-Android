@@ -9,6 +9,7 @@ namespace gpu {
 
 // Generates Vulkan 1.0 GLSL (version 450) with standard Vulkan descriptor bindings (SSBOs, UBO, samplers)
 std::string genVulkanVertexShader(const ShaderUid& uid);
+inline std::string genVertexShader(const ShaderUid& uid) { return genVulkanVertexShader(uid); }
 std::string genVulkanFragmentShader(const ShaderUid& uid);
 
 // Compiles Vulkan GLSL source to SPIR-V bytecode targeting Vulkan 1.0 using shaderc

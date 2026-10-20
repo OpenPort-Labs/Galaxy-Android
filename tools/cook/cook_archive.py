@@ -3,6 +3,7 @@ import collections
 import rarc_swap
 import collision
 import dol_data
+import bcsv
 from cook import cook_blob, is_converted_kind, yaz0_decompress
 
 def cook_rarc(data, stats, replace=None):

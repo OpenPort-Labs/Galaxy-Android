@@ -13,7 +13,8 @@ MAINTAINED_EXTENSIONS = (
     '.h', '.hpp', '.hxx', '.inl',
     '.java', '.kt',
     '.py',
-    '.sh', '.bat', '.ps1'
+    '.sh', '.bat', '.ps1',
+    '.cmake',
 )
 
 EXCLUDED_DIR_NAMES = {
@@ -23,7 +24,10 @@ EXCLUDED_DIR_NAMES = {
     'THPConv',          # Nintendo THP converter & Revolution SDK headers
     'vendor',           # Embedded Python 3.10 and nodtool vendored binaries
     'extracted',        # Extracted disc assets
-    'assets',           # Binary assets
+    'shield_extracted', # Extracted shield assets
+    'orig_wii_extracted',
+    'roms',             # User ROM files
+    'cooked',           # Cooked cache
 }
 
 def is_excluded(path: str) -> bool:
@@ -35,6 +39,13 @@ def is_excluded(path: str) -> bool:
         if part.startswith('build') or part.startswith('out'):
             return True
     return False
+
+def is_maintained_file(fn: str) -> bool:
+    fn_lower = fn.lower()
+    if fn_lower == 'cmakelists.txt':
+        return True
+    ext = os.path.splitext(fn_lower)[1]
+    return ext in MAINTAINED_EXTENSIONS
 
 def count_file_lines(filepath: str) -> int:
     with open(filepath, 'r', encoding='utf-8', errors='ignore') as fp:
@@ -49,8 +60,7 @@ def check_loc(root_dir: str, max_lines: int = 300):
         dirs[:] = [d for d in dirs if not is_excluded(os.path.join(dirpath, d))]
 
         for fn in sorted(filenames):
-            ext = os.path.splitext(fn)[1].lower()
-            if ext in MAINTAINED_EXTENSIONS:
+            if is_maintained_file(fn):
                 full_path = os.path.join(dirpath, fn)
                 if not is_excluded(full_path):
                     maintained_files.append(full_path)

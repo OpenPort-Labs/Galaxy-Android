@@ -12,20 +12,20 @@ PipelineKey pipelineKeyFor(const Item& it, const ShaderUid& uid) {
     d.vtxFlags = it.flags;
     d.depthTest = (it.depthTest != 0);
     d.depthWrite = (it.depthTest && it.depthWrite);
-    d.depthCompareOp = toCanonicalDepthFuncFromGl(it.depthFunc);
+    d.depthCompareOp = toCanonicalDepthFunc(it.depthFunc);
 
     d.blendEnable = (it.blend != 0) || (it.dstAlpha != 0);
-    d.srcColorBlendFactor = toCanonicalBlendFactorFromGl(it.blend ? it.srcRGB : 1);
-    d.dstColorBlendFactor = toCanonicalBlendFactorFromGl(it.blend ? it.dstRGB : 0);
-    d.colorBlendOp = toCanonicalBlendOpFromGl(it.blend ? it.eq : 0x8006);
-    d.srcAlphaBlendFactor = toCanonicalBlendFactorFromGl(it.dstAlpha ? 0x8003 : (it.blend ? it.srcRGB : 1));
-    d.dstAlphaBlendFactor = toCanonicalBlendFactorFromGl(it.dstAlpha ? 0 : (it.blend ? it.dstRGB : 0));
-    d.alphaBlendOp = toCanonicalBlendOpFromGl(it.dstAlpha ? 0x8006 : (it.blend ? it.eq : 0x8006));
+    d.srcColorBlendFactor = toCanonicalBlendFactor(it.blend ? it.srcRGB : 1);
+    d.dstColorBlendFactor = toCanonicalBlendFactor(it.blend ? it.dstRGB : 0);
+    d.colorBlendOp = toCanonicalBlendOp(it.blend ? it.eq : 0x8006);
+    d.srcAlphaBlendFactor = toCanonicalBlendFactor(it.dstAlpha ? 0x8003 : (it.blend ? it.srcRGB : 1));
+    d.dstAlphaBlendFactor = toCanonicalBlendFactor(it.dstAlpha ? 0 : (it.blend ? it.dstRGB : 0));
+    d.alphaBlendOp = toCanonicalBlendOp(it.dstAlpha ? 0x8006 : (it.blend ? it.eq : 0x8006));
     d.colorWriteMask = it.colorMask & 0x0Fu;
     d.blendConstantAlpha = it.dstAlphaValue;
 
-    d.cullMode = toCanonicalCullModeFromGl(it.cull != 0, it.cullFace);
-    d.topology = toCanonicalTopologyFromGl(it.prim);
+    d.cullMode = toCanonicalCullMode(it.cull != 0, it.cullFace);
+    d.topology = toCanonicalTopology(it.prim);
     d.frontFace = CanonicalFrontFace::CounterClockwise;
     return encodePipelineKey(d);
 }
@@ -171,7 +171,7 @@ VkPipeline VkRenderer::createPipeline(const PipelineKey& key,
 
     VkPipelineRasterizationStateCreateInfo rsci{};
     rsci.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
-    rsci.depthClampEnable = VK_FALSE;
+    rsci.depthClampEnable = mDeviceFeatures.depthClamp ? VK_TRUE : VK_FALSE;
     rsci.cullMode = toVkCullMode(dec.cullMode);
     rsci.frontFace = toVkFrontFace(dec.frontFace);
     rsci.lineWidth = 1.0f;

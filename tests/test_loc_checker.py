@@ -44,6 +44,8 @@ class TestLocChecker(unittest.TestCase):
         self.assertFalse(is_excluded("/repo/platform/src/gx/vk/vk_render.cpp"))
         self.assertFalse(is_excluded("/repo/platform/mobile/ui/TouchInputHandler.cpp"))
         self.assertFalse(is_excluded("/repo/tools/check_loc.py"))
+        self.assertFalse(is_excluded("/repo/installer-mobile/assets/scripts/cook.py"))
+        self.assertFalse(is_excluded("/repo/CMakeLists.txt"))
 
     def test_line_counting_accuracy(self):
         with tempfile.NamedTemporaryFile("w+", delete=False) as fp:

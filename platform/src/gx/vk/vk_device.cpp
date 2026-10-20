@@ -131,7 +131,7 @@ bool VkRenderer::createLogicalDevice() {
 
     VkPhysicalDeviceFeatures deviceFeatures{};
     deviceFeatures.samplerAnisotropy = mDeviceFeatures.samplerAnisotropy;
-    deviceFeatures.depthClamp = VK_FALSE;
+    deviceFeatures.depthClamp = mDeviceFeatures.depthClamp;
     if (mDeviceFeatures.robustBufferAccess) {
         deviceFeatures.robustBufferAccess = VK_TRUE;
     }

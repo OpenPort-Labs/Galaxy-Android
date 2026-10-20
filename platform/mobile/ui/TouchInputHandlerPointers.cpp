@@ -224,7 +224,7 @@ void TouchInputHandler::assignTouchRoleOnDown(
         }
     }
 
-    bool cameraSwipeEligible = (settings.touchCamera && !starEligible && bestBtnIdx < 0 && px >= w * 0.40f);
+    bool cameraSwipeEligible = (settings.touchCamera && !settings.starStick && px >= w * 0.55f && py <= h * 0.50f && bestBtnIdx < 0);
 
     if (bestBtnIdx >= 0) {
         TouchRole btnRoles[5] = {TouchRole::BTN_A, TouchRole::BTN_B, TouchRole::BTN_Z, TouchRole::BTN_SPIN, TouchRole::BTN_PLUS};

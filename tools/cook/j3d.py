@@ -237,8 +237,6 @@ def swap_model(b):
 # ---------------------------------------------------------------------------
 # Animations
 # ---------------------------------------------------------------------------
-def anm_tables(b, o, end, offs_at, kinds):
-
 from j3d_anim import swap_anim
 
 def is_model(b):

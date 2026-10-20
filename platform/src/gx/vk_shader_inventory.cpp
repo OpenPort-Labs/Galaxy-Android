@@ -41,9 +41,8 @@ void ShaderInventory::init(const std::string& cacheDir, const std::string& dataR
     }
 }
 
-void ShaderInventory::addEntry(const ShaderUid& uid, const PipelineKey& key,
-                               const std::string& source, bool isRuntime) {
-    std::lock_guard<std::mutex> lock(mMutex);
+void ShaderInventory::addEntryLocked(const ShaderUid& uid, const PipelineKey& key,
+                                     const std::string& source, bool isRuntime) {
     if (mKeyIndex.find(key) != mKeyIndex.end()) return;
 
     InventoryEntry e{};
@@ -62,6 +61,12 @@ void ShaderInventory::addEntry(const ShaderUid& uid, const PipelineKey& key,
     mStats.totalUniqueUids = mUidIndex.size();
 }
 
+void ShaderInventory::addEntry(const ShaderUid& uid, const PipelineKey& key,
+                               const std::string& source, bool isRuntime) {
+    std::lock_guard<std::mutex> lock(mMutex);
+    addEntryLocked(uid, key, source, isRuntime);
+}
+
 void ShaderInventory::populateCanonicalGalaxyInventory() {
     {
         std::lock_guard<std::mutex> lock(mMutex);
@@ -69,7 +74,7 @@ void ShaderInventory::populateCanonicalGalaxyInventory() {
         mCanonicalPopulated = true;
     }
     populateCanonicalGalaxyCatalog(*this);
-    port_log("vk_shader_inventory: populated canonical Galaxy catalog (%zu keys)", mEntries.size());
+    port_log("vk_shader_inventory: populated canonical Galaxy catalog (%zu keys)", stats().totalUniqueKeys);
 }
 
 bool ShaderInventory::loadAssetManifest(const std::string& manifestPath) {
@@ -83,7 +88,7 @@ bool ShaderInventory::loadAssetManifest(const std::string& manifestPath) {
     {
         std::lock_guard<std::mutex> lock(mMutex);
         for (const auto& item : staged) {
-            addEntry(item.uid, item.key, item.source, false);
+            addEntryLocked(item.uid, item.key, item.source, false);
             published++;
         }
         mStats.assetDerivedEntries = published;

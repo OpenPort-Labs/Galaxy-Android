@@ -69,9 +69,6 @@ struct TexImage {
     uint32_t width = 0, height = 0, levels = 1;
     std::vector<uint32_t> rgba;  // all levels, level 0 first
     uint64_t version = 0;        // bumped when the pixels change
-    // Renderer-side upload state (render thread only).
-    uint32_t glTex = 0;
-    uint64_t glVersion = 0;
     // Vulkan-side upload state (render thread only).  Opaque handles so this
     // header stays independent of the Vulkan headers.
     uint64_t vkImage = 0;
@@ -83,11 +80,8 @@ struct TexImage {
     // they have to be re-uploaded rather than reused or destroyed.
     uint64_t vkGeneration = 0;
 
-    ~TexImage();  // queues glTex / the Vulkan images for deletion on the render thread
+    ~TexImage();  // queues the Vulkan images for deletion on the render thread
 };
-
-// GL objects released by other threads, deleted by the render thread.
-void queueGlTextureDelete(uint32_t tex);
 
 // Vulkan objects released by other threads, deleted by the render thread.
 void queueVkTextureDelete(uint64_t image, uint64_t memory, uint64_t view);

@@ -105,6 +105,7 @@ public:
     void addEntry(const ShaderUid& uid, const PipelineKey& key, const std::string& source, bool isRuntime);
 
 private:
+    void addEntryLocked(const ShaderUid& uid, const PipelineKey& key, const std::string& source, bool isRuntime);
     mutable std::mutex mMutex;
     std::string mCacheDir;
     std::string mInventoryFilePath;

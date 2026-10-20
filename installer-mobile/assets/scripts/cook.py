@@ -135,10 +135,6 @@ def is_converted_kind(stats_before, stats_after):
 
 from cook_archive import cook_rarc, cook_archive, cook_dol_data
 
-    found = len(out) == 1 + len(dol_data.TABLES)
-    print('[Engine] System tables extracted from main.dol: %s' % ', '.join(out.keys()))
-    return [] if found else ['%s: the error message archive or a table was not found (not Super Mario Galaxy?)' % path]
-
 
 def plan(data_dir, out_dir, args):
     jobs = []

@@ -14,7 +14,7 @@
 
     <uses-sdk android:minSdkVersion="32" android:targetSdkVersion="34" />
 
-    <uses-feature android:glEsVersion="0x00030002" android:required="true" />
+    <uses-feature android:name="android.hardware.vulkan.version" android:version="0x401000" android:required="true" />
     <uses-feature android:name="android.hardware.vr.headtracking" android:required="true" android:version="1" />
     <!-- Declared (not required) so the app can launch while controllers are
          asleep; see documentation/native/android/mobile-hand-tracking.md -->

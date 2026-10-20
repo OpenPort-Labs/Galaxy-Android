@@ -3,6 +3,7 @@ import collections
 import rarc_swap
 import collision
 import dol_data
+import bcsv
 from cook import cook_blob, is_converted_kind, yaz0_decompress
 
 def cook_rarc(data, stats, replace=None):
@@ -107,3 +108,6 @@ def cook_dol_data(data_dir, out_dir):
     for name, data in out.items():
         with open(os.path.join(out_dir, 'sys', name), 'wb') as fh:
             fh.write(data)
+    found = len(out) == 1 + len(dol_data.TABLES)
+    print('[Engine] System tables extracted from main.dol: %s' % ', '.join(out.keys()))
+    return [] if found else ['%s: the error message archive or a table was not found (not Super Mario Galaxy?)' % path]

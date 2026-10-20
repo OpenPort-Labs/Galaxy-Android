@@ -53,8 +53,8 @@ inline VkCompareOp toVkCompareOp(CanonicalDepthFunc func) {
     }
 }
 
-inline CanonicalDepthFunc toCanonicalDepthFuncFromGl(uint32_t gl) {
-    switch (gl) {
+inline CanonicalDepthFunc toCanonicalDepthFunc(uint32_t raw) {
+    switch (raw) {
     case 0x0200: return CanonicalDepthFunc::Never;
     case 0x0201: return CanonicalDepthFunc::Less;
     case 0x0202: return CanonicalDepthFunc::Equal;
@@ -63,9 +63,10 @@ inline CanonicalDepthFunc toCanonicalDepthFuncFromGl(uint32_t gl) {
     case 0x0205: return CanonicalDepthFunc::NotEqual;
     case 0x0206: return CanonicalDepthFunc::GreaterOrEqual;
     case 0x0207: return CanonicalDepthFunc::Always;
-    default: return (gl <= 7) ? (CanonicalDepthFunc)gl : CanonicalDepthFunc::LessOrEqual;
+    default: return (raw <= 7) ? (CanonicalDepthFunc)raw : CanonicalDepthFunc::LessOrEqual;
     }
 }
+inline CanonicalDepthFunc toCanonicalDepthFuncFromGl(uint32_t gl) { return toCanonicalDepthFunc(gl); }
 
 inline CanonicalDepthFunc toCanonicalDepthFuncFromVk(VkCompareOp op) {
     switch (op) {
@@ -102,8 +103,8 @@ inline VkBlendFactor toVkBlendFactor(CanonicalBlendFactor factor) {
     }
 }
 
-inline CanonicalBlendFactor toCanonicalBlendFactorFromGl(uint32_t gl) {
-    switch (gl) {
+inline CanonicalBlendFactor toCanonicalBlendFactor(uint32_t raw) {
+    switch (raw) {
     case 0: return CanonicalBlendFactor::Zero;
     case 1: return CanonicalBlendFactor::One;
     case 0x0300: return CanonicalBlendFactor::SrcColor;
@@ -119,9 +120,10 @@ inline CanonicalBlendFactor toCanonicalBlendFactorFromGl(uint32_t gl) {
     case 0x8003: return CanonicalBlendFactor::ConstantAlpha;
     case 0x8004: return CanonicalBlendFactor::OneMinusConstantAlpha;
     case 0x0308: return CanonicalBlendFactor::SrcAlphaSaturate;
-    default: return (gl <= 14) ? (CanonicalBlendFactor)gl : CanonicalBlendFactor::One;
+    default: return (raw <= 14) ? (CanonicalBlendFactor)raw : CanonicalBlendFactor::One;
     }
 }
+inline CanonicalBlendFactor toCanonicalBlendFactorFromGl(uint32_t gl) { return toCanonicalBlendFactor(gl); }
 
 inline CanonicalBlendFactor toCanonicalBlendFactorFromVk(VkBlendFactor factor) {
     switch (factor) {
@@ -155,16 +157,17 @@ inline VkBlendOp toVkBlendOp(CanonicalBlendOp op) {
     }
 }
 
-inline CanonicalBlendOp toCanonicalBlendOpFromGl(uint32_t gl) {
-    switch (gl) {
+inline CanonicalBlendOp toCanonicalBlendOp(uint32_t raw) {
+    switch (raw) {
     case 0x8006: return CanonicalBlendOp::Add;
     case 0x800A: return CanonicalBlendOp::Subtract;
     case 0x800B: return CanonicalBlendOp::ReverseSubtract;
     case 0x8007: return CanonicalBlendOp::Min;
     case 0x8008: return CanonicalBlendOp::Max;
-    default: return (gl <= 4) ? (CanonicalBlendOp)gl : CanonicalBlendOp::Add;
+    default: return (raw <= 4) ? (CanonicalBlendOp)raw : CanonicalBlendOp::Add;
     }
 }
+inline CanonicalBlendOp toCanonicalBlendOpFromGl(uint32_t gl) { return toCanonicalBlendOp(gl); }
 
 inline CanonicalBlendOp toCanonicalBlendOpFromVk(VkBlendOp op) {
     switch (op) {
@@ -187,18 +190,23 @@ inline VkCullModeFlags toVkCullMode(CanonicalCullMode mode) {
     }
 }
 
-inline CanonicalCullMode toCanonicalCullModeFromGl(bool cullOn, uint32_t glFace) {
+inline CanonicalCullMode toCanonicalCullMode(bool cullOn, uint32_t rawFace) {
     if (!cullOn) return CanonicalCullMode::None;
-    switch (glFace) {
+    switch (rawFace) {
     case 0x0404: return CanonicalCullMode::Front;
     case 0x0405: return CanonicalCullMode::Back;
     case 0x0408: return CanonicalCullMode::FrontAndBack;
-    default: return (glFace <= 3) ? (CanonicalCullMode)glFace : CanonicalCullMode::Back;
+    default: return (rawFace <= 3) ? (CanonicalCullMode)rawFace : CanonicalCullMode::Back;
     }
 }
-
+inline CanonicalCullMode toCanonicalCullMode(uint32_t raw) {
+    return toCanonicalCullMode(raw != 0, raw);
+}
+inline CanonicalCullMode toCanonicalCullModeFromGl(bool cullOn, uint32_t glFace) {
+    return toCanonicalCullMode(cullOn, glFace);
+}
 inline CanonicalCullMode toCanonicalCullModeFromGl(uint32_t gl) {
-    return toCanonicalCullModeFromGl(gl != 0, gl);
+    return toCanonicalCullMode(gl);
 }
 
 inline CanonicalCullMode toCanonicalCullModeFromVk(VkCullModeFlags flags) {
@@ -212,9 +220,10 @@ inline VkFrontFace toVkFrontFace(CanonicalFrontFace ff) {
     return (ff == CanonicalFrontFace::Clockwise) ? VK_FRONT_FACE_CLOCKWISE : VK_FRONT_FACE_COUNTER_CLOCKWISE;
 }
 
-inline CanonicalFrontFace toCanonicalFrontFaceFromGl(uint32_t gl) {
-    return (gl == 0x0900) ? CanonicalFrontFace::Clockwise : CanonicalFrontFace::CounterClockwise;
+inline CanonicalFrontFace toCanonicalFrontFace(uint32_t raw) {
+    return (raw == 0x0900) ? CanonicalFrontFace::Clockwise : CanonicalFrontFace::CounterClockwise;
 }
+inline CanonicalFrontFace toCanonicalFrontFaceFromGl(uint32_t gl) { return toCanonicalFrontFace(gl); }
 
 inline CanonicalFrontFace toCanonicalFrontFaceFromVk(VkFrontFace ff) {
     return (ff == VK_FRONT_FACE_CLOCKWISE) ? CanonicalFrontFace::Clockwise : CanonicalFrontFace::CounterClockwise;
@@ -232,17 +241,18 @@ inline VkPrimitiveTopology toVkTopology(CanonicalPrimitiveTopology topo) {
     }
 }
 
-inline CanonicalPrimitiveTopology toCanonicalTopologyFromGl(uint32_t gl) {
-    switch (gl) {
+inline CanonicalPrimitiveTopology toCanonicalTopology(uint32_t raw) {
+    switch (raw) {
     case 0x0000: return CanonicalPrimitiveTopology::PointList;
     case 0x0001: return CanonicalPrimitiveTopology::LineList;
     case 0x0003: return CanonicalPrimitiveTopology::LineStrip;
     case 0x0004: return CanonicalPrimitiveTopology::TriangleList;
     case 0x0005: return CanonicalPrimitiveTopology::TriangleStrip;
     case 0x0006: return CanonicalPrimitiveTopology::TriangleFan;
-    default: return (gl <= 5) ? (CanonicalPrimitiveTopology)gl : CanonicalPrimitiveTopology::TriangleList;
+    default: return (raw <= 5) ? (CanonicalPrimitiveTopology)raw : CanonicalPrimitiveTopology::TriangleList;
     }
 }
+inline CanonicalPrimitiveTopology toCanonicalTopologyFromGl(uint32_t gl) { return toCanonicalTopology(gl); }
 
 inline CanonicalPrimitiveTopology toCanonicalTopologyFromVk(VkPrimitiveTopology topo) {
     switch (topo) {

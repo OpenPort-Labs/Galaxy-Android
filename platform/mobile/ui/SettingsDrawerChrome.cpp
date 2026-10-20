@@ -11,7 +11,7 @@ void SettingsMenuHandler::drawDrawerChrome(
     vb.drawRoundRect(drawerX - 60.0f, 0.0f, drawerX + drawerW, contentTop, 0.0f, rgba(0.06f, 0.07f, 0.09f, 0.98f));
     vb.drawCogwheel(drawerX + padX + 14.0f * uiScale, 28.0f * uiScale, 13.0f * uiScale, rgba(0.82f, 0.86f, 0.92f, 0.90f), cogRot);
     vb.drawText("SUPER MARIO GALAXY", drawerX + padX + 36.0f * uiScale, 26.0f * uiScale, 0.38f * uiScale, rgba(0.96f, 0.97f, 0.98f, 1.0f), 0);
-    vb.drawText("v0.0.4-gamma TESTER BUILD • PLUS", drawerX + padX + 36.0f * uiScale, 38.0f * uiScale, 0.22f * uiScale, rgba(0.55f, 0.60f, 0.68f, 0.85f), 0);
+    vb.drawText("v0.0.4-delta TESTER BUILD • PLUS", drawerX + padX + 36.0f * uiScale, 38.0f * uiScale, 0.22f * uiScale, rgba(0.55f, 0.60f, 0.68f, 0.85f), 0);
 
     // Active Backend tag pill (minimalist outline)
     const char* backendTag = "VULKAN 1.1";

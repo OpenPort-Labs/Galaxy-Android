@@ -1,3 +1,40 @@
+# GalaxyAndroid v0.0.4-delta — Community Beta Tester Build
+
+Beta tester release delivering verified in-level 3D gameplay (Gateway Galaxy) on Vulkan 1.0, release-signing credential remediation, strict separation of tester and production release gates, end-to-end disc extraction path-traversal prevention, and 32-byte optical DVD alignment.
+
+> [!IMPORTANT]
+> **Mandatory Requirement for Testers: Discord Membership**:
+> For all testers, it is necessary and mandatory to join our official Discord server to report issues, submit logs, discuss test builds, and receive real-time support:
+> - **Official Tester Discord**: [https://discord.gg/H3qdNWYu2](https://discord.gg/H3qdNWYu2)
+>
+> *Notice: Bug reports and support requests must go through Discord or GitHub Issues. Do not send bug reports via email; emails are not monitored for technical support.*
+
+---
+
+### Highlights & Engineering Improvements in v0.0.4-delta
+
+#### 1. Verified 3D In-Level Gameplay on Vulkan 1.0
+- **Gateway Galaxy Playable State**: Successfully verified interactive 3D gameplay past the file-selection screen. The intro planet, Mario character model, Star Bunny dialogue ("C'mon! Jump with (A)!"), HUD elements, and planet geometry render with full Hor+ ultrawide perspective.
+- **Interactive Touch Controls**: Verified real-time responsiveness of on-screen touch controls, including digital A-button jumping and virtual analog joystick navigation.
+- **Sustained Performance & Stability**: Sustained 49.4 – 52.5 FPS at 19.9 – 22.3 ms frametime on ARM Mali-G68, running stably through 36,000+ presented frames (over 6 million draw calls) with zero leaks at a steady 221 MB RAM footprint.
+
+#### 2. Release Security & Signing-Credential Remediation
+- **Zero Command-Line Secret Leaks**: Eliminated inline plaintext passwords from `package_mobile_apk.py`, `installer-mobile/build.py`, and packaging shell scripts.
+- **Protected Environment Credentials**: Credentials are now supplied securely via `env:GALAXY_KEYSTORE_PASS` to `apksigner` and `-storepass:env` to `keytool`, ensuring passwords never appear in process listings (`ps`, `Get-Process`) or system logs.
+- **Sanitized Command Logging**: Integrated secret-masking helpers (`safe_cmd_str`) that automatically mask sensitive flags (`--ks-pass ***`) in build logs.
+
+#### 3. Strict Separation of Tester vs. Production Release Channels
+- **Dedicated Release Policies**: Introduced `--channel tester` and `--channel production` modes across packaging, verification, and CI workflows.
+- **Unbypassable Production Gate**: Production channel strictly forbids `android:debuggable="true"`, missing credentials, and unauthorized key generation. Tester environment variables cannot override production rejection.
+- **Safe Tester Sideload Path**: Sideload tester builds (which require `debuggable="true"` for `wrap.sh` + `libreserve.so` 32-bit window reservation) are explicitly validated and published as pre-releases on GitHub.
+
+#### 4. Disc Extraction Security & Optical DVD Alignment
+- **Path Traversal Defenses**: Hardened directory containment checks (`path_security.cpp`) preventing link escapes, directory-traversal bypasses, and unauthorized filesystem writes during disc extraction.
+- **Safe Cleanup**: Aborted or failed extractions immediately close handles and unlink partial files without following symlinks.
+- **32-Byte Optical Read Alignment**: Bounded reads up to `(size + 31) & ~31LL` with trailing zero-padding in `dvd_read.cpp`, eliminating read-validation hangs and short-read crashes during game asset streaming.
+
+---
+
 # GalaxyAndroid v0.0.4-gamma — Community Beta Tester Build
 
 Beta tester release delivering the verified Vulkan shader inventory and graphics pipeline prewarming architecture, canonical `PipelineKey` unification, multi-stage startup compilation, durability and corruption recovery, and texture staging safety.

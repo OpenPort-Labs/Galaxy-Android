@@ -18,7 +18,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[2]
 GX = ROOT / 'platform' / 'src' / 'gx'
 PROBE_SRC = Path(__file__).resolve().parent / 'shadergen_probe.cpp'
-GENERATOR_SRCS = [GX / 'vk_shadergen_vs.cpp', GX / 'vk_shadergen_tables.cpp', GX / 'gx_shader_uid.cpp']
+GENERATOR_SRCS = [GX / 'vk_shadergen_vs.cpp', GX / 'vk_shadergen_fs.cpp', GX / 'vk_shadergen_tables.cpp', GX / 'gx_shader_uid.cpp']
 
 # XF channel control (GXLight.c: GXSetChanCtrl).  Bit 1 enables the channel,
 # bit 2 includes GX_LIGHT0, bits 7-8 are the diffuse function, bit 9 is
@@ -70,6 +70,12 @@ class ShaderGeneratorTests(unittest.TestCase):
         self.assertEqual(out.returncode, 0, out.stderr)
         return out.stdout
 
+    def fragment_shader(self, ctrl=0, alpha=None, alpha_func=0):
+        cmd = [str(self.probe), '--fs', hex(ctrl), hex(alpha if alpha is not None else ctrl), hex(alpha_func)]
+        out = subprocess.run(cmd, capture_output=True, text=True)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        return out.stdout
+
     def test_af_none_does_not_attenuate(self):
         """GX_AF_NONE leaves lighting unattenuated."""
         src = self.shader(AF_NONE)
@@ -104,6 +110,16 @@ class ShaderGeneratorTests(unittest.TestCase):
         src = self.shader(AF_SPEC)
         self.assertIn('v_clr1 = vclr1;', src)
         self.assertNotIn('v_clr1.rgb = matColor[1].rgb;', src)
+
+    def test_mario_eye_alpha_wrap_and_alpha_test(self):
+        """Mario's eye and eyelid materials rely on 8-bit alpha wrap semantics (int(uint(a) & 255u))."""
+        # alpha_func = 6 | (7 << 3) (GX_GEQUAL on comp0 with ref0, GX_ALWAYS on comp1, AND logic)
+        fs = self.fragment_shader(ctrl=UNLIT, alpha_func=(6 | (7 << 3)))
+        self.assertIn('int(uint(', fs)
+        self.assertIn('& 255u)', fs)
+        self.assertNotIn('clamp(ivec4(', fs)
+        self.assertIn('float a = float(outi.a);', fs)
+        self.assertIn('(a >= alphaRef.x)', fs)
 
 
 if __name__ == '__main__':

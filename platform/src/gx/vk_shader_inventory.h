@@ -104,7 +104,7 @@ public:
 private:
     void addEntry(const ShaderUid& uid, const PipelineKey& key, const std::string& source, bool isRuntime);
 
-    mutable std::mutex mMutex;
+    mutable std::recursive_mutex mMutex;
     std::string mCacheDir;
     std::string mInventoryFilePath;
     std::string mDataRoot;

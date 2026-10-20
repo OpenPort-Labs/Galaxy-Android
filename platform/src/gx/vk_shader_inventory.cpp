@@ -68,7 +68,7 @@ ShaderInventory& ShaderInventory::get() {
 ShaderInventory::ShaderInventory() = default;
 
 void ShaderInventory::init(const std::string& cacheDir, const std::string& dataRoot) {
-    std::lock_guard<std::mutex> lock(mMutex);
+    std::lock_guard<std::recursive_mutex> lock(mMutex);
     if (mInitialized) return;
     mCacheDir = cacheDir;
     mInventoryFilePath = cacheDir + "/vk_shader_inventory.bin";
@@ -427,7 +427,7 @@ bool ShaderInventory::loadAssetManifest(const std::string& manifestPath) {
 
     fclose(f);
 
-    std::lock_guard<std::mutex> lock(mMutex);
+    std::lock_guard<std::recursive_mutex> lock(mMutex);
     size_t published = 0;
     for (const auto& item : staged) {
         addEntry(item.uid, item.key, item.source, false);
@@ -495,7 +495,7 @@ void ShaderInventory::scanAssetDirectory(const std::string& filesDir) {
 }
 
 void ShaderInventory::recordRuntimeShaderUidMiss(const ShaderUid& uid, const PipelineKey& key, const char* source) {
-    std::lock_guard<std::mutex> lock(mMutex);
+    std::lock_guard<std::recursive_mutex> lock(mMutex);
     mStats.runtimeShaderUidMisses++;
     mStats.runtimeDiscoveredEntries++;
     addEntry(uid, key, source ? source : "runtime_uid_miss", true);
@@ -505,7 +505,7 @@ void ShaderInventory::recordRuntimeShaderUidMiss(const ShaderUid& uid, const Pip
 }
 
 void ShaderInventory::recordRuntimePipelineKeyMiss(const ShaderUid& uid, const PipelineKey& key, const char* source) {
-    std::lock_guard<std::mutex> lock(mMutex);
+    std::lock_guard<std::recursive_mutex> lock(mMutex);
     mStats.runtimePipelineKeyMisses++;
     mStats.runtimeDiscoveredEntries++;
     addEntry(uid, key, source ? source : "runtime_key_miss", true);
@@ -515,14 +515,14 @@ void ShaderInventory::recordRuntimePipelineKeyMiss(const ShaderUid& uid, const P
 }
 
 void ShaderInventory::incrementPlaceholderUses() {
-    std::lock_guard<std::mutex> lock(mMutex);
+    std::lock_guard<std::recursive_mutex> lock(mMutex);
     mStats.placeholderPipelineUses++;
 }
 
 void ShaderInventory::compileAllSpirv(int maxWorkers, std::function<void(int done, int total, const char* msg)> progress) {
     std::vector<ShaderUid> uniqueUids;
     {
-        std::lock_guard<std::mutex> lock(mMutex);
+        std::lock_guard<std::recursive_mutex> lock(mMutex);
         uniqueUids.reserve(mUidIndex.size());
         for (const auto& kv : mUidIndex) {
             uniqueUids.push_back(kv.first);
@@ -570,7 +570,7 @@ void ShaderInventory::compileAllSpirv(int maxWorkers, std::function<void(int don
     auto elapsed = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
 
     {
-        std::lock_guard<std::mutex> lock(mMutex);
+        std::lock_guard<std::recursive_mutex> lock(mMutex);
         mStats.spirvCacheHits = cached.load();
         mStats.spirvCompilationsCompleted = compiled.load();
         mStats.spirvFailures = failed.load();
@@ -592,7 +592,7 @@ void ShaderInventory::compileAllSpirv(int maxWorkers, std::function<void(int don
 void ShaderInventory::prewarmPipelines(VkRenderer& renderer, std::function<void(int done, int total, const char* msg)> progress) {
     std::vector<InventoryEntry> entriesCopy;
     {
-        std::lock_guard<std::mutex> lock(mMutex);
+        std::lock_guard<std::recursive_mutex> lock(mMutex);
         entriesCopy = mEntries;
     }
 
@@ -652,7 +652,7 @@ void ShaderInventory::prewarmPipelines(VkRenderer& renderer, std::function<void(
     auto elapsed = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
 
     {
-        std::lock_guard<std::mutex> lock(mMutex);
+        std::lock_guard<std::recursive_mutex> lock(mMutex);
         mEntries = std::move(entriesCopy);
         mStats.realPipelinesCreated = created;
         mStats.realPipelinesReused = reused;
@@ -669,7 +669,7 @@ void ShaderInventory::prewarmPipelines(VkRenderer& renderer, std::function<void(
 }
 
 bool ShaderInventory::verifyStartupReadiness() const {
-    std::lock_guard<std::mutex> lock(mMutex);
+    std::lock_guard<std::recursive_mutex> lock(mMutex);
     size_t missingEssential = 0;
     size_t totalReadyPipelines = 0;
     std::string firstMissingSource;
@@ -703,7 +703,7 @@ bool ShaderInventory::verifyStartupReadiness() const {
 }
 
 ShaderInventoryStats ShaderInventory::stats() const {
-    std::lock_guard<std::mutex> lock(mMutex);
+    std::lock_guard<std::recursive_mutex> lock(mMutex);
     ShaderInventoryStats s = mStats;
     s.totalUniqueKeys = mKeyIndex.size();
     s.totalUniqueUids = mUidIndex.size();
@@ -727,7 +727,7 @@ ShaderInventoryStats ShaderInventory::stats() const {
 }
 
 std::string ShaderInventory::getDiagnostics() const {
-    std::lock_guard<std::mutex> lock(mMutex);
+    std::lock_guard<std::recursive_mutex> lock(mMutex);
     char buf[1024];
     snprintf(buf, sizeof(buf),
              "=== Vulkan Shader Inventory & Prewarm Diagnostics ===\n"

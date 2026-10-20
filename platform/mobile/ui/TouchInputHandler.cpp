@@ -54,6 +54,11 @@ void TouchInputHandler::update(PortPadState& pad, int& spinFrames, bool fullTouc
 
     mBtnPlusPressed = mFingerDownOnPlus;
 
+    pad.rightStickX *= 0.5f;
+    pad.rightStickY *= 0.5f;
+    if (fabsf(pad.rightStickX) < 0.01f) pad.rightStickX = 0.0f;
+    if (fabsf(pad.rightStickY) < 0.01f) pad.rightStickY = 0.0f;
+
     if (mPointerActiveFrames > 0 || mStarStickPointerId >= 0) {
         pad.pointerValid = 1;
         pad.pointerX = mPointerX;
@@ -249,7 +254,7 @@ bool TouchInputHandler::handleTouch(const AInputEvent* event, PortPadState& pad,
                 }
             }
 
-            bool cameraSwipeEligible = (settings.touchCamera && !settings.starStick && px >= w * 0.55f && py <= h * 0.50f && bestBtnIdx < 0);
+            bool cameraSwipeEligible = (settings.touchCamera && !starEligible && bestBtnIdx < 0 && px >= w * 0.40f);
 
             if (bestBtnIdx >= 0) {
                 TouchRole btnRoles[5] = {TouchRole::BTN_A, TouchRole::BTN_B, TouchRole::BTN_Z, TouchRole::BTN_SPIN, TouchRole::BTN_PLUS};

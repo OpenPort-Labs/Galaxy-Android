@@ -98,13 +98,10 @@ void TouchInputHandler::updateActivePointers(
                 float dy = py - mTouches[slot].lastY;
                 mTouches[slot].lastX = px;
                 mTouches[slot].lastY = py;
-                float deadzone = 2.0f * scale;
-                if (fabsf(dx) > deadzone || fabsf(dy) > deadzone) {
-                    float sens = 0.055f * settings.starStickSensitivity;
+                if (fabsf(dx) > 0.05f || fabsf(dy) > 0.05f) {
+                    float sens = 0.045f * settings.starStickSensitivity;
                     pad.rightStickX = std::max(-1.0f, std::min(1.0f, -dx * sens));
                     pad.rightStickY = std::max(-1.0f, std::min(1.0f, -dy * sens));
-                } else {
-                    pad.rightStickX = pad.rightStickY = 0.0f;
                 }
             }
         } else {

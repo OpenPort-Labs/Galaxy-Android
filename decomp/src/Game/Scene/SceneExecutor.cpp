@@ -156,15 +156,15 @@ void SceneFunction::executeDrawBufferListNormalOpaBeforeVolumeShadow() {
     CategoryList::drawXlu(MR::DrawBufferType_CrystalItem);
     CategoryList::drawOpa(MR::DrawBufferType_Crystal);
     CategoryList::drawXlu(MR::DrawBufferType_Crystal);
-    CategoryList::drawOpa(MR::DrawBufferType_AstroDomeSky);
-    CategoryList::drawXlu(MR::DrawBufferType_AstroDomeSky);
+    PORT_SKY_BUFFER(CategoryList::drawOpa(MR::DrawBufferType_AstroDomeSky));
+    PORT_SKY_BUFFER(CategoryList::drawXlu(MR::DrawBufferType_AstroDomeSky));
 
     if (MR::isExistPriorDrawAir()) {
         PORT_SKY_BUFFER(CategoryList::drawOpa(MR::DrawBufferType_Sky));
-        CategoryList::drawOpa(MR::DrawBufferType_Air);
+        PORT_SKY_BUFFER(CategoryList::drawOpa(MR::DrawBufferType_Air));
         CategoryList::drawOpa(MR::DrawBufferType_Sun);
         PORT_SKY_BUFFER(CategoryList::drawXlu(MR::DrawBufferType_Sky));
-        CategoryList::drawXlu(MR::DrawBufferType_Air);
+        PORT_SKY_BUFFER(CategoryList::drawXlu(MR::DrawBufferType_Air));
         CategoryList::drawXlu(MR::DrawBufferType_Sun);
     }
 
@@ -200,10 +200,10 @@ void SceneFunction::executeDrawBufferListNormalOpa() {
 
     if (!MR::isExistPriorDrawAir()) {
         PORT_SKY_BUFFER(CategoryList::drawOpa(MR::DrawBufferType_Sky));
-        CategoryList::drawOpa(MR::DrawBufferType_Air);
+        PORT_SKY_BUFFER(CategoryList::drawOpa(MR::DrawBufferType_Air));
         CategoryList::drawOpa(MR::DrawBufferType_Sun);
         PORT_SKY_BUFFER(CategoryList::drawXlu(MR::DrawBufferType_Sky));
-        CategoryList::drawXlu(MR::DrawBufferType_Air);
+        PORT_SKY_BUFFER(CategoryList::drawXlu(MR::DrawBufferType_Air));
         CategoryList::drawXlu(MR::DrawBufferType_Sun);
     }
 }

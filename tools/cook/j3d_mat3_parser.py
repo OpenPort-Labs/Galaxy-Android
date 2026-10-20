@@ -12,6 +12,16 @@ except ImportError:  # imported as tools.cook.j3d_mat3_parser
     from tools.cook.j3d_shape_attrs import ShapeAttrError, material_vertex_flags
 
 try:
+    import j3d_gx_state as gx
+except ImportError:  # imported as tools.cook.j3d_mat3_parser
+    import tools.cook.j3d_gx_state as gx
+
+try:
+    import j3d_material_state as jms
+except ImportError:  # imported as tools.cook.j3d_mat3_parser
+    import tools.cook.j3d_material_state as jms
+
+try:
     from j3d_pipeline_key import (
         CANONICAL_BLEND_ONE, CANONICAL_BLEND_OP_ADD, CANONICAL_BLEND_ZERO, CANONICAL_CULL_BACK,
         CANONICAL_DEPTH_LEQUAL, CANONICAL_TOPO_TRIANGLE_LIST, encode_pipeline_key,
@@ -182,10 +192,7 @@ def parse_j3d_mat3(b: bytes, model_name: str, archive_name: str = ""):
                 alpha_func = 0
                 if offs[24] and alpha_comp_idx != 0xFFFF and o + offs[24] + alpha_comp_idx * 8 + 5 <= len(b):
                     ac_o = o + offs[24] + alpha_comp_idx * 8
-                    comp0 = b[ac_o] & 7
-                    op = b[ac_o + 2] & 3
-                    comp1 = b[ac_o + 3] & 7
-                    alpha_func = comp0 | (comp1 << 3) | (op << 6)
+                    alpha_func = gx.alpha_func_word(b[ac_o:ac_o + 4])
 
                 # 6. Build authentic full-width ShaderUid matching the native C++ engine
                 uid_words = [0] * SHADER_UID_WORDS
@@ -193,64 +200,70 @@ def parse_j3d_mat3(b: bytes, model_name: str, archive_name: str = ""):
                 uid_words[0] = vtx_flags
                 uid_words[1] = num_texgens
                 uid_words[2] = num_chans
-                uid_words[3] = 0  # dualTex
-                for c in range(min(num_chans, 2)):
-                    uid_words[4 + c] = 0x0001  # colorCtrl[c]
-                    uid_words[6 + c] = 0x0001  # alphaCtrl[c]
-                for tg in range(min(num_texgens, 8)):
-                    uid_words[8 + tg] = (5 + 3 * tg) << 7  # texMtxInfo[tg] (Tex0 row 5, Tex1 row 8...)
+                # GXInit.c __GXInitRevisionBits sets XF_DUALTEXTRAN_F_DUALTEXTRAN_ENABLE
+                # once and J3D never clears it, so the register reads 1 on every
+                # draw; the per-material choice lives in texMtxInfo instead.
+                uid_words[3] = 1
+
+                # Colour/alpha channel control: J3DColorBlock loads mColorChan[0],
+                # [2], [1], [3] into XF 0x100E..0x1011 (J3DMatBlock.cpp), which is
+                # colour0, alpha0, colour1, alpha1 in the UID.
+                chan_words = jms.channel_words(b, o + offs[7] if offs[7] else 0, block_end, m_off, fmt16)
+                if chan_words is None:
+                    gaps.append(f"{model_name}:{mat_name} colour channel index outside its table")
+                else:
+                    if num_chans >= 1:
+                        uid_words[4] = chan_words[0]
+                        uid_words[6] = chan_words[1]
+                    if num_chans >= 2:
+                        uid_words[5] = chan_words[2]
+                        uid_words[7] = chan_words[3]
+                tex_coords = jms.tex_coord_words(b, o + offs[11] if offs[11] else 0, block_end, m_off, num_texgens, fmt16)
+                if tex_coords is None:
+                    gaps.append(f"{model_name}:{mat_name} texcoord index outside its table")
+                else:
+                    for tg in range(min(num_texgens, 8)):
+                        uid_words[8 + tg] = tex_coords[tg]
                 uid_words[24] = num_tevstages
                 uid_words[25] = 0  # numIndStages
                 uid_words[74] = alpha_func  # alphaFunc BP 0xF3 bits 16-23
 
-                # Read TEV order if available (Table 16)
-                if offs[16]:
-                    for s in range(min(num_tevstages, 16)):
-                        ord_idx = struct.unpack_from(fmt16, b, m_off + 0xBC + s*2)[0]
-                        if ord_idx != 0xFFFF and o + offs[16] + ord_idx * 4 + 4 <= len(b):
-                            tord_o = o + offs[16] + ord_idx * 4
-                            tc = b[tord_o] & 7
-                            tm = b[tord_o + 1] & 7
-                            en = 1 if (tm != 7) else 0
-                            ch = b[tord_o + 2] & 7
-                            order_val = (tm & 7) | ((tc & 7) << 3) | (en << 6) | ((ch & 7) << 7)
-                            uid_words[26 + (s // 2)] |= (order_val << ((s % 2) * 12))
-
-                # Read authentic TEV stage operations from Table 20 (TevStageInfo) and Table 21 (TevSwapModeInfo)
-                if offs[20]:
-                    for s in range(min(num_tevstages, 16)):
-                        stage_idx = struct.unpack_from(fmt16, b, m_off + 0xE4 + s*2)[0]
-                        if stage_idx != 0xFFFF and o + offs[20] + stage_idx * 20 + 20 <= len(b):
-                            t20_o = o + offs[20] + stage_idx * 20
-                            st = list(b[t20_o:t20_o+20])
-                            # st[0] is dummy (0xFF); st[1:10] is color combiner; st[10:19] is alpha combiner
-                            ca, cb, cc, cd, cop, cbias, cscale, cclamp, cout = st[1:10]
-                            aa, ab, ac, ad, aop, abias, ascale, aclamp, aout = st[10:19]
-                            tev_color = ((cd & 0xF) | ((cc & 0xF) << 4) | ((cb & 0xF) << 8) | ((ca & 0xF) << 12) |
-                                         ((cbias & 3) << 16) | ((1 if cop else 0) << 18) | ((1 if cclamp else 0) << 19) |
-                                         ((cscale & 3) << 20) | ((cout & 3) << 22))
-
-                            rswap, tswap = 0, 0
-                            if offs[21]:
-                                swp_idx = struct.unpack_from(fmt16, b, m_off + 0x104 + s*2)[0]
-                                if swp_idx != 0xFFFF and o + offs[21] + swp_idx * 4 + 2 <= len(b):
-                                    swp_o = o + offs[21] + swp_idx * 4
-                                    rswap = b[swp_o] & 3
-                                    tswap = b[swp_o + 1] & 3
-
-                            tev_alpha = ((rswap & 3) | ((tswap & 3) << 2) |
-                                         ((ad & 7) << 4) | ((ac & 7) << 7) | ((ab & 7) << 10) | ((aa & 7) << 13) |
-                                         ((abias & 3) << 16) | ((1 if aop else 0) << 18) | ((1 if aclamp else 0) << 19) |
-                                         ((ascale & 3) << 20) | ((aout & 3) << 22))
-                            uid_words[34 + s] = tev_color
-                            uid_words[50 + s] = tev_alpha
-                        else:
-                            uid_words[34 + s] = 0x080A00
-                            uid_words[50 + s] = 0x080A00
+                # TEV order, packed two stages per BP 0x28+n register.  A
+                # one-stage block still writes both halves: J3DTevBlock1::load
+                # passes the NULL texcoord/map/channel for stage 1.
+                orders = jms.tev_order_fields(b, o + offs[16] if offs[16] else 0, block_end, m_off, num_tevstages, fmt16)
+                if orders is None:
+                    gaps.append(f"{model_name}:{mat_name} tev order index outside its table")
                 else:
-                    for s in range(num_tevstages):
-                        uid_words[34 + s] = 0x080A00
-                        uid_words[50 + s] = 0x080A00
+                    if num_tevstages == 1:
+                        orders.append(gx.TEV_ORDER_NULL)
+                    for s, field in enumerate(orders[:16]):
+                        uid_words[26 + (s // 2)] |= (field << ((s % 2) * 12))
+
+                stages = jms.tev_stage_words(b, o + offs[20] if offs[20] else 0,
+                                             o + offs[21] if offs[21] else 0,
+                                             block_end, m_off, num_tevstages, fmt16)
+                if stages is None:
+                    gaps.append(f"{model_name}:{mat_name} tev stage index outside its table")
+                else:
+                    for s, (tev_color, tev_alpha) in enumerate(zip(*stages)):
+                        uid_words[34 + s] = tev_color
+                        uid_words[50 + s] = tev_alpha
+
+                # TEV constant/swap selectors, BP 0xF6..0xFD.  J3DTevBlock writes
+                # all eight from four swap-mode tables and the material's
+                # K-colour/K-alpha selectors.  J3DTevBlock1 (a single TEV stage)
+                # never writes them, so those registers still hold the previous
+                # draw's values: the words stay 0 and the entry prewarms the
+                # pipeline without claiming to predict that draw's UID.
+                if num_tevstages >= 2:
+                    ksel = jms.tev_ksel_words(b, o + offs[22] if offs[22] else 0, block_end, m_off,
+                                               num_tevstages, fmt16)
+                    if ksel is None:
+                        gaps.append(f"{model_name}:{mat_name} has no TEV swap-mode table")
+                    else:
+                        for pair in range(8):
+                            uid_words[66 + pair] = ksel[pair]
 
                 key = encode_pipeline_key(uid_words, vtx_flags, depth_test, depth_write, depth_op,
                                           blend_enable, src_color, dst_color, src_alpha, dst_alpha,

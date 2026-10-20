@@ -4,9 +4,27 @@ import subprocess
 import sys
 import zipfile
 
-def run(cmd, cwd=None):
-    print('[RUN]', ' '.join(cmd) if isinstance(cmd, list) else cmd)
-    res = subprocess.run(cmd, cwd=cwd, shell=True if isinstance(cmd, str) else False)
+def safe_cmd_str(cmd):
+    if not isinstance(cmd, list):
+        return str(cmd)
+    masked = []
+    skip = False
+    for a in cmd:
+        if skip:
+            masked.append('***')
+            skip = False
+        elif a in ('--ks-pass', '--key-pass') or a.startswith('-storepass'):
+            masked.append(a)
+            skip = True
+        elif a.startswith('pass:'):
+            masked.append('pass:***')
+        else:
+            masked.append(a)
+    return ' '.join(masked)
+
+def run(cmd, cwd=None, env=None):
+    print('[RUN]', safe_cmd_str(cmd))
+    res = subprocess.run(cmd, cwd=cwd, env=env, shell=True if isinstance(cmd, str) else False)
     if res.returncode != 0:
         sys.exit(f'Command failed with exit code {res.returncode}')
 
@@ -172,17 +190,25 @@ if os.path.exists(final_apk):
 
 run([ZIPALIGN, '-p', '-f', '4', base_apk, aligned_apk])
 
-keystore = os.path.join(ROOT, 'out', 'debug.keystore')
-if not os.path.exists(keystore):
-    keystore = os.path.join(ROOT, 'out-mobile', 'debug.keystore')
+keystore = os.environ.get('GALAXY_KEYSTORE')
+if not keystore or not os.path.exists(keystore):
+    keystore = os.path.join(ROOT, 'out', 'release.keystore')
+    if not os.path.exists(keystore):
+        keystore = os.path.join(ROOT, 'out', 'debug.keystore')
+        if not os.path.exists(keystore):
+            keystore = os.path.join(ROOT, 'out-mobile', 'debug.keystore')
+
+store_pass = os.environ.get('GALAXY_KEYSTORE_PASS', 'android')
+sign_env = dict(os.environ)
+sign_env['GALAXY_KEYSTORE_PASS'] = store_pass
 
 run([
     APKSIGNER, 'sign',
     '--ks', keystore,
-    '--ks-pass', 'pass:android',
+    '--ks-pass', 'env:GALAXY_KEYSTORE_PASS',
     '--out', final_apk,
     aligned_apk
-])
+], env=sign_env)
 
 size = os.path.getsize(final_apk)
 print(f'SUCCESS! Created {final_apk} ({size:,} bytes)')

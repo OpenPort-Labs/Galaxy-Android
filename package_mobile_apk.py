@@ -1,15 +1,16 @@
-#!/usr/bin/env python3
-"""Build and package the unified GalaxyAndroid.apk (Game + In-App Disc Loader)."""
+import argparse
 import glob
 import os
 import shutil
 import subprocess
+import sys
 import zipfile
 
 from tools.apk_env import (
     ROOT, SDK, BUILD_TOOLS_DIR, AAPT2, ZIPALIGN, APKSIGNER, D8,
-    ANDROID_JAR, NDK_DIR, STRIP, JAVAC, KEYSTORE_PASS, KEY_ALIAS,
-    prepare_signing_key, verify_signed_apk, manifest_is_debuggable
+    ANDROID_JAR, NDK_DIR, STRIP, JAVAC, KEY_ALIAS,
+    prepare_signing_key, verify_signed_apk, manifest_is_debuggable,
+    resolve_keystore_pass
 )
 
 BUILD_MOBILE = os.environ.get("BUILD_DIR", os.path.join(ROOT, "build-mobile"))
@@ -17,12 +18,38 @@ OUT = os.path.join(ROOT, "out-mobile")
 INSTALLER_DIR = os.path.join(ROOT, "installer-mobile")
 MANIFEST = os.path.join(ROOT, "platform", "mobile", "AndroidManifest.xml")
 
-def run(cmd):
-    print("[RUN]", " ".join(cmd))
-    subprocess.run(cmd, check=True)
+def safe_cmd_str(cmd):
+    masked = []
+    skip = False
+    for a in cmd:
+        if skip:
+            masked.append("***")
+            skip = False
+        elif a in ("--ks-pass", "--key-pass") or a.startswith("-storepass"):
+            masked.append(a)
+            skip = True
+        elif a.startswith("pass:"):
+            masked.append("pass:***")
+        else:
+            masked.append(a)
+    return " ".join(masked)
 
-def require_deliberate_debuggable():
-    if not manifest_is_debuggable(MANIFEST):
+def run(cmd, env=None):
+    print("[RUN]", safe_cmd_str(cmd))
+    subprocess.run(cmd, check=True, env=env)
+
+def require_deliberate_debuggable(channel=None):
+    if channel is None:
+        channel = os.environ.get("GALAXY_RELEASE_CHANNEL", "tester").lower()
+    debuggable = manifest_is_debuggable(MANIFEST)
+    if channel == "production":
+        if debuggable:
+            raise SystemExit(
+                "REFUSING TO PACKAGE [production]: android:debuggable=\"true\" is set in AndroidManifest.xml. "
+                "Production releases forbid debuggable builds. (Use --channel tester for sideload tester builds)."
+            )
+        return
+    if not debuggable:
         return
     if os.environ.get("GALAXY_ALLOW_DEBUGGABLE") == "1":
         print("[MANIFEST] android:debuggable=\"true\" accepted: GALAXY_ALLOW_DEBUGGABLE=1 is set.")
@@ -30,7 +57,14 @@ def require_deliberate_debuggable():
     raise SystemExit("REFUSING TO PACKAGE: android:debuggable=\"true\" is set. Set GALAXY_ALLOW_DEBUGGABLE=1 to build anyway.")
 
 def main():
-    print("=== Packaging Unified GalaxyAndroid.apk (com.openport.galaxyandroid) ===")
+    parser = argparse.ArgumentParser(description="Package GalaxyAndroid.apk")
+    parser.add_argument("--channel", choices=["tester", "production"],
+                        default=os.environ.get("GALAXY_RELEASE_CHANNEL", "tester").lower(),
+                        help="Build channel: 'tester' or 'production'")
+    args, unknown = parser.parse_known_args()
+    channel = args.channel
+
+    print(f"=== Packaging Unified GalaxyAndroid.apk [channel: {channel}] ===")
     print(f"  SDK: {SDK}")
     print(f"  Build Tools: {BUILD_TOOLS_DIR}")
     print(f"  Platform JAR: {ANDROID_JAR}")
@@ -38,8 +72,8 @@ def main():
     print(f"  Javac: {JAVAC}")
     print(f"  NDK: {NDK_DIR}")
     print(f"  Strip: {STRIP}")
-    require_deliberate_debuggable()
-    keystore = prepare_signing_key()
+    require_deliberate_debuggable(channel)
+    keystore = prepare_signing_key(channel=channel)
 
     os.makedirs(OUT, exist_ok=True)
     os.makedirs(os.path.join(ROOT, "out"), exist_ok=True)
@@ -178,17 +212,20 @@ def main():
     final_apk = os.path.join(ROOT, "out", "GalaxyAndroid.apk")
     if os.path.exists(final_apk):
         os.remove(final_apk)
+    storepass = resolve_keystore_pass(channel=channel)
+    sign_env = dict(os.environ)
+    sign_env["GALAXY_KEYSTORE_PASS"] = storepass
     run([
         APKSIGNER, "sign",
         "--ks", keystore,
-        "--ks-pass", f"pass:{KEYSTORE_PASS}",
+        "--ks-pass", "env:GALAXY_KEYSTORE_PASS",
         "--ks-key-alias", KEY_ALIAS,
         "--out", final_apk,
         aligned_apk
-    ])
+    ], env=sign_env)
 
-    verify_signed_apk(final_apk)
-    print(f"=== Successfully packaged and signed: {final_apk} ===")
+    verify_signed_apk(final_apk, channel=channel)
+    print(f"=== Successfully packaged and signed [{channel}]: {final_apk} ===")
 
 if __name__ == "__main__":
     main()

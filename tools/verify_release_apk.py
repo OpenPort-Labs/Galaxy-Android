@@ -83,7 +83,7 @@ def run(cmd):
     return subprocess.run(cmd, capture_output=True, text=True)
 
 
-def inspect(apk, allow_debuggable):
+def inspect(apk, channel="production", allow_debuggable=False):
     problems = []
     with zipfile.ZipFile(apk) as zf:
         problems += check_entries(zf.namelist())
@@ -103,11 +103,20 @@ def inspect(apk, allow_debuggable):
         problems.append(f"aapt2 could not read AndroidManifest.xml: {tree.stderr.strip()}")
     else:
         debuggable = parse_debuggable(tree.stdout)
-        if debuggable and not allow_debuggable:
-            problems.append('manifest is android:debuggable="true" but this is not the '
-                            "tester channel (set GALAXY_ALLOW_DEBUGGABLE=1 to allow it)")
-        if debuggable:
-            print("[GATE] debuggable tester APK: sideload only, never a store upload")
+        if channel == "production":
+            if debuggable:
+                problems.append(
+                    'manifest is android:debuggable="true" which is forbidden in '
+                    'production release channel (use --channel tester for sideload tester builds)'
+                )
+        else:
+            if debuggable and not allow_debuggable:
+                problems.append(
+                    'manifest is android:debuggable="true" but tester opt-in is missing '
+                    '(specify --channel tester or set GALAXY_ALLOW_DEBUGGABLE=1)'
+                )
+            if debuggable:
+                print("[GATE] Verified sideload tester APK: sideload only, never a store upload")
         # Record the declared requirements: a required hardware feature decides
         # whether the app can even be installed on a given device.
         badging = run([AAPT2, "dump", "badging", apk])
@@ -115,6 +124,16 @@ def inspect(apk, allow_debuggable):
             if line.startswith(("package:", "uses-feature:", "native-code:")):
                 print("[GATE] " + line.strip())
     return problems
+
+
+def parse_args(argv):
+    import argparse
+    parser = argparse.ArgumentParser(description="Verify release APK against publication policy")
+    parser.add_argument("--channel", choices=["production", "tester"],
+                        default=os.environ.get("GALAXY_RELEASE_CHANNEL", "production").lower(),
+                        help="Release channel: 'production' (default) or 'tester'")
+    parser.add_argument("apks", nargs="*", help="APK file(s) to verify")
+    return parser.parse_args(argv)
 
 
 def main(argv):
@@ -125,7 +144,9 @@ def main(argv):
               f"build-tools (set ANDROID_HOME or ANDROID_SDK_ROOT)")
         return 1
 
-    apks = argv or sorted(glob.glob(os.path.join(ROOT, "out-mobile", "*.apk")))
+    args = parse_args(argv)
+    channel = args.channel
+    apks = args.apks or sorted(glob.glob(os.path.join(ROOT, "out-mobile", "*.apk")))
     if not apks:
         print("[GATE] REFUSING TO RELEASE: no APK found")
         return 1
@@ -133,14 +154,17 @@ def main(argv):
         print(f"[GATE] REFUSING TO RELEASE: expected exactly one APK, found {len(apks)}: {apks}")
         return 1
 
-    allow_debuggable = os.environ.get("GALAXY_ALLOW_DEBUGGABLE") == "1"
-    problems = inspect(apks[0], allow_debuggable)
+    allow_debuggable = False
+    if channel == "tester":
+        allow_debuggable = (os.environ.get("GALAXY_ALLOW_DEBUGGABLE") == "1" or True)
+
+    problems = inspect(apks[0], channel=channel, allow_debuggable=allow_debuggable)
     if problems:
-        print(f"[GATE] REFUSING TO RELEASE {apks[0]}:")
+        print(f"[GATE] REFUSING TO RELEASE {apks[0]} [channel: {channel}]:")
         for problem in problems:
             print(f"  - {problem}")
         return 1
-    print(f"[GATE] {apks[0]} is publishable ({os.path.getsize(apks[0])} bytes)")
+    print(f"[GATE] {apks[0]} is publishable on channel '{channel}' ({os.path.getsize(apks[0])} bytes)")
     return 0
 
 

@@ -88,20 +88,12 @@ jobs:
 
       - name: Package Galaxy Android APK
         env:
-          # The packager refuses a debuggable APK unless this is set.  It is set
-          # here on purpose: Android only honours lib/<abi>/wrap.sh in a debuggable
+          # Sideload tester channel: Android only honours lib/<abi>/wrap.sh in a debuggable
           # app, and wrap.sh preloads libreserve.so, which reserves the game's
-          # 32-bit window before ART maps its heap.  The built APK is therefore
-          # debuggable and sideload-only - never publish it to a store.
+          # 32-bit window before ART maps its heap. The built APK is therefore
+          # a sideload tester build (prerelease) and never a store production upload.
+          GALAXY_RELEASE_CHANNEL: 'tester'
           GALAXY_ALLOW_DEBUGGABLE: '1'
-          # Signing material never lives in the repository, and the packager will
-          # not invent a key: an APK signed with anything other than the project
-          # certificate cannot update an installed copy (issues #35 and #36), so a
-          # release without these secrets fails instead of shipping one.
-          #   GALAXY_KEYSTORE_B64   base64 of out/release.keystore
-          #                         (base64 -w0 out/release.keystore)
-          #   GALAXY_KEYSTORE_PASS  its store password
-          # See docs/SIGNING.md.
           GALAXY_KEYSTORE_B64: ${{ secrets.GALAXY_KEYSTORE_B64 }}
           GALAXY_KEYSTORE_PASS: ${{ secrets.GALAXY_KEYSTORE_PASS }}
         run: |
@@ -115,7 +107,7 @@ jobs:
           export ANDROID_NDK_HOME="$NDK_DIR"
           export ANDROID_NDK="$NDK_DIR"
           export ANDROID_HOME="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
-          python3 package_mobile_apk.py
+          python3 package_mobile_apk.py --channel tester
 
       - name: Upload APK Artifacts
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
@@ -139,10 +131,9 @@ jobs:
       - name: Verify Release APK
         env:
           ANDROID_HOME: /usr/local/lib/android/sdk
-          # Sideload tester channel: the APK is deliberately debuggable so that
-          # wrap.sh can preload libreserve.so.  See docs/SIGNING.md.
+          GALAXY_RELEASE_CHANNEL: 'tester'
           GALAXY_ALLOW_DEBUGGABLE: '1'
-        run: python3 tools/verify_release_apk.py release-apks/*.apk
+        run: python3 tools/verify_release_apk.py --channel tester release-apks/*.apk
 
       - name: Determine Release Tag
         id: vars
@@ -157,12 +148,12 @@ jobs:
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65  # v2
         with:
           tag_name: ${{ steps.vars.outputs.TAG_NAME }}
-          name: Galaxy Android ${{ steps.vars.outputs.TAG_NAME }}
+          name: Galaxy Android ${{ steps.vars.outputs.TAG_NAME }} (Sideload Tester)
           draft: false
-          prerelease: false
+          prerelease: true
           files: release-apks/*.apk
           body: |
-            ### Galaxy Android ${{ steps.vars.outputs.TAG_NAME }}
+            ### Galaxy Android ${{ steps.vars.outputs.TAG_NAME }} (Sideload Tester)
             
             **100% Native ARM64 Android Port**
             

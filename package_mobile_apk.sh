@@ -69,12 +69,14 @@ PY
   )
 
   "$BT/zipalign$EXE" -f -p 16 $OUT/base.apk $OUT/aligned.apk
+  GALAXY_KEYSTORE_PASS="${GALAXY_KEYSTORE_PASS:-android}"
+  export GALAXY_KEYSTORE_PASS
   if [ -n "$IS_WINDOWS" ]; then
     APKSIGNER_BAT="$BT/apksigner.bat"
-    cmd //c "$(native_path "$APKSIGNER_BAT")" sign --ks "$(native_path "$KEYSTORE")" --ks-pass pass:android --key-pass pass:android \
+    cmd //c "$(native_path "$APKSIGNER_BAT")" sign --ks "$(native_path "$KEYSTORE")" --ks-pass env:GALAXY_KEYSTORE_PASS \
       --out "$(native_path "$OUT_APK")" "$(native_path "$OUT/aligned.apk")"
   else
-    "$BT/apksigner" sign --ks $KEYSTORE --ks-pass pass:android --key-pass pass:android --out "$OUT_APK" $OUT/aligned.apk
+    "$BT/apksigner" sign --ks $KEYSTORE --ks-pass env:GALAXY_KEYSTORE_PASS --out "$OUT_APK" $OUT/aligned.apk
   fi
   rm -f $OUT/base.apk $OUT/aligned.apk
   echo "Successfully built $LABEL: $OUT_APK ($(wc -c < "$OUT_APK") bytes)"

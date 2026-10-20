@@ -61,11 +61,13 @@ PY
 )
 
 "$BT/zipalign$EXE" -f -p 16 $OUT/base.apk $OUT/aligned.apk
+GALAXY_KEYSTORE_PASS="${GALAXY_KEYSTORE_PASS:-android}"
+export GALAXY_KEYSTORE_PASS
 if [ -n "$IS_WINDOWS" ]; then
-  cmd //c "$(cygpath -w "$BT/apksigner.bat")" sign --ks "$(cygpath -w $KEYSTORE)" --ks-pass pass:android --key-pass pass:android \
+  cmd //c "$(cygpath -w "$BT/apksigner.bat")" sign --ks "$(cygpath -w $KEYSTORE)" --ks-pass env:GALAXY_KEYSTORE_PASS \
     --out "$(cygpath -w $OUT/GalaxyQuest.apk)" "$(cygpath -w $OUT/aligned.apk)"
 else
-  "$BT/apksigner" sign --ks $KEYSTORE --ks-pass pass:android --key-pass pass:android --out $OUT/GalaxyQuest.apk $OUT/aligned.apk
+  "$BT/apksigner" sign --ks $KEYSTORE --ks-pass env:GALAXY_KEYSTORE_PASS --out $OUT/GalaxyQuest.apk $OUT/aligned.apk
 fi
 rm -f $OUT/base.apk $OUT/aligned.apk $OUT/res.zip
 echo "built $OUT/GalaxyQuest.apk ($(wc -c < $OUT/GalaxyQuest.apk) bytes)"

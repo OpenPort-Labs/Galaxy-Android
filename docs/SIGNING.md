@@ -15,7 +15,7 @@ Every Galaxy Android build therefore has to be signed with the one project key.
 | --- | --- |
 | Subject | `CN=GalaxyAndroid Debug, O=Local, C=US` |
 | SHA-256 | `1883CD600AACD5628513E23CE646F4C8ED19C040A14575FBC922D33F6686FEFF` |
-| Store password | `android` (default; override with `GALAXY_KEYSTORE_PASS`) |
+| Store password | Set via `GALAXY_KEYSTORE_PASS` (never hard-coded in repo) |
 | Key alias | `androiddebugkey` |
 
 The fingerprint is public information - it is what Android compares - and the
@@ -27,6 +27,25 @@ to `.gitignore`.  Keep the copy you have safe; treat it as the identity of the
 app.  Rotating it is possible, but it forces every existing player through a
 one-time uninstall.
 
+## Build channels
+
+Packaging and release verification distinguish between two channels:
+
+1. **Tester channel (`--channel tester` / `GALAXY_RELEASE_CHANNEL=tester`)**:
+   - Permits `android:debuggable="true"` when opt-in (`GALAXY_ALLOW_DEBUGGABLE=1`).
+   - Required on Android for `lib/<abi>/wrap.sh` to preload `libreserve.so` (which
+     reserves the 32-bit GameCube memory space before ART initializes).
+   - Tester APKs are sideload-only artifacts and marked as pre-releases on GitHub.
+   - For local development with a local debug keystore, defaults to `android` only
+     when building on the tester channel.
+
+2. **Production channel (`--channel production` / `GALAXY_RELEASE_CHANNEL=production`)**:
+   - Strictly forbids `android:debuggable="true"`.
+   - Requires explicit `GALAXY_KEYSTORE_PASS` via environment; missing credentials
+     immediately fail rather than falling back to defaults.
+   - Forbids `GALAXY_ALLOW_NEW_KEY=1` throwaway keys.
+   - Rejects any APK that fails certificate verification or entry validation.
+
 ## Local builds
 
 Put the key at `out/release.keystore` (`out/` is git-ignored) and the packager
@@ -34,7 +53,8 @@ finds it:
 
 ```bash
 cp /path/to/release.keystore out/release.keystore
-python package_mobile_apk.py
+export GALAXY_KEYSTORE_PASS="your-store-pass"
+python package_mobile_apk.py --channel tester
 ```
 
 `out/debug.keystore` and the old `platform/mobile/release.keystore` location are
@@ -47,11 +67,14 @@ The release workflow decodes the key from repository secrets:
 | Secret | Value |
 | --- | --- |
 | `GALAXY_KEYSTORE_B64` | `base64 -w0 out/release.keystore` |
-| `GALAXY_KEYSTORE_PASS` | the store password (`android` for the project key) |
+| `GALAXY_KEYSTORE_PASS` | the store password (provided securely via environment) |
 
-Set them under *Settings -> Secrets and variables -> Actions*.  Without them the
-release build **fails** instead of publishing an APK that nobody could install
-over their current one - that is the whole point of the change.
+Set them under *Settings -> Secrets and variables -> Actions*.  Credentials are
+passed to `apksigner` and `keytool` through environment variables (`env:` and
+`-storepass:env`), never through exposed command-line arguments.
+
+Without valid credentials, release packaging fails immediately instead of
+publishing an insecure or untrusted artifact.
 
 ## What the packager enforces
 

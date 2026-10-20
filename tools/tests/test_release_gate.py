@@ -44,6 +44,74 @@ class TestReleaseGate(unittest.TestCase):
         self.assertFalse(parse_debuggable('  A: android:debuggable(0x0101000f)=false\n'))
         self.assertIsNone(parse_debuggable("  A: android:label(0x01010001)=Galaxy\n"))
 
+    def test_resolve_keystore_pass_production_rejects_empty(self):
+        from tools.apk_env import resolve_keystore_pass
+        import os
+        old = os.environ.get("GALAXY_KEYSTORE_PASS")
+        try:
+            if "GALAXY_KEYSTORE_PASS" in os.environ:
+                del os.environ["GALAXY_KEYSTORE_PASS"]
+            with self.assertRaises(SystemExit) as ctx:
+                resolve_keystore_pass(channel="production")
+            self.assertIn("GALAXY_KEYSTORE_PASS", str(ctx.exception))
+        finally:
+            if old is not None:
+                os.environ["GALAXY_KEYSTORE_PASS"] = old
+
+    def test_resolve_keystore_pass_production_accepts_secret(self):
+        from tools.apk_env import resolve_keystore_pass
+        import os
+        old = os.environ.get("GALAXY_KEYSTORE_PASS")
+        try:
+            os.environ["GALAXY_KEYSTORE_PASS"] = "secure_custom_pass"
+            self.assertEqual(resolve_keystore_pass(channel="production"), "secure_custom_pass")
+        finally:
+            if old is not None:
+                os.environ["GALAXY_KEYSTORE_PASS"] = old
+            else:
+                os.environ.pop("GALAXY_KEYSTORE_PASS", None)
+
+    def test_resolve_keystore_pass_tester_fallback(self):
+        from tools.apk_env import resolve_keystore_pass
+        import os
+        old = os.environ.get("GALAXY_KEYSTORE_PASS")
+        try:
+            if "GALAXY_KEYSTORE_PASS" in os.environ:
+                del os.environ["GALAXY_KEYSTORE_PASS"]
+            self.assertEqual(resolve_keystore_pass(channel="tester"), "android")
+        finally:
+            if old is not None:
+                os.environ["GALAXY_KEYSTORE_PASS"] = old
+
+    def test_production_mode_rejects_debuggable_even_with_allow_var(self):
+        from unittest import mock
+        import tools.verify_release_apk as vr
+        with mock.patch.object(vr, "run") as mock_run, \
+             mock.patch("zipfile.ZipFile"):
+            mock_run.side_effect = [
+                mock.Mock(returncode=0, stdout="certificate SHA-256 digest: 1883cd600aacd5628513e23ce646f4c8ed19c040a14575fbc922d33f6686feff", stderr=""),
+                mock.Mock(returncode=0, stdout='  A: android:debuggable(0x0101000f)=true\n', stderr=""),
+                mock.Mock(returncode=0, stdout="", stderr=""),
+            ]
+            with mock.patch.object(vr, "check_entries", return_value=[]):
+                # In production channel, allow_debuggable should be rejected
+                problems = vr.inspect("mock.apk", channel="production", allow_debuggable=True)
+                self.assertTrue(any("forbidden in production" in p for p in problems))
+
+    def test_tester_mode_permits_debuggable_with_optin(self):
+        from unittest import mock
+        import tools.verify_release_apk as vr
+        with mock.patch.object(vr, "run") as mock_run, \
+             mock.patch("zipfile.ZipFile"):
+            mock_run.side_effect = [
+                mock.Mock(returncode=0, stdout="certificate SHA-256 digest: 1883cd600aacd5628513e23ce646f4c8ed19c040a14575fbc922d33f6686feff", stderr=""),
+                mock.Mock(returncode=0, stdout='  A: android:debuggable(0x0101000f)=true\n', stderr=""),
+                mock.Mock(returncode=0, stdout="", stderr=""),
+            ]
+            with mock.patch.object(vr, "check_entries", return_value=[]):
+                problems = vr.inspect("mock.apk", channel="tester", allow_debuggable=True)
+                self.assertEqual(problems, [])
+
 
 if __name__ == "__main__":
     unittest.main()

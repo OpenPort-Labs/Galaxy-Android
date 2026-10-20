@@ -62,9 +62,17 @@ if not JAVAC:
 if not JAVAC:
     JAVAC = "javac"
 
-KEYSTORE_PASS = os.environ.get("GALAXY_KEYSTORE_PASS", "android")
+def resolve_keystore_pass(channel="tester"):
+    val = os.environ.get("GALAXY_KEYSTORE_PASS")
+    if val:
+        return val
+    if channel == "production":
+        raise SystemExit("REFUSING TO PACKAGE [production]: GALAXY_KEYSTORE_PASS environment variable is required.")
+    return "android"
+
+KEYSTORE_PASS = os.environ.get("GALAXY_KEYSTORE_PASS", "")
 KEY_ALIAS = os.environ.get("GALAXY_KEY_ALIAS", "androiddebugkey")
-KEY_PASS = os.environ.get("GALAXY_KEY_PASS", KEYSTORE_PASS)
+KEY_PASS = os.environ.get("GALAXY_KEY_PASS", "")
 KEYTOOL = shutil.which("keytool") or "keytool"
 
 PROJECT_KEY_SHA256 = "1883cd600aacd5628513e23ce646f4c8ed19c040a14575fbc922d33f6686feff"
@@ -85,18 +93,22 @@ def manifest_is_debuggable(path=MANIFEST):
     application = ET.parse(path).getroot().find("application")
     return application is not None and application.get(ANDROID_NS + "debuggable") == "true"
 
-def keystore_fingerprint(keystore):
+def keystore_fingerprint(keystore, storepass=None):
+    sp = storepass or resolve_keystore_pass(channel="tester")
+    env = dict(os.environ)
+    env["_GALAXY_KT_PASS"] = sp
     try:
         proc = subprocess.run([KEYTOOL, "-list", "-v", "-keystore", keystore,
-                               "-storepass", KEYSTORE_PASS],
-                              capture_output=True, text=True)
+                               "-storepass:env", "_GALAXY_KT_PASS"],
+                              capture_output=True, text=True, env=env)
     except OSError:
         return None
     match = re.search(r"SHA-?256:\s*([0-9A-Fa-f:]+)", proc.stdout)
     return normalize_fingerprint(match.group(1)) if match else None
 
-def prepare_signing_key():
+def prepare_signing_key(channel="tester"):
     global KEYSTORE
+    storepass = resolve_keystore_pass(channel=channel)
     encoded = os.environ.get("GALAXY_KEYSTORE_B64")
     if encoded:
         try:
@@ -120,17 +132,22 @@ def prepare_signing_key():
                 KEYSTORE = candidate
                 break
         if not KEYSTORE:
+            if channel == "production":
+                raise SystemExit("REFUSING TO PACKAGE [production]: no signing keystore found.")
             if os.environ.get("GALAXY_ALLOW_NEW_KEY") == "1":
+                env = dict(os.environ)
+                env["_GALAXY_KT_PASS"] = storepass
+                env["_GALAXY_KT_KEYPASS"] = os.environ.get("GALAXY_KEY_PASS", storepass)
                 subprocess.run([KEYTOOL, "-genkeypair", "-keystore", DEV_KEYSTORE,
-                                "-storepass", KEYSTORE_PASS, "-keypass", KEY_PASS,
+                                "-storepass:env", "_GALAXY_KT_PASS", "-keypass:env", "_GALAXY_KT_KEYPASS",
                                 "-alias", KEY_ALIAS, "-keyalg", "RSA", "-keysize", "2048",
                                 "-validity", "10000", "-dname", "CN=GalaxyAndroid Dev,O=Local,C=US"],
-                               check=True)
+                               check=True, env=env)
                 KEYSTORE = DEV_KEYSTORE
                 return KEYSTORE
             raise SystemExit("REFUSING TO PACKAGE: no signing key found.")
 
-    fingerprint = keystore_fingerprint(KEYSTORE)
+    fingerprint = keystore_fingerprint(KEYSTORE, storepass=storepass)
     if not fingerprint:
         return KEYSTORE
 
@@ -139,14 +156,14 @@ def prepare_signing_key():
 
     return KEYSTORE
 
-def verify_signed_apk(path):
+def verify_signed_apk(path, channel="tester"):
     proc = subprocess.run([APKSIGNER, "verify", "--print-certs", path], capture_output=True, text=True)
     text = proc.stdout + proc.stderr
     match = re.search(r"certificate SHA-256 digest:\s*([0-9A-Fa-f]+)", text)
     if proc.returncode != 0 or not match:
         raise SystemExit(f"REFUSING TO RELEASE: {path} did not verify:\n{text.strip()}")
     fingerprint = normalize_fingerprint(match.group(1))
-    if os.environ.get("GALAXY_ALLOW_NEW_KEY") == "1":
+    if channel != "production" and os.environ.get("GALAXY_ALLOW_NEW_KEY") == "1":
         return fingerprint
     if fingerprint != normalize_fingerprint(EXPECTED_SIGNER):
         raise SystemExit(f"REFUSING TO RELEASE: {path} is signed with {fingerprint} but expected {EXPECTED_SIGNER}")

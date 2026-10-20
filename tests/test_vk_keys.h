@@ -1,4 +1,7 @@
 #pragma once
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
 #include <atomic>
 #include <cassert>
 #include <cstdio>
@@ -112,8 +115,8 @@ static inline void test_shader_inventory_concurrency() {
     printf("[TEST] Running ShaderInventory multi-threaded concurrency stress test...\n");
     ShaderInventory& inv = ShaderInventory::get();
 
-    static uint32_t sEpoch = 1;
-    uint32_t currentEpoch = sEpoch++;
+    static std::atomic<uint32_t> sEpoch{1};
+    uint32_t currentEpoch = sEpoch.fetch_add(1);
 
     const size_t initialKeys = inv.stats().totalUniqueKeys;
     const size_t initialUids = inv.stats().totalUniqueUids;
@@ -179,6 +182,9 @@ static inline void test_shader_inventory_concurrency() {
         w.join();
     }
 
+    if (failureCount.load() != 0) {
+        fprintf(stderr, "[ERROR] %d concurrency worker thread failures recorded!\n", failureCount.load());
+    }
     assert(failureCount.load() == 0);
 
     ShaderInventoryStats finalStats = inv.stats();

@@ -1,4 +1,7 @@
 #pragma once
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
 #include <cassert>
 #include <cstdio>
 #include <cstring>
@@ -46,19 +49,20 @@ static inline bool validateAndParseManifestBytes(const uint8_t* data, size_t fil
 
     for (uint32_t i = 0; i < count; i++) {
         size_t recStart = offset;
-        if (offset + 380 > fileSize) return false;
+        if (offset + 380 + 1 + 2 > fileSize) return false;
 
-        const uint8_t* p = data + offset;
         offset += 380;
+        uint8_t flags = data[offset];
+        offset += 1;
 
-        uint8_t flags = *p;
-        uint16_t strLen = *(uint16_t*)(p + 1);
+        uint16_t strLen = *(const uint16_t*)(data + offset);
+        offset += 2;
         if (offset + strLen + 4 > fileSize) return false;
 
         std::string source((const char*)(data + offset), strLen);
         offset += strLen;
 
-        uint32_t recCrc = *(uint32_t*)(data + offset);
+        uint32_t recCrc = *(const uint32_t*)(data + offset);
         offset += 4;
 
         size_t payloadLen = offset - recStart - 4;

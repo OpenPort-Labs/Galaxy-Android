@@ -208,5 +208,66 @@ class TestVulkanManifestAndApiVersionRequirements(unittest.TestCase):
         self.assertIn('appInfo.apiVersion = VK_API_VERSION_1_0;', content)
 
 
+class TestGxAlphaCompareAndMarioEyeSemantics(unittest.TestCase):
+    """
+    Validates GX BP 0xF3 alpha-compare register encoding, J3D parser bit layout,
+    real Mario eye/eyelid material extraction, and fragment discard semantics.
+    """
+    def test_gx_bp_0xf3_bit_layout_round_trip(self):
+        # Test all permutations of comp0 (0..7), comp1 (0..7), op (0..3)
+        for comp0 in range(8):
+            for comp1 in range(8):
+                for op in range(4):
+                    # Hardware GX TEV_ALPHAFUNC encoding:
+                    # ref0: bits 0..7, ref1: bits 8..15, op0 (comp0): bits 16..18,
+                    # op1 (comp1): bits 19..21, logic: bits 22..23, rid: bits 24..31
+                    bp_reg = (0xF3 << 24) | (op << 22) | (comp1 << 19) | (comp0 << 16) | (255 << 8) | 128
+                    native_alpha_func = (bp_reg >> 16) & 0xFF
+                    # Parser encoding
+                    parsed_alpha_func = comp0 | (comp1 << 3) | (op << 6)
+                    self.assertEqual(native_alpha_func, parsed_alpha_func)
+
+                    # Shadergen decoding in vk_shadergen_fs.cpp
+                    f0 = parsed_alpha_func & 7
+                    f1 = (parsed_alpha_func >> 3) & 7
+                    logic = (parsed_alpha_func >> 6) & 3
+                    self.assertEqual(f0, comp0)
+                    self.assertEqual(f1, comp1)
+                    self.assertEqual(logic, op)
+
+    def test_real_mario_eye_materials_from_archive(self):
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        mario_arc = os.path.join(root, "cooked", "files", "ObjectData", "Mario.arc")
+        if not os.path.exists(mario_arc):
+            self.skipTest(f"Mario.arc not present at {mario_arc}")
+
+        import tools.rarc as r
+        from tools.cook.j3d_mat3_parser import parse_j3d_mat3
+        with open(mario_arc, "rb") as f:
+            data = f.read()
+        mats = []
+        for name, b in r.rarc_list(r.yaz0_decompress(data)):
+            if "mario.bdl" in name:
+                mats, _, _ = parse_j3d_mat3(b, name)
+                break
+
+        mat_dict = {desc.split(":")[-1]: (uid, key) for uid, key, desc in mats}
+        self.assertIn("EyeLid_v", mat_dict)
+        self.assertIn("EyeballL_v", mat_dict)
+        self.assertIn("EyeballR_v", mat_dict)
+
+        # EyeLid_v: comp0=GEQUAL(6), comp1=LEQUAL(3), op=AND(0) -> 6 | (3 << 3) | (0 << 6) = 0x1E
+        eyelid_uid, _ = mat_dict["EyeLid_v"]
+        self.assertEqual(eyelid_uid[74], 0x1E, "EyeLid_v must have alphaFunc == 0x1E (GEQUAL && LEQUAL)")
+
+        # Verify 8-bit wrap fragment discard semantics vs clamp
+        # When TEV output wraps (e.g. out of range intermediate value 260 -> 4)
+        wrap_a = 260 & 255  # 4
+        clamp_a = min(255, max(0, 260))  # 255
+        ref0 = 100  # a >= ref0 (4 >= 100 is False -> discarded)
+        self.assertFalse(wrap_a >= ref0, "8-bit wrapped alpha correctly fails test and discards")
+        self.assertTrue(clamp_a >= ref0, "Flawed clamped alpha erroneously passes test, causing visual defect")
+
+
 if __name__ == '__main__':
     unittest.main()

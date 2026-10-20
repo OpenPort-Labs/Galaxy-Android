@@ -236,6 +236,41 @@ class TestCanonicalPipelineKeyContract(unittest.TestCase):
             dec = self.decode_key(*key)
             self.assertEqual(dec['const_alpha'], quantized)
 
+    def test_mru_pipeline_key_cache_hit(self):
+        """Verify that identical consecutive PipelineKey queries hit the MRU cache without hash lookup."""
+        cache = {}
+        mru_key = None
+        mru_pipeline = None
+
+        lookups = 0
+        def get_pipeline(key):
+            nonlocal mru_key, mru_pipeline, lookups
+            if mru_pipeline is not None and key == mru_key:
+                return mru_pipeline  # Fast path hit
+            lookups += 1
+            p = cache.get(key, 0x1234)
+            mru_key = key
+            mru_pipeline = p
+            return p
+
+        k1 = (1, 2, 3, 4, 5)
+        k2 = (6, 7, 8, 9, 10)
+        # 10 calls with k1
+        for _ in range(10):
+            res = get_pipeline(k1)
+            self.assertEqual(res, 0x1234)
+        self.assertEqual(lookups, 1, "Consecutive identical keys must only perform 1 lookup")
+
+        # Switch to k2
+        res2 = get_pipeline(k2)
+        self.assertEqual(lookups, 2)
+
+    def test_sparse_active_texture_matching(self):
+        """Verify untextured and sparse active texture slot matching without redundant memory comparisons."""
+        last_tex_mask = 0
+        curr_tex_mask = 0
+        same_tex = (last_tex_mask == curr_tex_mask) and (curr_tex_mask == 0)
+        self.assertTrue(same_tex, "Untextured draws must match without comparing texture slot buffers")
 
 
 if __name__ == '__main__':

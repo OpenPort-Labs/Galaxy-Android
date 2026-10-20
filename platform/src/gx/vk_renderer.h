@@ -223,6 +223,8 @@ public:
 
   // Caches
   std::unordered_map<PipelineKey, VkPipeline, PipelineKeyHash> mPipelines;
+  PipelineKey mLastPipelineKey{};
+  VkPipeline mLastPipeline = VK_NULL_HANDLE;
   std::unordered_map<uint64_t, VkSampler> mSamplers;
   std::unordered_map<SamplerDescKey, SamplerSetEntry, SamplerDescKeyHash>
       mSamplerDescSets;

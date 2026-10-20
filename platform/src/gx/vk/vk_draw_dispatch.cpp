@@ -168,30 +168,29 @@ void VkRenderer::executeDrawPass(VkCommandBuffer cmd, const Frame& f, const Prep
 
         VkDescriptorSet set1 = VK_NULL_HANDLE;
         bool sameTex = hasLastTex && (it.texMask == lastTexMask) &&
-                       (memcmp(it.tex, lastTex, sizeof(lastTex)) == 0) &&
-                       (memcmp(it.texMode0, lastTexMode0, sizeof(lastTexMode0)) == 0) &&
-                       (memcmp(it.texMode1, lastTexMode1, sizeof(lastTexMode1)) == 0);
+                       (it.texMask == 0 || (memcmp(it.tex, lastTex, sizeof(lastTex)) == 0 &&
+                        memcmp(it.texMode0, lastTexMode0, sizeof(lastTexMode0)) == 0 &&
+                        memcmp(it.texMode1, lastTexMode1, sizeof(lastTexMode1)) == 0));
         if (sameTex && lastSet1 != VK_NULL_HANDLE) {
             set1 = lastSet1;
         } else {
             std::array<VkImageView, 8> views;
             std::array<VkSampler, 8> samplers;
-            for (int u = 0; u < 8; u++) {
+            views.fill(mDummyTexture.view);
+            samplers.fill(mDummySampler);
+            uint32_t activeMask = it.texMask & 0xFFu;
+            while (activeMask) {
+                int u = __builtin_ctz(activeMask);
+                activeMask &= activeMask - 1;
                 uint32_t tr = it.tex[u];
-                if (!(it.texMask & (1u << u)) || tr == ~0u) {
-                    views[u] = mDummyTexture.view;
-                    samplers[u] = mDummySampler;
-                    continue;
-                }
+                if (tr == ~0u) continue;
                 if (tr & 0x80000000u) {
                     uint32_t addr = (tr & 0x7FFFFFFF) << 5;
                     uint64_t key = copyKey(mCopySlot, addr);
                     auto cit = mCopies.find(key);
                     if (cit == mCopies.end() && mCopySlot != 0) {
                         cit = mCopies.find(copyKey(0, addr));
-                        if (cit != mCopies.end()) {
-                            diagCopyFallbacks++;
-                        }
+                        if (cit != mCopies.end()) diagCopyFallbacks++;
                     } else if (cit != mCopies.end()) {
                         diagCopyHits++;
                     }
@@ -200,8 +199,6 @@ void VkRenderer::executeDrawPass(VkCommandBuffer cmd, const Frame& f, const Prep
                         samplers[u] = getSampler(it.texMode0[u], it.texMode1[u], 1);
                     } else {
                         diagCopyMisses++;
-                        views[u] = mDummyTexture.view;
-                        samplers[u] = mDummySampler;
                     }
                 } else if (tr < f.textures.size()) {
                     const std::shared_ptr<TexImage>& ti = f.textures[tr];
@@ -210,13 +207,9 @@ void VkRenderer::executeDrawPass(VkCommandBuffer cmd, const Frame& f, const Prep
                         samplers[u] = getSampler(it.texMode0[u], it.texMode1[u], ti->levels);
                         diagRealTex++;
                     } else {
-                        views[u] = mDummyTexture.view;
-                        samplers[u] = mDummySampler;
                         diagDummyTex++;
                     }
                 } else {
-                    views[u] = mDummyTexture.view;
-                    samplers[u] = mDummySampler;
                     diagDummyTex++;
                 }
             }
@@ -232,7 +225,7 @@ void VkRenderer::executeDrawPass(VkCommandBuffer cmd, const Frame& f, const Prep
             hasLastTex = true;
         }
 
-        if (set1 != lastSet1 || pipelineChanged) {
+        if (set1 != lastSet1) {
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mPipelineLayout, 1, 1, &set1, 0, nullptr);
             lastSet1 = set1;
         }

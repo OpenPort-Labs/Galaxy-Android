@@ -32,8 +32,15 @@ PipelineKey pipelineKeyFor(const Item& it, const ShaderUid& uid) {
 
 VkPipeline VkRenderer::getPipeline(const Item& it, const ShaderUid& uid) {
     const PipelineKey key = pipelineKeyFor(it, uid);
+    if (mLastPipeline != VK_NULL_HANDLE && key == mLastPipelineKey) {
+        return mLastPipeline;
+    }
     auto pit = mPipelines.find(key);
-    if (pit != mPipelines.end()) return pit->second;
+    if (pit != mPipelines.end()) {
+        mLastPipelineKey = key;
+        mLastPipeline = pit->second;
+        return pit->second;
+    }
 
     std::vector<uint32_t> vsSpirv, fsSpirv;
     if (!lookupVulkanShader(uid, vsSpirv, fsSpirv)) {

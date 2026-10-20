@@ -2,6 +2,8 @@
 #include <cassert>
 #include <cstdio>
 #include <cstring>
+#include <thread>
+#include <vector>
 #include "gx/vk/vk_types.h"
 #include "gx/vk_shader_inventory.h"
 #include "gx/vk_renderer.h"
@@ -103,4 +105,44 @@ static inline void test_placeholder_exclusion() {
 
     assert(s.realPipelinesCreated == 2);
     printf("[PASS] PrewarmResult accounting correctly discriminates real vs placeholder pipelines!\n");
+}
+
+static inline void test_shader_inventory_concurrency() {
+    printf("[TEST] Running ShaderInventory multi-threaded concurrency stress test...\n");
+    ShaderInventory& inv = ShaderInventory::get();
+
+    constexpr int kNumThreads = 4;
+    constexpr int kEntriesPerThread = 50;
+    std::vector<std::thread> workers;
+
+    for (int t = 0; t < kNumThreads; t++) {
+        workers.emplace_back([&inv, t]() {
+            for (int i = 0; i < kEntriesPerThread; i++) {
+                ShaderUid u{};
+                u.vtxFlags = 0x4047 + t;
+                u.numChans = 1;
+                u.colorCtrl[0] = (uint32_t)(t * 1000 + i);
+
+                DecodedPipelineKey d{};
+                d.uid = u;
+                d.vtxFlags = u.vtxFlags;
+                d.depthTest = true;
+                d.depthWrite = true;
+                d.cullMode = CanonicalCullMode::Back;
+                PipelineKey k = encodePipelineKey(d);
+
+                inv.addEntry(u, k, "concurrency_test_" + std::to_string(t), false);
+                ShaderInventoryStats s = inv.stats();
+                assert(s.totalUniqueKeys > 0);
+            }
+        });
+    }
+
+    for (auto& w : workers) {
+        w.join();
+    }
+
+    ShaderInventoryStats finalStats = inv.stats();
+    assert(finalStats.totalUniqueKeys >= kNumThreads * kEntriesPerThread);
+    printf("[PASS] ShaderInventory concurrency stress test completed successfully without deadlocks!\n");
 }

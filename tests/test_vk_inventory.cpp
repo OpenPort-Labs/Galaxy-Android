@@ -6,6 +6,7 @@ int main() {
     printf("=== Galaxy-Android Vulkan Shader Inventory & Regression Test Suite ===\n");
     test_key_round_trip();
     test_placeholder_exclusion();
+    test_shader_inventory_concurrency();
     test_atomic_manifest_validation();
     test_quicksave_starbit_accounting();
     test_copy_texture_slot_telemetry();

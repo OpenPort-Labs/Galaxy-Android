@@ -6,7 +6,7 @@
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](LICENSE)
 [![Platform: Android ARM64](https://img.shields.io/badge/Platform-Android%20ARM64-brightgreen.svg)](docs/TECHNICAL.md)
-[![Graphics: Vulkan 1.0 (Default) | GLES 3.2](https://img.shields.io/badge/Graphics-Vulkan%201.0%20(Default)%20%7C%20GLES%203.2-orange.svg)](docs/TECHNICAL.md)
+[![Graphics: Vulkan 1.0](https://img.shields.io/badge/Graphics-Vulkan%201.0%20(required)-orange.svg)](docs/TECHNICAL.md)
 [![Audio: AAudio](https://img.shields.io/badge/Audio-AAudio%20Low--Latency-purple.svg)](docs/TECHNICAL.md)
 [![Release: v0.0.4](https://img.shields.io/badge/Release-v0.0.4-blue.svg)](https://github.com/OpenPort-Labs/Galaxy-Android/releases/tag/v0.0.4)
 
@@ -14,7 +14,7 @@
 
 **Galaxy Android** is a **100% native Android ARM64 port**, compiled directly from reconstructed C++ source code. Maintained by [OpenPort Labs](https://github.com/OpenPort-Labs/Galaxy-Android).
 
-It is **not an emulator**: the game code executes natively on your phone's processor using **Vulkan 1.0** (with OpenGL ES 3.2 fallback) and **AAudio**, delivering fluid 60 FPS performance, low battery consumption, and zero emulation overhead.
+It is **not an emulator**: the game code executes natively on your phone's processor using **Vulkan 1.0** and **AAudio**. Vulkan 1.0 is a hard requirement - the manifest declares `android.hardware.vulkan.version` as required, so devices without a Vulkan 1.0 driver cannot install the app.
 
 ---
 
@@ -41,7 +41,6 @@ We express our deepest thanks to our contributors and the community for keeping 
 - **CPU big.LITTLE Performance Core Pinning**: Render and game threads locked to high-performance cores (Cores 4-7) via `sched_setaffinity()`.
 - **First-Boot Shader Precompilation**: Common TEV combinations pre-compiled into binary SPIR-V during initial engine initialization (`vk_shaders.bin`) and Vulkan driver pipeline cache serialized on pause/exit (`vk_pipeline_cache.bin`).
 - **Native Vulkan 1.0 UI Overlay**: Completely native Vulkan pipeline (`mUiPipeline`) rendering touch controls, vector joystick lines, and Material 3 drawer widgets directly into the swapchain render pass.
-- **OpenGL ES 3.2 Fallback**: Secondary backend featuring dynamic TEV stage translation, indirect coordinate warping, and cross-GPU lighting safeguards for legacy devices.
 
 ### Real-Time Hardware Performance Telemetry HUD
 - Monoscopic render submission and frame-time telemetry powered by `port_perf_render`.
@@ -136,7 +135,7 @@ Unlike an emulator that interprets PowerPC assembly and emulates GameCube/Wii fi
 |---|---|---|
 | **Operating System** | **Android 11 or newer (API Level 30+)** | Android 12, 13, 14, or 15 |
 | **CPU Architecture** | 64-bit ARM (`arm64-v8a`) | 64-bit ARM (`arm64-v8a`) |
-| **Graphics API** | Vulkan 1.0 or OpenGL ES 3.2 | Vulkan 1.0 (Hardware Driver) |
+| **Graphics API** | Vulkan 1.0 (required, no fallback backend) | Vulkan 1.0 (Hardware Driver) |
 | **Audio Subsystem** | AAudio | AAudio |
 | **RAM** | 3 GB | 4 GB or higher |
 | **Storage** | ~2.5 GB (without movies) / ~5 GB (with movies) | Fast UFS internal storage |
@@ -170,7 +169,7 @@ With the unified **GalaxyAndroid** package:
 
 - [Decompilation Capabilities & Technical Roadmap](docs/DECOMP_ROADMAP.md) - Deep dive into 90Hz/120Hz physics decoupling, 360 camera, Vulkan subpasses, and co-op plan
 - [Controls & Input Reference](docs/CONTROLS.md) - Touch overlay, pointer aim, gyroscope, and gamepad layouts
-- [Technical Architecture](docs/TECHNICAL.md) - 32-bit address reservation, Vulkan 1.0 / GLES 3.2 translation, Hor+ ultrawide, and telemetry
+- [Technical Architecture](docs/TECHNICAL.md) - 32-bit address reservation, Vulkan 1.0 pipeline translation, Hor+ ultrawide, and telemetry
 - [Installation Guide](docs/INSTALLATION.md) - Comprehensive setup instructions
 - [Desktop Pipeline Guide](docs/DESKTOP_INSTALLER.md) - Automated PC extraction and conversion
 - [Decompilation Notes](docs/decomp/getting_started.md) - Decompilation symbol mappings and splits

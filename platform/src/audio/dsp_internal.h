@@ -3,7 +3,7 @@
 #include <stdint.h>
 #include <string.h>
 
-#include "JSystem/JAudio2/JASDspInterface.hpp"
+#include "JSystem/JAudio2/JASDSPInterface.hpp"
 #include "port/port.h"
 
 extern "C" u32 port_dsp_varam_base(void);

@@ -36,7 +36,7 @@ Galaxy Android is a **100% native Android ARM64 port** of the classic 2007 gravi
 │  ┌──────────────────────┬─────────────────────────────────────┐ │
 │  │   Original Gameplay  │         Android Platform Layer       │ │
 │  │   & Scene Logic      ├─────────────────────────────────────┤ │
-│  │   (Decompiled C++)   │  - Vulkan 1.0 & GLES 3.2 Renderer   │ │
+│  │   (Decompiled C++)   │  - Vulkan 1.0 Renderer            │ │
 │  │                      │  - Native Vulkan UI Overlay Pipeline│ │
 │  │  MEM1 (0x80000000)   │  - AAudio Low-Latency 48kHz Mixer   │ │
 │  │  MEM2 (0x90000000)   │  - Multi-touch AInputQueue Engine   │ │
@@ -81,7 +81,7 @@ Galaxy Android uses a two-stage preloading strategy to guarantee that `0x8000000
 
 ---
 
-## 3. Dual Graphics Subsystem: Vulkan 1.0 & OpenGL ES 3.2
+## 3. Graphics Subsystem: Vulkan 1.0
 
 The GameCube/Wii utilized the **GX** fixed/programmable pipeline, featuring up to 16 Texture Environment (TEV) stages, indirect texturing, alpha testing, and custom display list formats. Galaxy Android supports dual rendering backends:
 
@@ -103,13 +103,14 @@ The GameCube/Wii utilized the **GX** fixed/programmable pipeline, featuring up t
   $$\text{proj}[5] = \frac{2.0}{\text{height}}, \quad \text{proj}[13] = -1.0$$
 - **Startup Target Safety:** Strict `hasFrame()` guard prevents sampling uninitialized render targets (`VK_IMAGE_LAYOUT_UNDEFINED`) during initial boot, eliminating GPU validation faults and driver crashes.
 
-### B. OpenGL ES 3.2 Backend (Fallback)
-- **Shader Generation:** TEV stages are dynamically compiled into modern GLSL ES 3.2 fragment shaders. Color/alpha blending registers (`c0`, `c1`, `c2`, `prev`) map to vector registers in the shader.
-- **Texture Buffer Emulation:** Utilizes 2D texture fetch (`sampler2D` / `usampler2D`) for rows, records, and state tables (`s_rows`, `s_recs`, `s_st`, `s_vtxRec`), completely eliminating dependencies on vertex SSBOs.
-- **ARM Mali & Qualcomm Compatibility:**
-  - Standard compliant: accommodates ARM Mali's 0 vertex shader storage blocks (`GL_MAX_VERTEX_SHADER_STORAGE_BLOCKS = 0`).
-  - Adapts to conservative 64 KB texture buffer limits on Mali while exploiting up to 128 MB on Qualcomm Adreno.
-  - Zero-vector division protection preventing NaN/INF rim lighting over-exposure on Mali GPUs.
+### B. No Second Backend
+
+There is **no OpenGL ES backend in this tree** - `platform/src/gx/vk/` is the only
+renderer, `AndroidManifest.xml` requires `android.hardware.vulkan.version`
+(`0x400000`), and the Play Store / package installer therefore refuses devices
+without a Vulkan 1.0 driver.  An earlier revision of this document described a
+GLES 3.2 fallback; that backend was never implemented, so the requirement is
+honest rather than a formality.
 
 ### C. Hor+ Dynamic Ultrawide Projection
 The original game supported 4:3 and anamorphic 16:9 aspect ratios. On modern smartphones (19.5:9, 20:9, 21:9):
@@ -198,7 +199,7 @@ The asset cooker ([`tools/cook/cook.py`](../tools/cook/cook.py)):
 | Metric | Emulation (Dolphin on Android) | Galaxy Android (Native Port) |
 |---|---|---|
 | **CPU Execution** | JIT Dynamic Recompiler | Native ARM64 Machine Code |
-| **GPU Execution** | State-tracking overhead | Direct Vulkan 1.0 / GLES 3.2 |
+| **GPU Execution** | State-tracking overhead | Direct Vulkan 1.0 |
 | **Memory Footprint** | ~1.8 GB RAM | ~580 MB RAM |
 | **Battery Draw** | High (~12-15W) | Low (~4-6W) |
 | **Frame Rate** | Variable 30-50 FPS on mid-range | Solid 60 FPS (Up to 120 FPS) |

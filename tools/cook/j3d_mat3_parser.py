@@ -230,21 +230,30 @@ def parse_j3d_mat3(b: bytes, model_name: str, archive_name: str = ""):
                             order_val = (tm & 7) | ((tc & 7) << 3) | (en << 6) | ((ch & 7) << 7)
                             uid_words[26 + (s // 2)] |= (order_val << ((s % 2) * 12))
 
-                # Read authentic TEV stage operations from Table 20 (TevStageInfo)
+                # Read authentic TEV stage operations from Table 20 (TevStageInfo) and Table 21 (TevSwapModeInfo)
                 if offs[20]:
                     for s in range(min(num_tevstages, 16)):
                         stage_idx = struct.unpack_from(fmt16, b, m_off + 0xE4 + s*2)[0]
                         if stage_idx != 0xFFFF and o + offs[20] + stage_idx * 20 + 20 <= len(b):
                             t20_o = o + offs[20] + stage_idx * 20
                             st = list(b[t20_o:t20_o+20])
-                            # [color_a, color_b, color_c, color_d, color_op, color_bias, color_scale, color_clamp, color_out_reg,
-                            #  alpha_a, alpha_b, alpha_c, alpha_d, alpha_op, alpha_bias, alpha_scale, alpha_clamp, alpha_out_reg]
-                            ca, cb, cc, cd, cop, cbias, cscale, cclamp, cout = st[0:9]
-                            aa, ab, ac, ad, aop, abias, ascale, aclamp, aout = st[9:18]
+                            # st[0] is dummy (0xFF); st[1:10] is color combiner; st[10:19] is alpha combiner
+                            ca, cb, cc, cd, cop, cbias, cscale, cclamp, cout = st[1:10]
+                            aa, ab, ac, ad, aop, abias, ascale, aclamp, aout = st[10:19]
                             tev_color = ((cd & 0xF) | ((cc & 0xF) << 4) | ((cb & 0xF) << 8) | ((ca & 0xF) << 12) |
                                          ((cbias & 3) << 16) | ((1 if cop else 0) << 18) | ((1 if cclamp else 0) << 19) |
                                          ((cscale & 3) << 20) | ((cout & 3) << 22))
-                            tev_alpha = ((ad & 7) | ((ac & 7) << 4) | ((ab & 7) << 7) | ((aa & 7) << 10) |
+
+                            rswap, tswap = 0, 0
+                            if offs[21]:
+                                swp_idx = struct.unpack_from(fmt16, b, m_off + 0x104 + s*2)[0]
+                                if swp_idx != 0xFFFF and o + offs[21] + swp_idx * 4 + 2 <= len(b):
+                                    swp_o = o + offs[21] + swp_idx * 4
+                                    rswap = b[swp_o] & 3
+                                    tswap = b[swp_o + 1] & 3
+
+                            tev_alpha = ((rswap & 3) | ((tswap & 3) << 2) |
+                                         ((ad & 7) << 4) | ((ac & 7) << 7) | ((ab & 7) << 10) | ((aa & 7) << 13) |
                                          ((abias & 3) << 16) | ((1 if aop else 0) << 18) | ((1 if aclamp else 0) << 19) |
                                          ((ascale & 3) << 20) | ((aout & 3) << 22))
                             uid_words[34 + s] = tev_color

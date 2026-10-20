@@ -24,20 +24,27 @@ VkSampler VkRenderer::getSampler(uint32_t mode0, uint32_t mode1, uint32_t levels
     uint32_t minf = (mode0 >> 5) & 7;
     bool mips = levels > 1;
     switch (minf) {
-    case 0:
-    case 1:
+    case 0: // GX_NEAR
         sci.minFilter = VK_FILTER_NEAREST;
         sci.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
         break;
-    case 2:
-        sci.minFilter = VK_FILTER_NEAREST;
-        sci.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
-        break;
-    case 5:
+    case 1: // GX_LINEAR
         sci.minFilter = VK_FILTER_LINEAR;
         sci.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
         break;
-    case 6:
+    case 2: // GX_NEAR_MIP_NEAR
+        sci.minFilter = VK_FILTER_NEAREST;
+        sci.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+        break;
+    case 3: // GX_LIN_MIP_NEAR
+        sci.minFilter = VK_FILTER_LINEAR;
+        sci.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+        break;
+    case 4: // GX_NEAR_MIP_LIN
+        sci.minFilter = VK_FILTER_NEAREST;
+        sci.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+        break;
+    case 5: // GX_LIN_MIP_LIN
         sci.minFilter = VK_FILTER_LINEAR;
         sci.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
         break;

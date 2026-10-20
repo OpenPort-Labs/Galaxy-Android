@@ -157,7 +157,9 @@ def main():
         if os.path.exists(vendor_zip):
             add_file(vendor_zip, "assets/pythonhome.zip")
 
-        bundled_manifest = os.path.join(ROOT, "galaxy_shader_manifest.bin")
+        bundled_manifest = os.path.join(ROOT, "assets", "galaxy_shader_manifest.bin")
+        if not os.path.exists(bundled_manifest):
+            bundled_manifest = os.path.join(ROOT, "galaxy_shader_manifest.bin")
         if os.path.exists(bundled_manifest):
             add_file(bundled_manifest, "assets/galaxy_shader_manifest.bin")
 

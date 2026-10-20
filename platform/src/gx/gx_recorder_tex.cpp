@@ -88,7 +88,7 @@ u32 Recorder::resolveUnit(u32 unit) {
     u32 minFilter = (mode0 >> 5) & 7;
     u32 maxLod = (mode1 >> 8) & 0xFF;
     u32 levels = 1;
-    if (minFilter != 0 && minFilter != 4) {
+    if (minFilter >= 2 && minFilter <= 5) {
         levels = maxLod / 16 + 1;
         u32 maxLevels = 1;
         for (u32 w = width, h = height; w > 1 || h > 1; w = w > 1 ? w / 2 : 1, h = h > 1 ? h / 2 : 1) {

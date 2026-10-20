@@ -1,4 +1,5 @@
 #pragma once
+#include <atomic>
 #include <cassert>
 #include <cstdio>
 #include <cstring>
@@ -111,38 +112,78 @@ static inline void test_shader_inventory_concurrency() {
     printf("[TEST] Running ShaderInventory multi-threaded concurrency stress test...\n");
     ShaderInventory& inv = ShaderInventory::get();
 
+    static uint32_t sEpoch = 1;
+    uint32_t currentEpoch = sEpoch++;
+
+    const size_t initialKeys = inv.stats().totalUniqueKeys;
+    const size_t initialUids = inv.stats().totalUniqueUids;
+
     constexpr int kNumThreads = 4;
     constexpr int kEntriesPerThread = 50;
+    constexpr int kSharedDuplicates = 10;
     std::vector<std::thread> workers;
+    std::atomic<bool> startSignal{false};
+    std::atomic<int> failureCount{0};
 
     for (int t = 0; t < kNumThreads; t++) {
-        workers.emplace_back([&inv, t]() {
-            for (int i = 0; i < kEntriesPerThread; i++) {
-                ShaderUid u{};
-                u.vtxFlags = 0x4047 + t;
-                u.numChans = 1;
-                u.colorCtrl[0] = (uint32_t)(t * 1000 + i);
+        workers.emplace_back([&inv, &startSignal, &failureCount, t, currentEpoch]() {
+            while (!startSignal.load(std::memory_order_acquire)) {
+                std::this_thread::yield();
+            }
 
-                DecodedPipelineKey d{};
-                d.uid = u;
-                d.vtxFlags = u.vtxFlags;
-                d.depthTest = true;
-                d.depthWrite = true;
-                d.cullMode = CanonicalCullMode::Back;
-                PipelineKey k = encodePipelineKey(d);
+            try {
+                // 1. Thread-unique keys
+                for (int i = 0; i < kEntriesPerThread; i++) {
+                    ShaderUid u{};
+                    u.vtxFlags = 0x4047;
+                    u.numChans = 1;
+                    u.colorCtrl[0] = (uint32_t)((currentEpoch * 1000000) + (t * 10000) + i);
 
-                inv.addEntry(u, k, "concurrency_test_" + std::to_string(t), false);
-                ShaderInventoryStats s = inv.stats();
-                assert(s.totalUniqueKeys > 0);
+                    DecodedPipelineKey d{};
+                    d.uid = u;
+                    d.vtxFlags = u.vtxFlags;
+                    d.depthTest = true;
+                    d.depthWrite = true;
+                    d.cullMode = CanonicalCullMode::Back;
+                    PipelineKey k = encodePipelineKey(d);
+
+                    inv.addEntry(u, k, "concurrency_test_" + std::to_string(t), false);
+                }
+
+                // 2. Deliberate contention on shared duplicate keys across threads
+                for (int d_idx = 0; d_idx < kSharedDuplicates; d_idx++) {
+                    ShaderUid u{};
+                    u.vtxFlags = 0x4047;
+                    u.numChans = 1;
+                    u.colorCtrl[0] = (uint32_t)((currentEpoch * 1000000) + 500000 + d_idx);
+
+                    DecodedPipelineKey d{};
+                    d.uid = u;
+                    d.vtxFlags = u.vtxFlags;
+                    d.depthTest = true;
+                    d.depthWrite = false;
+                    d.cullMode = CanonicalCullMode::None;
+                    PipelineKey k = encodePipelineKey(d);
+
+                    inv.addEntry(u, k, "shared_dup_" + std::to_string(d_idx), false);
+                }
+            } catch (...) {
+                failureCount.fetch_add(1, std::memory_order_relaxed);
             }
         });
     }
+
+    startSignal.store(true, std::memory_order_release);
 
     for (auto& w : workers) {
         w.join();
     }
 
+    assert(failureCount.load() == 0);
+
     ShaderInventoryStats finalStats = inv.stats();
-    assert(finalStats.totalUniqueKeys >= kNumThreads * kEntriesPerThread);
-    printf("[PASS] ShaderInventory concurrency stress test completed successfully without deadlocks!\n");
+    const size_t expectedAddedKeys = (kNumThreads * kEntriesPerThread) + kSharedDuplicates;
+    assert(finalStats.totalUniqueKeys == initialKeys + expectedAddedKeys);
+    assert(finalStats.totalUniqueUids == initialUids + expectedAddedKeys);
+    printf("[PASS] ShaderInventory concurrency stress test completed successfully without deadlocks or corruptions!\n");
 }

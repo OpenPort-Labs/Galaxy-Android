@@ -179,6 +179,34 @@ class TestDualEndianJ3DAndRarcParsing(unittest.TestCase):
         self.assertTrue(is_mat3_chunk(le_mat3[:4]))
 
 
+class TestVulkanManifestAndApiVersionRequirements(unittest.TestCase):
+    """
+    Verifies that Vulkan 1.0 (0x400000) is the mandatory baseline across all manifests
+    and that no mandatory Vulkan 1.1+ (0x401000) requirement exists.
+    """
+    def test_manifests_declare_vulkan_1_0_baseline(self):
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        manifest_paths = [
+            os.path.join(root, "platform", "mobile", "AndroidManifest.xml"),
+            os.path.join(root, "platform", "mobile", "AndroidManifest_plus.xml"),
+            os.path.join(root, "platform", "android", "AndroidManifest.xml"),
+        ]
+        for path in manifest_paths:
+            self.assertTrue(os.path.exists(path), f"Manifest missing: {path}")
+            with open(path, "r", encoding="utf-8") as f:
+                content = f.read()
+            self.assertIn('android:name="android.hardware.vulkan.version"', content, f"Missing vulkan feature declaration in {path}")
+            self.assertIn('android:version="0x400000"', content, f"Must declare Vulkan 1.0 (0x400000) in {path}")
+            self.assertNotIn('android:version="0x401000"', content, f"Must not declare Vulkan 1.1 (0x401000) in {path}")
+
+    def test_vk_device_targets_vulkan_1_0(self):
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        device_cpp = os.path.join(root, "platform", "src", "gx", "vk", "vk_device.cpp")
+        self.assertTrue(os.path.exists(device_cpp))
+        with open(device_cpp, "r", encoding="utf-8") as f:
+            content = f.read()
+        self.assertIn('appInfo.apiVersion = VK_API_VERSION_1_0;', content)
+
 
 if __name__ == '__main__':
     unittest.main()

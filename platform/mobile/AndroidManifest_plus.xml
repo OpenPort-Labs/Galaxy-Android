@@ -7,7 +7,7 @@
 
     <uses-sdk android:minSdkVersion="30" android:targetSdkVersion="34" />
 
-    <uses-feature android:name="android.hardware.vulkan.version" android:version="0x401000" android:required="true" />
+    <uses-feature android:name="android.hardware.vulkan.version" android:version="0x400000" android:required="true" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
     <uses-feature android:name="android.hardware.gamepad" android:required="false" />
 

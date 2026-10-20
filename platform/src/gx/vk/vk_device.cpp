@@ -80,9 +80,10 @@ bool VkRenderer::selectPhysicalDevice() {
             VkBool32 presentSupport = false;
             vkGetPhysicalDeviceSurfaceSupportKHR(dev, i, mSurface, &presentSupport);
             if ((queueFamilies[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) && presentSupport) {
+                vkGetPhysicalDeviceProperties(dev, &mDeviceProperties);
+                if (mDeviceProperties.apiVersion < VK_API_VERSION_1_0) continue;
                 mPhysicalDevice = dev;
                 mQueueFamily = i;
-                vkGetPhysicalDeviceProperties(dev, &mDeviceProperties);
                 vkGetPhysicalDeviceFeatures(dev, &mDeviceFeatures);
                 LOGI("Selected Vulkan GPU: %s (Driver version: 0x%x, API: %d.%d)",
                      mDeviceProperties.deviceName, mDeviceProperties.driverVersion,

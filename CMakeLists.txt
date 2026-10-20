@@ -212,3 +212,20 @@ if(ANDROID)
   target_include_directories(vk_inventory_test PRIVATE platform platform/src platform/include decomp/include)
   target_link_libraries(vk_inventory_test PRIVATE game log)
 endif()
+
+# Host-side tests for the disc image reader, which handles untrusted input.
+# dvd_host_compat.h supplies the POSIX calls MinGW lacks; bionic has them.
+if(NOT ANDROID)
+  add_executable(dvd_fst_test
+    tests/test_dvd_fst.cpp
+    platform/src/dvd/dvd_fst.cpp
+    platform/src/dvd/dvd_read.cpp
+  )
+  target_include_directories(dvd_fst_test PRIVATE
+    ${CMAKE_SOURCE_DIR}/platform/include
+    ${CMAKE_SOURCE_DIR}/platform/src
+    ${CMAKE_SOURCE_DIR}/decomp/include
+    ${CMAKE_SOURCE_DIR}/decomp/libs/RVL_SDK/include
+  )
+  target_compile_options(dvd_fst_test PRIVATE -include ${CMAKE_SOURCE_DIR}/tests/dvd_host_compat.h)
+endif()

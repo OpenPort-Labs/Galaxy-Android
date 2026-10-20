@@ -11,45 +11,63 @@ std::vector<FstEntry> sFst;
 std::string sDataRoot;
 u32 sCurrentDir = 0;
 
+// The FST is attacker-controlled input (it comes out of a user-supplied disc
+// image), so every count, offset and span below is proven against the buffer
+// before it is used for pointer arithmetic or indexing.
+static bool fst_reject(size_t size, const char* what, size_t value) {
+    port_log("dvd: fst rejected (%s: %zu), %zu bytes", what, value, size);
+    sFst.clear();
+    return false;
+}
+
 bool dvd_load_fst() {
     PortHostAllocScope scope;
     std::vector<u8> data = dvd_read_fst(sDataRoot);
     if (data.empty()) {
         port_log("dvd: cannot read %s/sys/fst.bin", sDataRoot.c_str());
+        sFst.clear();
         return false;
     }
 
-    u32 count = dvd_be32(&data[8]);
+    const size_t size = data.size();
+    if (size < 12) {
+        return fst_reject(size, "truncated header", size);
+    }
+    const size_t count = dvd_be32(&data[8]);
     if (count < 1) {
         port_log("dvd: fst holds no entries");
+        sFst.clear();
         return false;
     }
-    const u8* strings = &data[(size_t)count * 12];
-    const size_t stringsSize = data.size() - (size_t)count * 12;
+    // Division instead of count*12 keeps this overflow-safe on 32-bit hosts.
+    if (count > size / 12) {
+        return fst_reject(size, "entry table overruns the buffer", count);
+    }
+
+    const u8* strings = &data[count * 12];
+    const size_t stringsSize = size - count * 12;
+    sFst.clear();
     sFst.resize(count);
     std::vector<std::string> dirPath(count);
-    dirPath[0] = "";
     std::vector<u32> stack;
     stack.push_back(0);
     sFst[0].isDir = true;
     sFst[0].parent = 0;
-    sFst[0].next = count;
-    for (u32 i = 1; i < count; i++) {
+    sFst[0].next = (u32)count;
+    for (u32 i = 1; i < (u32)count; i++) {
         while (stack.size() > 1 && i >= sFst[stack.back()].next) {
             stack.pop_back();
         }
-        const u8* e = &data[i * 12];
+        const u8* e = &data[(size_t)i * 12];
         FstEntry& fe = sFst[i];
         fe.isDir = e[0] != 0;
         u32 nameOff = dvd_be32(e) & 0x00FFFFFF;
         if (nameOff >= stringsSize || !memchr(strings + nameOff, '\0', stringsSize - nameOff)) {
-            port_log("dvd: fst entry %u has an out-of-range name offset", i);
-            return false;
+            return fst_reject(size, "out-of-range name offset", nameOff);
         }
         const char* name = (const char*)(strings + nameOff);
         if (*name == '\0' || strchr(name, '/') || strchr(name, '\\') || strcmp(name, "..") == 0) {
-            port_log("dvd: fst entry %u has an unusable name", i);
-            return false;
+            return fst_reject(size, "unusable name", i);
         }
         fe.name = name;
         u32 parentDir = stack.back();
@@ -57,9 +75,14 @@ bool dvd_load_fst() {
         if (fe.isDir) {
             u32 parent = dvd_be32(e + 4);
             u32 next = dvd_be32(e + 8);
-            if (parent >= count || next > count) {
-                port_log("dvd: fst dir entry %u has an invalid parent/next span", i);
-                return false;
+            // next must advance past this entry and stay inside the table;
+            // parent must precede the child in the preorder layout.  Anything
+            // else makes DVDReadDir/dvd_find_child loop or walk out of bounds.
+            if (parent >= i || next <= i || next > (u32)count) {
+                return fst_reject(size, "invalid dir parent/next span", i);
+            }
+            if (parent != parentDir) {
+                port_log("dvd: fst dir entry %u claims parent %u, nesting says %u", i, parent, parentDir);
             }
             fe.parent = parent;
             fe.next = next;
@@ -69,11 +92,16 @@ bool dvd_load_fst() {
             fe.hostPath = sDataRoot + "/files/" + full;
         }
     }
-    port_log("dvd: fst loaded, %u entries, root %s", count, sDataRoot.c_str());
+    port_log("dvd: fst loaded, %zu entries, root %s", count, sDataRoot.c_str());
     return true;
 }
 
 s64 dvd_entry_size(u32 entry) {
+    if (entry >= sFst.size() || sFst[entry].isDir) {
+        // Directories have no payload; a stale entry number must not stat an
+        // unrelated path or report a bogus size to DVDFastOpen.
+        return 0;
+    }
     FstEntry& fe = sFst[entry];
     if (fe.size < 0) {
         struct stat st;

@@ -1,4 +1,5 @@
 #include "Game/System/SaveDataHandleSequence.hpp"
+#include "Game/System/GameSequenceFunction.hpp"
 #include "Game/LiveActor/Nerve.hpp"
 #include "Game/Screen/SaveIcon.hpp"
 #include "Game/Screen/SysInfoWindow.hpp"
@@ -164,6 +165,7 @@ void SaveDataHandleSequence::startQuickSaveAnywhere() {
 
 void SaveDataHandleSequence::startLoad(int userFileIndex, bool isPlayerMario) {
     restoreUserFile(mCurrentUserFile, userFileIndex, isPlayerMario);
+    GameSequenceFunction::resetQuickSaveStarBits();
 
     _24 = 2;
 

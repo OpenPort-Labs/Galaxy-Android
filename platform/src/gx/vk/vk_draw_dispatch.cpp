@@ -44,6 +44,7 @@ void VkRenderer::executeDrawPass(VkCommandBuffer cmd, const Frame& f, const Prep
     uint32_t lastTexMode1[8]{};
     bool hasLastTex = false;
     uint32_t diagDraws = 0, diagHud = 0, diagScSkip = 0, diagRealTex = 0, diagDummyTex = 0;
+    uint32_t diagCopyHits = 0, diagCopyFallbacks = 0, diagCopyMisses = 0;
     bool diagLog = (mFrameNumber % 300 == 0);
 
     for (const Item& it : items) {
@@ -188,11 +189,17 @@ void VkRenderer::executeDrawPass(VkCommandBuffer cmd, const Frame& f, const Prep
                     auto cit = mCopies.find(key);
                     if (cit == mCopies.end() && mCopySlot != 0) {
                         cit = mCopies.find(copyKey(0, addr));
+                        if (cit != mCopies.end()) {
+                            diagCopyFallbacks++;
+                        }
+                    } else if (cit != mCopies.end()) {
+                        diagCopyHits++;
                     }
                     if (cit != mCopies.end() && cit->second.view != VK_NULL_HANDLE) {
                         views[u] = cit->second.view;
                         samplers[u] = getSampler(it.texMode0[u], it.texMode1[u], 1);
                     } else {
+                        diagCopyMisses++;
                         views[u] = mDummyTexture.view;
                         samplers[u] = mDummySampler;
                     }
@@ -261,8 +268,9 @@ void VkRenderer::executeDrawPass(VkCommandBuffer cmd, const Frame& f, const Prep
     }
 
     if (diagLog) {
-        LOGI("VkDrawDiag: frame=%llu draws=%u (hud=%u scSkip=%u) realTex=%u dummyTex=%u fTextures=%zu",
-             (unsigned long long)mFrameNumber, diagDraws, diagHud, diagScSkip, diagRealTex, diagDummyTex, f.textures.size());
+        LOGI("VkDrawDiag: frame=%llu draws=%u (hud=%u scSkip=%u) realTex=%u dummyTex=%u fTextures=%zu copySlot=%u copyHits=%u copyFallbacks=%u copyMisses=%u",
+             (unsigned long long)mFrameNumber, diagDraws, diagHud, diagScSkip, diagRealTex, diagDummyTex, f.textures.size(),
+             mCopySlot, diagCopyHits, diagCopyFallbacks, diagCopyMisses);
     }
 }
 

@@ -289,6 +289,22 @@ bool ShaderInventory::loadAssetManifest(const std::string& manifestPath) {
         return false;
     }
 
+    struct stat st{};
+    if (fstat(fileno(f), &st) != 0) {
+        fclose(f);
+        port_log("vk_shader_inventory: fstat failed for manifest %s", manifestPath.c_str());
+        return false;
+    }
+    const size_t fileSize = (size_t)st.st_size;
+    constexpr size_t kHeaderSize = 5 * sizeof(uint32_t); // 20 bytes
+    constexpr size_t kMinRecordSize = (kManifestUidWords + 5) * sizeof(uint32_t) + 1 + 2 + sizeof(uint32_t); // 387 bytes
+
+    if (fileSize < kHeaderSize) {
+        fclose(f);
+        port_log("vk_shader_inventory: manifest file too small (%zu < %zu) in %s", fileSize, kHeaderSize, manifestPath.c_str());
+        return false;
+    }
+
     uint32_t header[5] = {0};
     if (fread(header, sizeof(uint32_t), 5, f) != 5) {
         fclose(f);
@@ -313,7 +329,22 @@ bool ShaderInventory::loadAssetManifest(const std::string& manifestPath) {
         return false;
     }
 
-    size_t loaded = 0;
+    if (count > 100000 || (fileSize - kHeaderSize) < (size_t)count * kMinRecordSize) {
+        fclose(f);
+        port_log("vk_shader_inventory: impossible record count %u (file size %zu) in manifest %s",
+                 count, fileSize, manifestPath.c_str());
+        return false;
+    }
+
+    struct StagedEntry {
+        ShaderUid uid;
+        PipelineKey key;
+        std::string source;
+    };
+    std::vector<StagedEntry> staged;
+    staged.reserve(count);
+
+    bool ok = true;
     for (uint32_t i = 0; i < count; i++) {
         uint32_t uidWords[kManifestUidWords] = {0};
         uint32_t keyFields[5] = {0};
@@ -325,12 +356,14 @@ bool ShaderInventory::loadAssetManifest(const std::string& manifestPath) {
             fread(&flagsByte, sizeof(flagsByte), 1, f) != 1 ||
             fread(&strLen, sizeof(strLen), 1, f) != 1) {
             port_log("vk_shader_inventory: manifest record %u truncated in %s", i, manifestPath.c_str());
+            ok = false;
             break;
         }
 
         if (strLen > 512) {
             port_log("vk_shader_inventory: manifest record %u string too long (%u > 512) in %s", i, (unsigned)strLen, manifestPath.c_str());
-            break;  // Corrupt record, stop safely
+            ok = false;
+            break;
         }
 
         std::string src;
@@ -338,6 +371,7 @@ bool ShaderInventory::loadAssetManifest(const std::string& manifestPath) {
             src.resize(strLen);
             if (fread(&src[0], 1, strLen, f) != strLen) {
                 port_log("vk_shader_inventory: manifest record %u source string truncated in %s", i, manifestPath.c_str());
+                ok = false;
                 break;
             }
         }
@@ -345,6 +379,7 @@ bool ShaderInventory::loadAssetManifest(const std::string& manifestPath) {
         uint32_t recCrc = 0;
         if (fread(&recCrc, sizeof(recCrc), 1, f) != 1) {
             port_log("vk_shader_inventory: manifest record %u missing CRC in %s", i, manifestPath.c_str());
+            ok = false;
             break;
         }
 
@@ -356,6 +391,7 @@ bool ShaderInventory::loadAssetManifest(const std::string& manifestPath) {
         if (checkH != recCrc) {
             port_log("vk_shader_inventory: manifest record %u CRC mismatch (expected 0x%08x, got 0x%08x) in %s",
                      i, recCrc, checkH, manifestPath.c_str());
+            ok = false;
             break;
         }
 
@@ -370,16 +406,41 @@ bool ShaderInventory::loadAssetManifest(const std::string& manifestPath) {
         key.blendState2 = keyFields[3];
         key.rasterState = keyFields[4];
 
-        addEntry(uid, key, src.empty() ? "asset_manifest" : ("asset:" + src), false);
-        loaded++;
+        staged.push_back({uid, key, src.empty() ? "asset_manifest" : ("asset:" + src)});
+    }
+
+    if (!ok || staged.size() != count) {
+        fclose(f);
+        port_log("vk_shader_inventory: validation failed for manifest %s; discarded %zu staged records",
+                 manifestPath.c_str(), staged.size());
+        return false;
+    }
+
+    // Exact EOF check: reject manifests with trailing garbage bytes
+    int trailingByte = fgetc(f);
+    if (trailingByte != EOF) {
+        fclose(f);
+        port_log("vk_shader_inventory: unexpected trailing bytes in manifest %s; rejecting entire manifest",
+                 manifestPath.c_str());
+        return false;
     }
 
     fclose(f);
-    mStats.assetDerivedEntries = loaded;
-    mStats.isAssetManifestLoaded = (loaded > 0);
-    port_log("vk_shader_inventory: successfully validated and loaded %zu asset-derived materials from manifest %s",
-             loaded, manifestPath.c_str());
-    return loaded > 0;
+
+    std::lock_guard<std::mutex> lock(mMutex);
+    size_t published = 0;
+    for (const auto& item : staged) {
+        addEntry(item.uid, item.key, item.source, false);
+        published++;
+    }
+
+    mStats.assetDerivedEntries = published;
+    mStats.isAssetManifestLoaded = (published > 0);
+    mActiveManifestPath = manifestPath;
+    mActiveManifestBuildVersion = header[2];
+    port_log("vk_shader_inventory: successfully validated and atomically published %zu asset-derived materials from manifest %s",
+             published, manifestPath.c_str());
+    return published > 0;
 }
 
 void ShaderInventory::scanAssetDirectory(const std::string& filesDir) {

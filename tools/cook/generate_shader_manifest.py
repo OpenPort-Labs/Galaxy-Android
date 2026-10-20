@@ -98,8 +98,9 @@ def parse_j3d_mat3(b: bytes, model_name: str, archive_name: str = ""):
     """Extracts authentic materials from a J3D (BMD/BDL) file supporting both big-endian and little-endian formats."""
     materials = []
     gaps = []
+    mat3_count = 0
     if len(b) < 0x20:
-        return materials, gaps
+        return materials, gaps, mat3_count
 
     magic = b[:4]
     if magic in (b'J3D2', b'J3D1'):
@@ -113,12 +114,12 @@ def parse_j3d_mat3(b: bytes, model_name: str, archive_name: str = ""):
         fmt32 = '<I'
         fmt16 = '<H'
     else:
-        return materials, gaps
+        return materials, gaps, mat3_count
 
     nblocks = struct.unpack_from(fmt32, b, 0x0C)[0]
     if nblocks <= 0 or nblocks > 64:
         gaps.append(f"Invalid block count {nblocks} in {model_name}")
-        return materials, gaps
+        return materials, gaps, mat3_count
 
     o = 0x20
     for block_idx in range(nblocks):
@@ -130,6 +131,7 @@ def parse_j3d_mat3(b: bytes, model_name: str, archive_name: str = ""):
             break
 
         if tag in (b'MAT3', b'3TAM'):
+            mat3_count += 1
             num_mats = struct.unpack_from(fmt16, b, o+8)[0]
             if num_mats == 0 or num_mats > 2048:
                 gaps.append(f"Invalid material count {num_mats} in {model_name}")
@@ -239,9 +241,14 @@ def parse_j3d_mat3(b: bytes, model_name: str, archive_name: str = ""):
                 uid_words[0] = vtx_flags
                 uid_words[1] = num_texgens
                 uid_words[2] = num_chans
-                uid_words[4] = 0x0001  # colorCtrl[0]
-                uid_words[6] = 5 << 7  # texMtxInfo[0]
+                uid_words[3] = 0  # dualTex
+                for c in range(min(num_chans, 2)):
+                    uid_words[4 + c] = 0x0001  # colorCtrl[c]
+                    uid_words[6 + c] = 0x0001  # alphaCtrl[c]
+                for tg in range(min(num_texgens, 8)):
+                    uid_words[8 + tg] = (5 + 3 * tg) << 7  # texMtxInfo[tg] (Tex0 row 5, Tex1 row 8...)
                 uid_words[24] = num_tevstages
+                uid_words[25] = 0  # numIndStages
                 uid_words[74] = alpha_func  # alphaFunc BP 0xF3 bits 16-23
 
                 # Read TEV order if available (Table 16)
@@ -292,15 +299,18 @@ def parse_j3d_mat3(b: bytes, model_name: str, archive_name: str = ""):
                 materials.append((uid_words, key, source_desc))
 
         o += size
-    return materials, gaps
+    return materials, gaps, mat3_count
 
 def scan_directory_for_models(root_dir: str):
     """Scans root_dir recursively for .bdl, .bmd, and extracts .arc archives safely."""
     discovered = []
     seen_keys = set()
     total_models = 0
+    models_parsed = 0
     total_archives = 0
     total_mats = 0
+    total_mat3_blocks = 0
+    skipped_inputs = 0
     total_gaps = []
 
     for dirpath, _, filenames in os.walk(root_dir):
@@ -313,7 +323,9 @@ def scan_directory_for_models(root_dir: str):
                 try:
                     with open(fp, 'rb') as f:
                         b = f.read()
-                    mats, gaps = parse_j3d_mat3(b, fn)
+                    mats, gaps, mat3_cnt = parse_j3d_mat3(b, fn)
+                    models_parsed += 1
+                    total_mat3_blocks += mat3_cnt
                     total_mats += len(mats)
                     total_gaps.extend(gaps)
                     for uid, key, src in mats:
@@ -330,11 +342,14 @@ def scan_directory_for_models(root_dir: str):
                         data = f.read()
                     if yaz0_decompress is not None and data[:4] == b'Yaz0':
                         data = yaz0_decompress(data)
-                    for inner_path, inner_bytes in rarc_list(data):
+                    arc_entries = rarc_list(data)
+                    for inner_path, inner_bytes in arc_entries:
                         inner_ext = os.path.splitext(inner_path)[1].lower()
                         if inner_ext in ('.bdl', '.bmd'):
                             total_models += 1
-                            mats, gaps = parse_j3d_mat3(inner_bytes, os.path.basename(inner_path), fn)
+                            mats, gaps, mat3_cnt = parse_j3d_mat3(inner_bytes, os.path.basename(inner_path), fn)
+                            models_parsed += 1
+                            total_mat3_blocks += mat3_cnt
                             total_mats += len(mats)
                             total_gaps.extend(gaps)
                             for uid, key, src in mats:
@@ -342,15 +357,19 @@ def scan_directory_for_models(root_dir: str):
                                     seen_keys.add(key)
                                     discovered.append((uid, key, src))
                 except Exception as e:
+                    skipped_inputs += 1
                     total_gaps.append(f"Failed extracting archive {fp}: {e}")
 
     report = {
-        'total_models': total_models,
-        'total_archives': total_archives,
-        'total_materials_parsed': total_mats,
+        'archives_visited': total_archives,
+        'models_discovered': total_models,
+        'models_parsed': models_parsed,
+        'mat3_blocks': total_mat3_blocks,
+        'material_records': total_mats,
         'unique_keys': len(discovered),
         'unique_uids': len({tuple(u) for u, _, _ in discovered}),
-        'gaps_count': len(total_gaps),
+        'skipped_inputs': skipped_inputs,
+        'parser_errors': len(total_gaps),
         'gaps': total_gaps[:10]
     }
     return discovered, report
@@ -400,12 +419,15 @@ def main():
 
     materials, report = scan_directory_for_models(args.assets_dir)
     print(f"=== Shader Manifest Coverage Report ===")
-    print(f"Archives Extracted: {report['total_archives']}")
-    print(f"Models Scanned: {report['total_models']}")
-    print(f"Material Records Parsed: {report['total_materials_parsed']}")
-    print(f"Unique Shader UIDs: {report['unique_uids']}")
-    print(f"Unique Pipeline Keys: {report['unique_keys']}")
-    print(f"Gaps / Errors Encountered: {report['gaps_count']}")
+    print(f"  Archives Visited:       {report['archives_visited']}")
+    print(f"  Models Discovered:      {report['models_discovered']}")
+    print(f"  Models Parsed:          {report['models_parsed']}")
+    print(f"  MAT3 Blocks:            {report['mat3_blocks']}")
+    print(f"  Material Records:       {report['material_records']}")
+    print(f"  Unique Shader UIDs:     {report['unique_uids']}")
+    print(f"  Unique Pipeline Keys:   {report['unique_keys']}")
+    print(f"  Skipped Inputs:         {report['skipped_inputs']}")
+    print(f"  Parser Errors:          {report['parser_errors']}")
     if report['gaps']:
         print(f"Sample gaps: {report['gaps']}")
 

@@ -141,7 +141,11 @@ namespace GameSequenceFunction {
     }
 
     void sendStageResultSequenceParam(const char* pStageName, s32 powerStarId, int starPieceNum, int coinNum) {
-        ::getGameDataTemporaryInGalaxy()->receiveStageResultParam(pStageName, powerStarId, starPieceNum, coinNum);
+        int uncreditedPieces = starPieceNum;
+        if (sCreditedQuickSaveStarBits > 0) {
+            uncreditedPieces = (starPieceNum > sCreditedQuickSaveStarBits) ? (starPieceNum - sCreditedQuickSaveStarBits) : 0;
+        }
+        ::getGameDataTemporaryInGalaxy()->receiveStageResultParam(pStageName, powerStarId, uncreditedPieces, coinNum);
     }
 
     bool hasStageResultSequence() {
@@ -335,11 +339,13 @@ namespace GameSequenceFunction {
                 s32 delta = stageBits - sCreditedQuickSaveStarBits;
                 GameDataFunction::addStockedStarPiece(delta);
                 sCreditedQuickSaveStarBits = stageBits;
-            } else if (stageBits < sCreditedQuickSaveStarBits) {
-                sCreditedQuickSaveStarBits = stageBits;
             }
         }
 
         seq->startQuickSaveAnywhere();
+    }
+
+    void resetQuickSaveStarBits() {
+        ::resetQuickSaveStarBits();
     }
 };  // namespace GameSequenceFunction

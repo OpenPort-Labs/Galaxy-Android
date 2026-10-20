@@ -250,27 +250,61 @@ public class CookerEngine {
         File filesDir = context.getFilesDir();
         if (filesDir == null) return;
         File manifestDest = new File(filesDir, "galaxy_shader_manifest.bin");
-        try (InputStream in = context.getAssets().open("galaxy_shader_manifest.bin")) {
-            long assetSize = 0;
-            try {
-                android.content.res.AssetFileDescriptor afd = context.getAssets().openFd("galaxy_shader_manifest.bin");
-                assetSize = afd.getLength();
-                afd.close();
-            } catch (Exception ignored) {}
 
-            if (!manifestDest.exists() || (assetSize > 0 && manifestDest.length() != assetSize)) {
-                Log.i(TAG, "Extracting bundled galaxy_shader_manifest.bin to " + manifestDest.getAbsolutePath());
+        try (InputStream in = context.getAssets().open("galaxy_shader_manifest.bin")) {
+            // Read incoming APK asset completely and compute SHA-256
+            java.security.MessageDigest assetDigest = java.security.MessageDigest.getInstance("SHA-256");
+            java.io.ByteArrayOutputStream assetBytes = new java.io.ByteArrayOutputStream();
+            byte[] buf = new byte[16384];
+            int r;
+            while ((r = in.read(buf)) > 0) {
+                assetDigest.update(buf, 0, r);
+                assetBytes.write(buf, 0, r);
+            }
+            byte[] assetHash = assetDigest.digest();
+            byte[] rawAsset = assetBytes.toByteArray();
+
+            // Check if existing file already matches the exact SHA-256 hash
+            boolean needsExtract = true;
+            if (manifestDest.exists() && manifestDest.length() == rawAsset.length) {
+                try (InputStream destIn = new java.io.FileInputStream(manifestDest)) {
+                    java.security.MessageDigest destDigest = java.security.MessageDigest.getInstance("SHA-256");
+                    while ((r = destIn.read(buf)) > 0) {
+                        destDigest.update(buf, 0, r);
+                    }
+                    if (java.security.MessageDigest.isEqual(assetHash, destDigest.digest())) {
+                        needsExtract = false; // Identical content, no re-extraction needed
+                    }
+                } catch (Exception ignored) {}
+            }
+
+            if (needsExtract) {
+                if (rawAsset.length < 20) {
+                    throw new java.io.IOException("Manifest asset too small: " + rawAsset.length + " bytes");
+                }
+                int magic = (rawAsset[0] & 0xFF) | ((rawAsset[1] & 0xFF) << 8) | ((rawAsset[2] & 0xFF) << 16) | ((rawAsset[3] & 0xFF) << 24);
+                if (magic != 0x55535450) { // "PTSU"
+                    throw new java.io.IOException("Manifest asset magic mismatch: 0x" + Integer.toHexString(magic));
+                }
+
+                Log.i(TAG, "Extracting updated galaxy_shader_manifest.bin (" + rawAsset.length + " bytes)...");
                 File tmp = new File(filesDir, "galaxy_shader_manifest.bin.tmp");
                 try (OutputStream out = new FileOutputStream(tmp)) {
-                    byte[] buf = new byte[16384];
-                    int r;
-                    while ((r = in.read(buf)) > 0) {
-                        out.write(buf, 0, r);
+                    out.write(rawAsset);
+                    out.flush();
+                }
+
+                try {
+                    java.nio.file.Files.move(tmp.toPath(), manifestDest.toPath(),
+                        java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                        java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+                } catch (Exception moveEx) {
+                    if (manifestDest.exists()) manifestDest.delete();
+                    if (!tmp.renameTo(manifestDest)) {
+                        throw new java.io.IOException("Failed renaming " + tmp + " to " + manifestDest);
                     }
                 }
-                if (manifestDest.exists()) manifestDest.delete();
-                tmp.renameTo(manifestDest);
-                Log.i(TAG, "Bundled shader manifest ready (" + manifestDest.length() + " bytes)");
+                Log.i(TAG, "Bundled shader manifest atomically installed (" + manifestDest.length() + " bytes)");
             }
         } catch (java.io.FileNotFoundException ignored) {
             // Not bundled in assets

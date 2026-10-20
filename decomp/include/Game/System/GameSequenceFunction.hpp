@@ -66,4 +66,5 @@ namespace GameSequenceFunction {
     void updateGameDataAndSequenceAfterStageResultSequence();
     void startGameDataSaveSequence(bool, bool);
     void quickSaveAnywhere();
+    void resetQuickSaveStarBits();
 };  // namespace GameSequenceFunction

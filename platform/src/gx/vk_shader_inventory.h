@@ -91,6 +91,8 @@ public:
     // Query stats and diagnostics
     ShaderInventoryStats stats() const;
     std::string getDiagnostics() const;
+    const std::string& activeManifestPath() const { return mActiveManifestPath; }
+    uint32_t activeManifestBuildVersion() const { return mActiveManifestBuildVersion; }
 
     // Durability: persist and reload inventory metadata with stable field-by-field serialization
     void saveInventory();
@@ -106,6 +108,8 @@ private:
     std::string mCacheDir;
     std::string mInventoryFilePath;
     std::string mDataRoot;
+    std::string mActiveManifestPath;
+    uint32_t mActiveManifestBuildVersion = 0;
 
     std::vector<InventoryEntry> mEntries;
     std::unordered_map<ShaderUid, size_t, ShaderUidHash> mUidIndex;

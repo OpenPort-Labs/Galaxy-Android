@@ -8,13 +8,14 @@ namespace mobile_display {
 
 void FramePacer::sync(android_app* app, int targetFps, float gameSpeed) {
     (void)app;
+    (void)gameSpeed;
     if (targetFps < 30) targetFps = 30;
     if (targetFps > 144) targetFps = 144;
 
+    // Presentation cadence is locked to display target refresh rate.
+    // Game simulation speed (gameSpeed multiplier) drives physics/tick rates,
+    // NOT the display presentation cadence.
     int effectiveFps = targetFps;
-    if (gameSpeed > 0.1f && (gameSpeed > 1.05f || gameSpeed < 0.95f)) {
-        effectiveFps = (int)((float)targetFps * gameSpeed);
-    }
     int64_t framePeriodNs = 1000000000ll / (effectiveFps > 0 ? effectiveFps : 60);
 
     int64_t nowNs = port_host_time_ns();
@@ -57,19 +58,18 @@ void FramePacer::sync(android_app* app, int targetFps, float gameSpeed) {
         if (sleepRecordedNs > 0) {
             port_perf_pace(sleepRecordedNs);
         }
-    }
-
-    nowNs = port_host_time_ns();
-    if (nowNs - mLastPresentNs > framePeriodNs + framePeriodNs / 2) {
-        mLastPresentNs = nowNs;
+        mLastPresentNs = port_host_time_ns();
     } else {
-        mLastPresentNs += framePeriodNs;
+        // Target deadline was already missed. Reset mLastPresentNs to nowNs immediately
+        // so future frames do not inherit negative phase debt.
+        mLastPresentNs = nowNs;
     }
 }
 
 bool FramePacer::shouldPresentSlot(int targetFps, float gameSpeed, int64_t nowNs) const {
+    (void)gameSpeed;
     if (targetFps <= 60) return false;
-    int effectiveFps = (gameSpeed > 0.1f && (gameSpeed > 1.05f || gameSpeed < 0.95f)) ? (int)((float)targetFps * gameSpeed) : targetFps;
+    int effectiveFps = targetFps;
     int64_t framePeriodNs = 1000000000ll / (effectiveFps > 0 ? effectiveFps : 60);
     return (nowNs - mLastPresentNs >= framePeriodNs);
 }

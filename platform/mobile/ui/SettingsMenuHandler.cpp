@@ -8,6 +8,8 @@
 #include <string.h>
 #include <algorithm>
 
+#include "port/port.h"
+
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, "MobileUI", __VA_ARGS__)
 
 namespace mobile_ui {
@@ -18,12 +20,14 @@ void SettingsMenuHandler::openSettings() {
     mSettingsOpen = true;
     mActiveDropdownAction = ACT_NONE;
     mActiveSliderAction = ACT_NONE;
+    port_perf_menu_event(1);
 }
 
 void SettingsMenuHandler::closeSettings(const Settings& settings, const std::string& savePath) {
     mSettingsOpen = false;
     mActiveDropdownAction = ACT_NONE;
     mActiveSliderAction = ACT_NONE;
+    port_perf_menu_event(0);
     if (!savePath.empty()) {
         settings.save(savePath);
     }

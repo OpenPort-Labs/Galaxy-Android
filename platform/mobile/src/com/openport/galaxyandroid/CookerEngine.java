@@ -241,5 +241,41 @@ public class CookerEngine {
                 }
             }
         }
+
+        extractShaderManifestIfPresent(context);
+    }
+
+    public static void extractShaderManifestIfPresent(Context context) {
+        if (context == null) return;
+        File filesDir = context.getFilesDir();
+        if (filesDir == null) return;
+        File manifestDest = new File(filesDir, "galaxy_shader_manifest.bin");
+        try (InputStream in = context.getAssets().open("galaxy_shader_manifest.bin")) {
+            long assetSize = 0;
+            try {
+                android.content.res.AssetFileDescriptor afd = context.getAssets().openFd("galaxy_shader_manifest.bin");
+                assetSize = afd.getLength();
+                afd.close();
+            } catch (Exception ignored) {}
+
+            if (!manifestDest.exists() || (assetSize > 0 && manifestDest.length() != assetSize)) {
+                Log.i(TAG, "Extracting bundled galaxy_shader_manifest.bin to " + manifestDest.getAbsolutePath());
+                File tmp = new File(filesDir, "galaxy_shader_manifest.bin.tmp");
+                try (OutputStream out = new FileOutputStream(tmp)) {
+                    byte[] buf = new byte[16384];
+                    int r;
+                    while ((r = in.read(buf)) > 0) {
+                        out.write(buf, 0, r);
+                    }
+                }
+                if (manifestDest.exists()) manifestDest.delete();
+                tmp.renameTo(manifestDest);
+                Log.i(TAG, "Bundled shader manifest ready (" + manifestDest.length() + " bytes)");
+            }
+        } catch (java.io.FileNotFoundException ignored) {
+            // Not bundled in assets
+        } catch (Exception e) {
+            Log.w(TAG, "Failed extracting bundled shader manifest", e);
+        }
     }
 }

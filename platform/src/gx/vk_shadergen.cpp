@@ -224,6 +224,7 @@ bool compileVulkanShader(const ShaderUid& uid, std::vector<uint32_t>& outVsSpirv
         }
     }
 
+    int64_t t0 = port_host_time_ns();
     std::string err;
     if (!compileShaderToSPIRV(vsSrc, true, outVsSpirv, err)) {
         port_log("vk_shadergen: VS error: %s", err.c_str());
@@ -233,6 +234,7 @@ bool compileVulkanShader(const ShaderUid& uid, std::vector<uint32_t>& outVsSpirv
         port_log("vk_shadergen: FS error: %s", err.c_str());
         return false;
     }
+    port_perf_shader_compile(port_host_time_ns() - t0);
 
     std::lock_guard<std::mutex> lock(sSpirvCacheLock);
     storeSpirvCacheLocked(key, outVsSpirv, outFsSpirv);

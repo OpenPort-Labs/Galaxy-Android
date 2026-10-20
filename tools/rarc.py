@@ -64,6 +64,41 @@ class RarcFile:
 
 def rarc_list(data):
     """Yields (path, bytes) for every file in a RARC archive."""
+    if data[:4] == b'CRAR':
+        # Cooked little-endian RARC format (from tools/cook/validate.py)
+        hdr = struct.unpack_from('<I', data, 8)[0]
+        data_start = hdr + struct.unpack_from('<I', data, 0xC)[0]
+        ndirs, dir_off, nfiles, file_off, _, str_off = (struct.unpack_from('<I', data, hdr + 4 * i)[0] for i in range(6))
+        str_off += hdr
+
+        def cstr_le(o):
+            end = data.index(b'\0', str_off + o)
+            return bytes(data[str_off + o:end]).decode('shift_jis', errors='replace')
+
+        dirs = [(cstr_le(struct.unpack_from('<I', data, hdr + dir_off + 16 * i + 4)[0]),
+                 struct.unpack_from('<H', data, hdr + dir_off + 16 * i + 0xA)[0],
+                 struct.unpack_from('<I', data, hdr + dir_off + 16 * i + 0xC)[0])
+                for i in range(ndirs)]
+
+        def walk_le(di, prefix):
+            name, count, first = dirs[di]
+            for e in range(first, first + count):
+                f = hdr + file_off + 0x14 * e
+                word = struct.unpack_from('<I', data, f + 4)[0]
+                flags, name_off = word >> 24, word & 0xFFFFFF
+                ename = cstr_le(name_off)
+                if flags & 2:
+                    if ename not in ('.', '..'):
+                        yield from walk_le(struct.unpack_from('<I', data, f + 8)[0], prefix + ename + '/')
+                else:
+                    off = data_start + struct.unpack_from('<I', data, f + 8)[0]
+                    size = struct.unpack_from('<I', data, f + 0xC)[0]
+                    if off + size <= len(data):
+                        yield prefix + ename, data[off:off + size]
+
+        yield from walk_le(0, dirs[0][0] + '/')
+        return
+
     if data[:4] != b'RARC':
         raise ValueError('not RARC')
     data_off = struct.unpack_from('>I', data, 0x0C)[0] + 0x20

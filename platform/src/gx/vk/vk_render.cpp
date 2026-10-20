@@ -71,6 +71,7 @@ bool VkRenderer::render(VkTarget& target, const EyeView* eye, VkTarget* hud, Hud
     uploadOk &= uploadDynamicBuffer(fr.vtxRecBuf, fr.vtxRecMem, fr.vtxRecMapped, fr.vtxRecCap, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, p.vtxRec.data(), p.vtxRec.size() * sizeof(uint32_t));
 
     EyeBlock eb{};
+    mCopySlot = eye ? 1 + (eye->index & 1) : 0;
     bool vrEye = eye && !eye->flatStereo;
     if (vrEye) {
         for (int i = 0; i < 16; i++) {

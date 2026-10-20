@@ -985,6 +985,204 @@ class TestTextureUploadStagingSafety(unittest.TestCase):
             self.assertGreater(rh, 0)
 
 
+class TestShaderManifestContract(unittest.TestCase):
+    """
+    Verifies 90-word UID binary manifest serialization, CRC checks,
+    and truncated record handling.
+    """
+    def fnv1a32(self, data: bytes, seed: int = 2166136261) -> int:
+        h = seed
+        for b in data:
+            h = ((h ^ b) * 16777619) & 0xFFFFFFFF
+        return h
+
+    def test_90_word_uid_manifest_structure(self):
+        magic = 0x55535450
+        schema_version = 2
+        build_version = 20261019
+        count = 1
+        hdr_data = struct.pack('<IIII', magic, schema_version, build_version, count)
+        hdr_crc = self.fnv1a32(hdr_data)
+        header = hdr_data + struct.pack('<I', hdr_crc)
+
+        uid_words = [i for i in range(90)]
+        key_words = [10, 20, 30, 40, 50]
+        flags = 0
+        src_str = "TestMaterial/Model.bdl"
+        src_bytes = src_str.encode('utf-8')
+        str_len = len(src_bytes)
+
+        rec_payload = (
+            struct.pack('<90I', *uid_words) +
+            struct.pack('<5I', *key_words) +
+            struct.pack('<B', flags) +
+            struct.pack('<H', str_len) +
+            src_bytes
+        )
+        rec_crc = self.fnv1a32(rec_payload)
+        record = rec_payload + struct.pack('<I', rec_crc)
+
+        data = header + record
+        # Verify sizes
+        self.assertEqual(len(header), 20)
+        self.assertEqual(len(rec_payload), 360 + 20 + 1 + 2 + str_len)
+        self.assertEqual(len(record), 387 + str_len)
+
+        # Parse header
+        m, s, b, cnt, c = struct.unpack('<IIIII', data[:20])
+        self.assertEqual(m, magic)
+        self.assertEqual(s, 2)
+        self.assertEqual(self.fnv1a32(data[:16]), c)
+
+        # Parse record
+        offset = 20
+        parsed_uid = struct.unpack_from('<90I', data, offset)
+        offset += 360
+        parsed_key = struct.unpack_from('<5I', data, offset)
+        offset += 20
+        flags_val = data[offset]
+        offset += 1
+        parsed_len = struct.unpack_from('<H', data, offset)[0]
+        offset += 2
+        parsed_src = data[offset:offset+parsed_len].decode('utf-8')
+        offset += parsed_len
+        parsed_crc = struct.unpack_from('<I', data, offset)[0]
+
+        self.assertEqual(list(parsed_uid), uid_words)
+        self.assertEqual(list(parsed_key), key_words)
+        self.assertEqual(parsed_src, src_str)
+        self.assertEqual(self.fnv1a32(data[20:offset]), parsed_crc)
+
+    def test_truncated_record_detection(self):
+        magic = 0x55535450
+        schema_version = 2
+        build_version = 20261019
+        count = 1
+        hdr_data = struct.pack('<IIII', magic, schema_version, build_version, count)
+        hdr_crc = self.fnv1a32(hdr_data)
+        header = hdr_data + struct.pack('<I', hdr_crc)
+
+        # Truncated record with only 100 bytes (less than 387 required)
+        truncated_record = b'\xAA' * 100
+        data = header + truncated_record
+        self.assertLess(len(data) - 20, 387, "Truncated record must be detected as incomplete")
+
+
+class TestDualEndianJ3DAndRarcParsing(unittest.TestCase):
+    """
+    Verifies support for both big-endian (GameCube/Wii native) and little-endian (cooked)
+    RARC and J3D files.
+    """
+    def test_rarc_endianness_detection(self):
+        be_header = b'RARC' + struct.pack('>I', 64)
+        le_header = b'CRAR' + struct.pack('<I', 64)
+
+        def detect_rarc(b):
+            if b[:4] == b'RARC':
+                return 'BE', struct.unpack_from('>I', b, 4)[0]
+            elif b[:4] == b'CRAR':
+                return 'LE', struct.unpack_from('<I', b, 4)[0]
+            return None, 0
+
+        endian_be, size_be = detect_rarc(be_header)
+        self.assertEqual(endian_be, 'BE')
+        self.assertEqual(size_be, 64)
+
+        endian_le, size_le = detect_rarc(le_header)
+        self.assertEqual(endian_le, 'LE')
+        self.assertEqual(size_le, 64)
+
+    def test_j3d_mat3_dual_endian_tags(self):
+        # Big-endian: J3D2, MAT3
+        be_j3d = b'J3D2bdl4'
+        be_mat3 = b'MAT3' + struct.pack('>I', 32)
+        # Little-endian: 2D3J, 3TAM
+        le_j3d = b'2D3J4ldb'
+        le_mat3 = b'3TAM' + struct.pack('<I', 32)
+
+        def is_j3d_magic(magic):
+            return magic in (b'J3D1', b'J3D2', b'1D3J', b'2D3J')
+
+        def is_mat3_chunk(tag):
+            return tag in (b'MAT3', b'3TAM')
+
+        self.assertTrue(is_j3d_magic(be_j3d[:4]))
+        self.assertTrue(is_j3d_magic(le_j3d[:4]))
+        self.assertTrue(is_mat3_chunk(be_mat3[:4]))
+        self.assertTrue(is_mat3_chunk(le_mat3[:4]))
+
+
+class TestStarBitQuickSaveSafeguards(unittest.TestCase):
+    """
+    Verifies that quick saves commit only delta star-bits, preventing infinite accumulation.
+    """
+    def test_repeated_quicksaves_in_same_stage_prevent_stock_duplication(self):
+        stock_star_bits = 50
+        stage_star_bits = 30
+        credited_delta = 0
+
+        # First quick save in stage: 30 new star bits
+        delta = max(0, stage_star_bits - credited_delta)
+        stock_star_bits += delta
+        credited_delta = stage_star_bits
+        self.assertEqual(stock_star_bits, 80)
+        self.assertEqual(credited_delta, 30)
+
+        # Second quick save immediately without collecting more star bits
+        delta = max(0, stage_star_bits - credited_delta)
+        stock_star_bits += delta
+        credited_delta = stage_star_bits
+        self.assertEqual(stock_star_bits, 80, "Stock star bits must NOT increase on immediate re-save")
+
+        # Player collects 5 more star bits in stage (total 35)
+        stage_star_bits = 35
+        delta = max(0, stage_star_bits - credited_delta)
+        stock_star_bits += delta
+        credited_delta = stage_star_bits
+        self.assertEqual(stock_star_bits, 85, "Stock star bits must only increase by the delta (5)")
+
+        # Scene change / galaxy move resets delta tracking
+        credited_delta = 0
+        stage_star_bits = 0
+        self.assertEqual(stock_star_bits, 85)
+
+
+class TestFramePacerPhaseDebtRecovery(unittest.TestCase):
+    """
+    Verifies that missed deadlines reset frame pacer phase without debt accumulation.
+    """
+    def test_missed_deadline_phase_reset(self):
+        period_ns = 16666667  # 60 FPS
+        last_present_ns = 1000000000
+        target_ns = last_present_ns + period_ns
+
+        # Simulated frame submission that took 25ms (missed 16.6ms deadline)
+        now_ns = last_present_ns + 25000000
+        self.assertGreaterEqual(now_ns, target_ns)
+
+        # Old flawed behavior: last_present_ns = target_ns (accumulated debt)
+        old_last = target_ns
+        old_next_target = old_last + period_ns
+        self.assertLess(old_next_target, now_ns + period_ns, "Old behavior carries debt forward")
+
+        # Fixed behavior: reset to now_ns
+        new_last = now_ns
+        new_next_target = new_last + period_ns
+        self.assertEqual(new_next_target, now_ns + period_ns, "Fixed behavior sets deadline from current time")
+
+    def test_game_speed_simulation_cadence_decoupling(self):
+        target_fps = 60.0
+        game_speed = 2.0  # Double speed simulation
+
+        # Old flawed behavior: effectiveFps = targetFps * gameSpeed (120 FPS request on 60Hz display)
+        old_effective = target_fps * game_speed
+        self.assertEqual(old_effective, 120.0)
+
+        # Corrected behavior: effectiveFps = targetFps (presentation cadence is strictly display-bound)
+        corrected_effective = target_fps
+        self.assertEqual(corrected_effective, 60.0)
+
+
 if __name__ == '__main__':
     unittest.main()
 

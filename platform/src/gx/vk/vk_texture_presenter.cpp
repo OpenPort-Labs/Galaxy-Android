@@ -7,7 +7,9 @@ void VkRenderer::present(const VkTarget& target, int vpX, int vpY, int vpW, int 
     if (!mInitialized || mFatal || mSwapchain == VK_NULL_HANDLE || target.colorView == VK_NULL_HANDLE || !target.hasValidContent) return;
 
     if (mPresentFenceInFlight) {
+        int64_t t0 = port_host_time_ns();
         VkResult r = vkWaitForFences(mDevice, 1, &mPresentFence, VK_TRUE, 2000000000ULL);
+        port_perf_queue_wait(port_host_time_ns() - t0);
         mPresentFenceInFlight = false;
         if (r != VK_SUCCESS) {
             markFatal("present", "vkWaitForFences on mPresentFence", (int)r);

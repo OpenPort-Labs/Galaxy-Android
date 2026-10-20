@@ -93,11 +93,10 @@ static void viClock() {
             continue;  // no retrace: the game stays in VIWaitForRetrace
         }
         // If the display/presenter recently raised a retrace within this cadence window,
-        // let the display drive retrace pacing. But if the display has not fired for
-        // more than 85% of a period, the fallback clock MUST fire so the game thread
-        // is never starved in VIWaitForRetrace (eliminating the ~12 FPS lockup).
+        // let the display drive retrace pacing. The fallback clock should ONLY intervene
+        // when the display has missed its deadline (more than 1 full period has elapsed).
         int64_t lastRaised = sRaisedAt.load();
-        if (now - lastRaised < (int64_t)(period * 0.85)) {
+        if (now - lastRaised < (int64_t)(period * 1.05)) {
             continue;
         }
         raiseRetrace();

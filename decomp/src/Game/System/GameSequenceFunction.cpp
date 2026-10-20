@@ -1,4 +1,5 @@
 #include "Game/System/GameSequenceFunction.hpp"
+#include "Game/System/GalaxyMoveArgument.hpp"
 #include "Game/NWC24/NWC24Messenger.hpp"
 #include "Game/System/FindingLuigiEventScheduler.hpp"
 #include "Game/System/GalaxyCometScheduler.hpp"
@@ -18,8 +19,15 @@
 #include "Game/Util/SceneUtil.hpp"
 #include "Game/Util/SingletonHolder.hpp"
 #include "Game/Util/StringUtil.hpp"
+#include "port/port.h"
 
 namespace {
+    static s32 sCreditedQuickSaveStarBits = 0;
+
+    void resetQuickSaveStarBits() {
+        sCreditedQuickSaveStarBits = 0;
+    }
+
     GameSequenceProgress* getGameSequenceProgress() NO_INLINE {
         return SingletonHolder< GameSystem >::get()->mSequenceDirector->mGameSequenceProgress;
     }
@@ -115,10 +123,16 @@ namespace GameSequenceFunction {
     }
 
     void requestChangeScene(const char* pSceneName) {
+        port_perf_scene_transition(pSceneName);
+        resetQuickSaveStarBits();
         ::getGameSequenceProgress()->requestChangeScene(pSceneName);
     }
 
     void requestGalaxyMove(const GalaxyMoveArgument& rArgument) {
+        if (rArgument.mStageName) {
+            port_perf_scene_transition(rArgument.mStageName);
+        }
+        resetQuickSaveStarBits();
         ::getGameSequenceProgress()->requestGalaxyMove(rArgument);
     }
 
@@ -289,6 +303,7 @@ namespace GameSequenceFunction {
             GameDataFunction::setGameFlagPowerStarSuccess(getClearedStageName(), getClearedPowerStarId(), true);
         }
 
+        resetQuickSaveStarBits();
         ::getGameSequenceProgress()->getGalaxyCometScheduler()->syncWithFlags();
         ::getGameSequenceProgress()->getGalaxyCometScheduler()->forceToNextState();
     }
@@ -316,8 +331,12 @@ namespace GameSequenceFunction {
 
         if (!MR::isStageAstroLocation()) {
             s32 stageBits = MR::getStarPieceNum();
-            if (stageBits > 0) {
-                GameDataFunction::addStockedStarPiece(stageBits);
+            if (stageBits > sCreditedQuickSaveStarBits) {
+                s32 delta = stageBits - sCreditedQuickSaveStarBits;
+                GameDataFunction::addStockedStarPiece(delta);
+                sCreditedQuickSaveStarBits = stageBits;
+            } else if (stageBits < sCreditedQuickSaveStarBits) {
+                sCreditedQuickSaveStarBits = stageBits;
             }
         }
 

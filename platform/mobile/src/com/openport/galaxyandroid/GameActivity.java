@@ -25,6 +25,8 @@ public class GameActivity extends NativeActivity {
             returnToLauncher();
             return;
         }
+
+        CookerEngine.extractShaderManifestIfPresent(this);
     }
 
     public static void setPreferredRefreshRate(float maxFps) {

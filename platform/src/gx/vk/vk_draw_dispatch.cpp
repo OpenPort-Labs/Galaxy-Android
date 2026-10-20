@@ -184,8 +184,11 @@ void VkRenderer::executeDrawPass(VkCommandBuffer cmd, const Frame& f, const Prep
                 }
                 if (tr & 0x80000000u) {
                     uint32_t addr = (tr & 0x7FFFFFFF) << 5;
-                    uint64_t key = copyKey(0, addr);
+                    uint64_t key = copyKey(mCopySlot, addr);
                     auto cit = mCopies.find(key);
+                    if (cit == mCopies.end() && mCopySlot != 0) {
+                        cit = mCopies.find(copyKey(0, addr));
+                    }
                     if (cit != mCopies.end() && cit->second.view != VK_NULL_HANDLE) {
                         views[u] = cit->second.view;
                         samplers[u] = getSampler(it.texMode0[u], it.texMode1[u], 1);

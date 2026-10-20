@@ -230,6 +230,7 @@ public:
 
   VkTexture mDummyTexture;
   VkSampler mDummySampler = VK_NULL_HANDLE;
+  uint32_t mCopySlot = 0;
 
   // Frame command batching
   Builder mBuilder;

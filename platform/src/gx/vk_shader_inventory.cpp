@@ -20,6 +20,7 @@ constexpr uint32_t kInventoryMagic = 0x55535450;      // "PTSU"
 constexpr uint32_t kInventoryVersion = 2;
 constexpr uint32_t kBuildVersion = 20261019;
 constexpr uint32_t kShaderGenVersion = 1;
+constexpr size_t kManifestUidWords = 90;
 
 static uint32_t fnv1a32(const void* data, size_t size, uint32_t seed = 2166136261u) {
     const uint8_t* p = (const uint8_t*)data;
@@ -283,17 +284,22 @@ void ShaderInventory::populateCanonicalGalaxyInventory() {
 
 bool ShaderInventory::loadAssetManifest(const std::string& manifestPath) {
     FILE* f = fopen(manifestPath.c_str(), "rb");
-    if (!f) return false;
+    if (!f) {
+        port_log("vk_shader_inventory: manifest file not found at %s", manifestPath.c_str());
+        return false;
+    }
 
     uint32_t header[5] = {0};
     if (fread(header, sizeof(uint32_t), 5, f) != 5) {
         fclose(f);
+        port_log("vk_shader_inventory: failed to read manifest header from %s", manifestPath.c_str());
         return false;
     }
 
     if (header[0] != kInventoryMagic || header[1] != kInventoryVersion || header[2] != kBuildVersion) {
         fclose(f);
-        port_log("vk_shader_inventory: manifest header version mismatch (%s)", manifestPath.c_str());
+        port_log("vk_shader_inventory: manifest header version mismatch (%s): magic=0x%08x (exp 0x%08x), ver=%u (exp %u), build=%u (exp %u)",
+                 manifestPath.c_str(), header[0], kInventoryMagic, header[1], kInventoryVersion, header[2], kBuildVersion);
         return false;
     }
 
@@ -302,25 +308,28 @@ bool ShaderInventory::loadAssetManifest(const std::string& manifestPath) {
     uint32_t actualHeaderCrc = fnv1a32(header, 4 * sizeof(uint32_t));
     if (expectedHeaderCrc != actualHeaderCrc) {
         fclose(f);
-        port_log("vk_shader_inventory: manifest header checksum failed (%s)", manifestPath.c_str());
+        port_log("vk_shader_inventory: manifest header checksum failed (%s): expected 0x%08x, got 0x%08x",
+                 manifestPath.c_str(), expectedHeaderCrc, actualHeaderCrc);
         return false;
     }
 
     size_t loaded = 0;
     for (uint32_t i = 0; i < count; i++) {
-        ShaderUid uid{};
+        uint32_t uidWords[kManifestUidWords] = {0};
         uint32_t keyFields[5] = {0};
         uint8_t flagsByte = 0;
         uint16_t strLen = 0;
 
-        if (fread(&uid, sizeof(uid), 1, f) != 1 ||
+        if (fread(uidWords, sizeof(uint32_t), kManifestUidWords, f) != kManifestUidWords ||
             fread(keyFields, sizeof(uint32_t), 5, f) != 5 ||
             fread(&flagsByte, sizeof(flagsByte), 1, f) != 1 ||
             fread(&strLen, sizeof(strLen), 1, f) != 1) {
+            port_log("vk_shader_inventory: manifest record %u truncated in %s", i, manifestPath.c_str());
             break;
         }
 
         if (strLen > 512) {
+            port_log("vk_shader_inventory: manifest record %u string too long (%u > 512) in %s", i, (unsigned)strLen, manifestPath.c_str());
             break;  // Corrupt record, stop safely
         }
 
@@ -328,23 +337,30 @@ bool ShaderInventory::loadAssetManifest(const std::string& manifestPath) {
         if (strLen > 0) {
             src.resize(strLen);
             if (fread(&src[0], 1, strLen, f) != strLen) {
+                port_log("vk_shader_inventory: manifest record %u source string truncated in %s", i, manifestPath.c_str());
                 break;
             }
         }
 
         uint32_t recCrc = 0;
         if (fread(&recCrc, sizeof(recCrc), 1, f) != 1) {
+            port_log("vk_shader_inventory: manifest record %u missing CRC in %s", i, manifestPath.c_str());
             break;
         }
 
-        uint32_t checkH = fnv1a32(&uid, sizeof(uid));
+        uint32_t checkH = fnv1a32(uidWords, kManifestUidWords * sizeof(uint32_t));
         checkH = fnv1a32(keyFields, sizeof(keyFields), checkH);
         checkH = fnv1a32(&flagsByte, 1, checkH);
         checkH = fnv1a32(&strLen, 2, checkH);
         if (strLen > 0) checkH = fnv1a32(src.data(), strLen, checkH);
         if (checkH != recCrc) {
+            port_log("vk_shader_inventory: manifest record %u CRC mismatch (expected 0x%08x, got 0x%08x) in %s",
+                     i, recCrc, checkH, manifestPath.c_str());
             break;
         }
+
+        ShaderUid uid{};
+        memcpy(&uid, uidWords, std::min(sizeof(uid), sizeof(uidWords)));
 
         PipelineKey key{};
         key.uid = uid;
@@ -361,25 +377,33 @@ bool ShaderInventory::loadAssetManifest(const std::string& manifestPath) {
     fclose(f);
     mStats.assetDerivedEntries = loaded;
     mStats.isAssetManifestLoaded = (loaded > 0);
-    port_log("vk_shader_inventory: loaded %zu asset-derived materials from manifest %s",
+    port_log("vk_shader_inventory: successfully validated and loaded %zu asset-derived materials from manifest %s",
              loaded, manifestPath.c_str());
     return loaded > 0;
 }
 
 void ShaderInventory::scanAssetDirectory(const std::string& filesDir) {
-    // 1. First look for pre-cooked full-game manifest
-    std::string candidate1 = filesDir + "/galaxy_shader_manifest.bin";
-    std::string candidate2 = mCacheDir + "/galaxy_shader_manifest.bin";
-    std::string candidate3 = mDataRoot + "/galaxy_shader_manifest.bin";
+    // Search candidates in prioritized order
+    std::vector<std::string> candidates = {
+        mCacheDir + "/galaxy_shader_manifest.bin",
+        filesDir + "/galaxy_shader_manifest.bin",
+        mDataRoot + "/galaxy_shader_manifest.bin",
+        "/sdcard/GalaxyData/galaxy_shader_manifest.bin",
+        "assets/galaxy_shader_manifest.bin"
+    };
 
-    if (loadAssetManifest(candidate1) || loadAssetManifest(candidate2) || loadAssetManifest(candidate3)) {
-        return;
+    for (const auto& cand : candidates) {
+        if (!cand.empty() && loadAssetManifest(cand)) {
+            port_log("vk_shader_inventory: active manifest set to %s", cand.c_str());
+            return;
+        }
     }
 
     DIR* d = opendir(filesDir.c_str());
     if (!d) {
         mInventoryGapReports.push_back("Asset directory missing or inaccessible: " + filesDir);
         mStats.explicitInventoryGaps++;
+        port_log("vk_shader_inventory: manifest not found; fallback canonical catalog active (%zu entries)", mEntries.size());
         return;
     }
 
@@ -403,7 +427,8 @@ void ShaderInventory::scanAssetDirectory(const std::string& filesDir) {
     mStats.isAssetManifestLoaded = false;
     char gapBuf[256];
     snprintf(gapBuf, sizeof(gapBuf),
-             "Unparsed archives found (%zu .arc files) without cooked manifest; canonical catalog active", arcCount);
+             "Unparsed archives found (%zu .arc files) without cooked manifest; canonical fallback catalog active (%zu entries)",
+             arcCount, mEntries.size());
     mInventoryGapReports.push_back(std::string(gapBuf));
     port_log("vk_shader_inventory: %s", gapBuf);
 }
@@ -686,6 +711,9 @@ void ShaderInventory::saveInventory() {
     }
 
     for (const auto& e : mEntries) {
+        uint32_t uidWords[kManifestUidWords] = {0};
+        memcpy(uidWords, &e.uid, std::min(sizeof(e.uid), sizeof(uidWords)));
+
         uint32_t keyFields[5] = {
             e.key.flags,
             e.key.depthState,
@@ -699,13 +727,13 @@ void ShaderInventory::saveInventory() {
                             (e.failed ? 8 : 0);
         uint16_t strLen = (uint16_t)std::min<size_t>(512, e.sourceAsset.size());
 
-        uint32_t recCrc = fnv1a32(&e.uid, sizeof(e.uid));
+        uint32_t recCrc = fnv1a32(uidWords, kManifestUidWords * sizeof(uint32_t));
         recCrc = fnv1a32(keyFields, sizeof(keyFields), recCrc);
         recCrc = fnv1a32(&flagsByte, 1, recCrc);
         recCrc = fnv1a32(&strLen, 2, recCrc);
         if (strLen > 0) recCrc = fnv1a32(e.sourceAsset.data(), strLen, recCrc);
 
-        if (fwrite(&e.uid, sizeof(e.uid), 1, f) != 1 ||
+        if (fwrite(uidWords, sizeof(uint32_t), kManifestUidWords, f) != kManifestUidWords ||
             fwrite(keyFields, sizeof(uint32_t), 5, f) != 5 ||
             fwrite(&flagsByte, sizeof(flagsByte), 1, f) != 1 ||
             fwrite(&strLen, sizeof(strLen), 1, f) != 1) {
@@ -759,12 +787,12 @@ void ShaderInventory::loadInventory() {
 
     uint32_t count = header[3];
     for (uint32_t i = 0; i < count; i++) {
-        ShaderUid uid{};
+        uint32_t uidWords[kManifestUidWords] = {0};
         uint32_t keyFields[5] = {0};
         uint8_t flagsByte = 0;
         uint16_t strLen = 0;
 
-        if (fread(&uid, sizeof(uid), 1, f) != 1 ||
+        if (fread(uidWords, sizeof(uint32_t), kManifestUidWords, f) != kManifestUidWords ||
             fread(keyFields, sizeof(uint32_t), 5, f) != 5 ||
             fread(&flagsByte, sizeof(flagsByte), 1, f) != 1 ||
             fread(&strLen, sizeof(strLen), 1, f) != 1) {
@@ -788,7 +816,7 @@ void ShaderInventory::loadInventory() {
             break;
         }
 
-        uint32_t checkH = fnv1a32(&uid, sizeof(uid));
+        uint32_t checkH = fnv1a32(uidWords, kManifestUidWords * sizeof(uint32_t));
         checkH = fnv1a32(keyFields, sizeof(keyFields), checkH);
         checkH = fnv1a32(&flagsByte, 1, checkH);
         checkH = fnv1a32(&strLen, 2, checkH);
@@ -796,6 +824,9 @@ void ShaderInventory::loadInventory() {
         if (checkH != recCrc) {
             break;  // Corruption detected, stop safely at last valid record
         }
+
+        ShaderUid uid{};
+        memcpy(&uid, uidWords, std::min(sizeof(uid), sizeof(uidWords)));
 
         PipelineKey key{};
         key.uid = uid;

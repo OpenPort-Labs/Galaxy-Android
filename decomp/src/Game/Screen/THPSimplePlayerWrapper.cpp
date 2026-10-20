@@ -383,6 +383,9 @@ s32 THPSimplePlayerWrapper::getTotalFrame() const {
 }
 
 bool THPSimplePlayerWrapper::videoDecode(u8* pFile) {
+    if (!pFile || !mTHPWork || !mTextureSet[_310].ytexture || !mTextureSet[_310].utexture || !mTextureSet[_310].vtexture) {
+        return false;
+    }
     if (THPVideoDecode(pFile, mTextureSet[_310].ytexture, mTextureSet[_310].utexture, mTextureSet[_310].vtexture, mTHPWork)) {
         return false;
     }

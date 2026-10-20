@@ -67,7 +67,9 @@ bool VkRenderer::waitInFlightSubmissions(const char* where) {
     constexpr uint64_t kFenceWaitNs = 2000000000ull;
     bool ok = true;
     if (mRenderFenceInFlight) {
+        int64_t t0 = port_host_time_ns();
         VkResult res = vkWaitForFences(mDevice, 1, &mRenderFence, VK_TRUE, kFenceWaitNs);
+        port_perf_queue_wait(port_host_time_ns() - t0);
         mRenderFenceInFlight = false;
         if (res != VK_SUCCESS) {
             markFatal(where, "vkWaitForFences on mRenderFence", (int)res);
@@ -75,7 +77,9 @@ bool VkRenderer::waitInFlightSubmissions(const char* where) {
         }
     }
     if (mPresentFenceInFlight) {
+        int64_t t0 = port_host_time_ns();
         VkResult res = vkWaitForFences(mDevice, 1, &mPresentFence, VK_TRUE, kFenceWaitNs);
+        port_perf_queue_wait(port_host_time_ns() - t0);
         mPresentFenceInFlight = false;
         if (res != VK_SUCCESS) {
             markFatal(where, "vkWaitForFences on mPresentFence", (int)res);

@@ -396,6 +396,12 @@ def main():
                     arc = os.path.relpath(p, INSTALLER_DIR).replace("\\", "/")
                     z.write(p, arc, compress_type=zipfile.ZIP_DEFLATED)
 
+        # Add pre-cooked shader manifest if present
+        manifest_src = os.path.join(ROOT, "assets", "galaxy_shader_manifest.bin")
+        if os.path.exists(manifest_src):
+            print(f"[ASSET] Packaging shader manifest: {manifest_src} ({os.path.getsize(manifest_src)} bytes)...")
+            z.write(manifest_src, "assets/galaxy_shader_manifest.bin", compress_type=zipfile.ZIP_DEFLATED)
+
         # Add native libraries and wrap.sh (store uncompressed with 0755 execute permissions)
         for root, _, files in os.walk(os.path.join(apk_dir, "lib")):
             for f in files:

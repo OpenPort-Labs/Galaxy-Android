@@ -7,7 +7,7 @@
 #include <unordered_set>
 #include <mutex>
 #include <functional>
-#include "gl_shadergen.h"
+#include "gx_shader_uid.h"
 #include "gx/vk/vk_types.h"
 
 namespace gpu {
@@ -101,10 +101,11 @@ public:
     // Invalidate inventory if version or checksum mismatches
     void invalidateIfStale(uint32_t currentBuildVersion);
 
-private:
+    // Add entry to inventory catalog
     void addEntry(const ShaderUid& uid, const PipelineKey& key, const std::string& source, bool isRuntime);
 
-    mutable std::recursive_mutex mMutex;
+private:
+    mutable std::mutex mMutex;
     std::string mCacheDir;
     std::string mInventoryFilePath;
     std::string mDataRoot;

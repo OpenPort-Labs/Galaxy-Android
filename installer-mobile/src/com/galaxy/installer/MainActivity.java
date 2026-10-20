@@ -12,7 +12,6 @@ import android.os.Looper;
 import android.provider.OpenableColumns;
 import android.provider.Settings;
 import android.text.method.ScrollingMovementMethod;
-import android.util.Log;
 import android.view.View;
 import android.widget.Button;
 import android.widget.CheckBox;
@@ -23,7 +22,6 @@ import android.widget.Toast;
 import java.io.File;
 
 public class MainActivity extends Activity {
-    private static final String TAG = "GalaxyInstaller";
     private static final int REQ_PICK_DISC = 1001;
     private static final int REQ_PICK_FOLDER = 1002;
 
@@ -57,7 +55,6 @@ public class MainActivity extends Activity {
         progressBar = findViewById(R.id.progressBar);
         txtProgressStatus = findViewById(R.id.txtProgressStatus);
         txtLogOutput = findViewById(R.id.txtLogOutput);
-
         txtLogOutput.setMovementMethod(new ScrollingMovementMethod());
 
         checkStoragePermissions();
@@ -97,105 +94,54 @@ public class MainActivity extends Activity {
     private void autoDetectSource() {
         appendLog("[Scan] Checking for GalaxyData folder and game dumps...");
 
-        // 1. Check if /sdcard/GalaxyData already exists
-        File galaxyDataDir = new File(Environment.getExternalStorageDirectory(), "GalaxyData");
-        if (galaxyDataDir.exists()) {
-            File fstCheck = new File(galaxyDataDir, "sys/fst.bin");
-            File filesCheck = new File(galaxyDataDir, "files");
-            if (fstCheck.exists() && filesCheck.exists()) {
-                appendLog("[Scan] Found ready game data in " + galaxyDataDir.getAbsolutePath() + "!");
-                mHandler.post(() -> {
-                    btnLaunchGame.setVisibility(View.VISIBLE);
-                    txtProgressStatus.setText("Cooked game data ready in GalaxyData!");
-                });
-            }
-            // Check for game dumps inside GalaxyData
-            File[] gFiles = galaxyDataDir.listFiles();
-            if (gFiles != null) {
-                for (File f : gFiles) {
-                    String name = f.getName().toLowerCase();
-                    if (name.endsWith(".rvz") || name.endsWith(".wbfs") || name.endsWith(".iso")) {
-                        selectSource(f.getAbsolutePath(), "Auto-detected disc in GalaxyData: " + f.getName());
-                        return;
-                    }
-                }
-            }
+        File galaxyData = new File(Environment.getExternalStorageDirectory(), "GalaxyData");
+        if (galaxyData.exists() && new File(galaxyData, "files").exists()) {
+            appendLog("[Found] Existing cooked GalaxyData folder found at: " + galaxyData.getAbsolutePath());
+            selectSource(galaxyData.getAbsolutePath(), "Ready: Cooked Game Data");
+            btnLaunchGame.setVisibility(View.VISIBLE);
+            return;
         }
 
-        // 2. Scan Downloads folder
-        File downloadDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
-        if (downloadDir != null && downloadDir.exists()) {
-            File[] files = downloadDir.listFiles();
-            if (files != null) {
-                // Priority 1: .rvz, .wbfs, or .iso files
-                for (File f : files) {
-                    String name = f.getName().toLowerCase();
-                    if (name.endsWith(".rvz") || name.endsWith(".wbfs") || name.endsWith(".iso")) {
-                        selectSource(f.getAbsolutePath(), "Auto-detected disc: " + f.getName());
-                        return;
-                    }
-                }
-                // Priority 2: .zip files
-                for (File f : files) {
-                    String name = f.getName().toLowerCase();
-                    if (name.contains("galaxy") && name.endsWith(".zip")) {
-                        selectSource(f.getAbsolutePath(), "Auto-detected archive: " + f.getName());
-                        return;
-                    }
-                }
-                // Priority 3: extracted directories
-                for (File f : files) {
-                    if (f.isDirectory()) {
-                        String name = f.getName().toLowerCase();
-                        if (name.equals("extracted") || name.equals("data") || name.contains("galaxy")) {
-                            File testFiles = new File(f, "files");
-                            File testData = new File(f, "DATA");
-                            if (testFiles.exists() || testData.exists()) {
-                                selectSource(f.getAbsolutePath(), "Auto-detected extracted folder: " + f.getName());
-                                return;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // Check fallback root paths
-        String[] fallbackCandidates = {
-            "/sdcard/GalaxyData/Super Mario Galaxy.rvz",
-            "/sdcard/GalaxyData/Super Mario Galaxy.wbfs",
-            "/sdcard/GalaxyData/Super Mario Galaxy.iso",
-            "/sdcard/Download/Super Mario Galaxy.rvz",
-            "/sdcard/Download/Super Mario Galaxy.wbfs",
-            "/sdcard/Download/Super Mario Galaxy.iso",
-            "/sdcard/Download/extracted",
-            "/sdcard/Download/DATA",
-            "/sdcard/GalaxyQuest/extracted",
-            "/sdcard/extracted"
+        File[] searchDirs = new File[] {
+            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+            Environment.getExternalStorageDirectory(),
+            new File(Environment.getExternalStorageDirectory(), "Wii"),
+            new File(Environment.getExternalStorageDirectory(), "Games")
         };
-        for (String c : fallbackCandidates) {
-            File f = new File(c);
-            if (f.exists()) {
-                selectSource(c, "Auto-detected: " + c);
-                return;
+
+        for (File dir : searchDirs) {
+            if (!dir.exists() || !dir.isDirectory()) continue;
+            File[] files = dir.listFiles();
+            if (files == null) continue;
+            for (File f : files) {
+                String name = f.getName().toLowerCase();
+                if (f.isFile() && (name.contains("galaxy") || name.contains("rmg") || name.contains("sb4")) &&
+                    (name.endsWith(".rvz") || name.endsWith(".wbfs") || name.endsWith(".iso") || name.endsWith(".wia") || name.endsWith(".ciso") || name.endsWith(".zip"))) {
+                    appendLog("[Found] Detected disc/archive: " + f.getAbsolutePath());
+                    selectSource(f.getAbsolutePath(), "Detected: " + f.getName());
+                    return;
+                }
             }
         }
 
-        appendLog("[Scan] No disc dump found automatically. Please select your file manually.");
+        appendLog("[Scan] No game dump automatically detected. Please use 'Select Disc' or 'Select Folder'.");
     }
 
     private void selectSource(String path, String label) {
         mSelectedSourcePath = path;
         txtSourcePath.setText(label);
-        appendLog("[Source] " + label + " (" + path + ")");
+        txtSourcePath.setSelected(true);
+        btnStartCooking.setEnabled(true);
     }
 
     private void openFilePicker() {
-        Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
-        intent.setType("*/*");
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("*/*");
+        String[] mimes = {"application/octet-stream", "application/zip", "application/x-iso9660-image"};
+        intent.putExtra(Intent.EXTRA_MIME_TYPES, mimes);
         try {
-            startActivityForResult(Intent.createChooser(intent, "Select Super Mario Galaxy (.wbfs / .iso / .zip)"), REQ_PICK_DISC);
+            startActivityForResult(intent, REQ_PICK_DISC);
         } catch (Exception e) {
             Toast.makeText(this, "Failed to open file picker: " + e.getMessage(), Toast.LENGTH_SHORT).show();
         }
@@ -232,7 +178,6 @@ public class MainActivity extends Activity {
             return uri.getPath();
         }
 
-        // Try to resolve standard storage tree/document path
         String path = uri.getPath();
         if (path != null && path.contains(":")) {
             String[] parts = path.split(":");
@@ -246,7 +191,6 @@ public class MainActivity extends Activity {
             }
         }
 
-        // Try getting display name and matching in Download folder
         try (Cursor cursor = getContentResolver().query(uri, null, null, null, null)) {
             if (cursor != null && cursor.moveToFirst()) {
                 int nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME);
@@ -277,10 +221,7 @@ public class MainActivity extends Activity {
         final String sourcePath = mSelectedSourcePath;
         File galaxyDataDir = new File(Environment.getExternalStorageDirectory(), "GalaxyData");
         if (!galaxyDataDir.exists()) {
-            boolean created = galaxyDataDir.mkdirs();
-            appendLog("[Directory] Created GalaxyData directory: " + galaxyDataDir.getAbsolutePath());
-        } else {
-            appendLog("[Directory] Using existing GalaxyData directory: " + galaxyDataDir.getAbsolutePath());
+            galaxyDataDir.mkdirs();
         }
         final String outputDir = galaxyDataDir.getAbsolutePath();
         final boolean withMovies = chkIncludeMovies.isChecked();
@@ -291,175 +232,21 @@ public class MainActivity extends Activity {
         appendLog("[Pipeline] Target: " + outputDir);
         appendLog("==============================================");
 
-        new Thread(() -> {
-            File tempExtractionDir = null;
-            try {
-                // Step 1: Ensure Python runtime and cooker scripts are unpacked
-                CookerEngine.prepareAssets(MainActivity.this, new CookerEngine.CookerCallback() {
-                    @Override public void onLog(String line) { appendLog(line); }
-                    @Override public void onProgress(int percent, String message) {}
-                    @Override public void onFinished(boolean success, String message) {}
-                });
-
-                String pythonHome = new File(getFilesDir(), "pythonhome").getAbsolutePath();
-                String scriptsDir = new File(getFilesDir(), "scripts").getAbsolutePath();
-
-                String cookInputPath = sourcePath;
-                File sourceFile = new File(sourcePath);
-
-                // Step 2: Handle Wii Disc Image (.rvz / .wbfs / .iso / .wia / .ciso) extraction
-                String lower = sourcePath.toLowerCase();
-                boolean isDisc = sourceFile.isFile() && (
-                    lower.endsWith(".rvz") || lower.endsWith(".wbfs") || lower.endsWith(".iso") ||
-                    lower.endsWith(".wia") || lower.endsWith(".ciso") || CookerEngine.isWiiDisc(sourcePath)
-                );
-
-                if (isDisc) {
-                    appendLog("[Stage 1/2] Native Wii Disc detected (" + sourceFile.getName() + ").");
-                    appendLog("[Stage 1/2] Decrypting and extracting game data on-device...");
-                    mHandler.post(() -> txtProgressStatus.setText("Extracting Wii disc image..."));
-
-                    tempExtractionDir = new File(getFilesDir(), "extracted_cache");
-                    File fstCheck = new File(tempExtractionDir, "sys/fst.bin");
-                    if (!fstCheck.exists()) {
-                        fstCheck = new File(tempExtractionDir, "DATA/sys/fst.bin");
-                    }
-                    boolean extractSuccess = true;
-                    if (fstCheck.exists() && fstCheck.length() > 0) {
-                        appendLog("[Stage 1/2] Valid disc cache found from previous extraction. Skipping re-extract.");
-                    } else {
-                        CookerEngine.deleteRecursive(tempExtractionDir);
-                        tempExtractionDir.mkdirs();
-
-                        extractSuccess = CookerEngine.extractWithNodtool(
-                            MainActivity.this,
-                            sourcePath,
-                            tempExtractionDir.getAbsolutePath(),
-                            withMovies,
-                            new CookerEngine.CookerCallback() {
-                                @Override public void onLog(String line) { appendLog(line); }
-                                @Override
-                                public void onProgress(int percent, String message) {
-                                    mHandler.post(() -> {
-                                        if (percent >= 0) {
-                                            progressBar.setIndeterminate(false);
-                                            progressBar.setProgress(percent);
-                                        }
-                                        if (message != null) {
-                                            txtProgressStatus.setText(message);
-                                        }
-                                    });
-                                }
-                                @Override public void onFinished(boolean success, String message) {}
-                            }
-                        );
-
-                        if (!extractSuccess && (lower.endsWith(".wbfs") || lower.endsWith(".iso"))) {
-                            appendLog("[Fallback] Retrying with secondary native C++ decryptor...");
-                            int extractRet = CookerEngine.extractDisc(
-                                sourcePath,
-                                tempExtractionDir.getAbsolutePath(),
-                                withMovies,
-                                new CookerEngine.CookerCallback() {
-                                    @Override public void onLog(String line) { appendLog(line); }
-                                    @Override
-                                    public void onProgress(int percent, String message) {
-                                        mHandler.post(() -> {
-                                            if (percent >= 0) {
-                                                progressBar.setIndeterminate(false);
-                                                progressBar.setProgress(percent);
-                                            }
-                                            if (message != null) {
-                                                txtProgressStatus.setText(message);
-                                            }
-                                        });
-                                    }
-                                    @Override public void onFinished(boolean success, String message) {}
-                                }
-                            );
-                            extractSuccess = (extractRet == 0);
-                        }
-                    }
-
-                    if (!extractSuccess) {
-                        throw new RuntimeException("Disc extraction failed.");
-                    }
-
-                    appendLog("[Stage 1/2] Disc extraction complete.");
-                    cookInputPath = tempExtractionDir.getAbsolutePath();
-                } else if (sourceFile.isFile() && sourcePath.toLowerCase().endsWith(".zip")) {
-                    appendLog("[Stage 1/2] ZIP Archive detected. Unpacking on-device...");
-                    mHandler.post(() -> txtProgressStatus.setText("Unpacking ZIP archive..."));
-
-                    tempExtractionDir = new File(getFilesDir(), "extracted_cache");
-                    CookerEngine.deleteRecursive(tempExtractionDir);
-                    tempExtractionDir.mkdirs();
-
-                    boolean unzipped = CookerEngine.extractZip(sourceFile, tempExtractionDir, new CookerEngine.CookerCallback() {
-                        @Override public void onLog(String line) { appendLog(line); }
-                        @Override public void onProgress(int percent, String message) {
-                            mHandler.post(() -> {
-                                if (message != null) txtProgressStatus.setText(message);
-                            });
-                        }
-                        @Override public void onFinished(boolean success, String message) {}
-                    });
-
-                    if (!unzipped) {
-                        throw new RuntimeException("Failed to unpack ZIP archive.");
-                    }
-                    cookInputPath = tempExtractionDir.getAbsolutePath();
-                }
-
-                // Step 3: Run the asset converter (cook.py)
-                appendLog("[Stage 2/2] Running asset cooker engine (textures, models, audio)...");
+        CookingTask.runAsync(this, mHandler, sourcePath, outputDir, withMovies, getFilesDir(), new CookingTask.Listener() {
+            @Override public void onLog(String line) { appendLog(line); }
+            @Override public void onProgress(int percent, String message) {
                 mHandler.post(() -> {
-                    progressBar.setIndeterminate(true);
-                    txtProgressStatus.setText("Cooking game assets...");
+                    if (percent >= 0) {
+                        progressBar.setIndeterminate(false);
+                        progressBar.setProgress(percent);
+                    }
+                    if (message != null) txtProgressStatus.setText(message);
                 });
-
-                File outFolder = new File(outputDir);
-                if (!outFolder.exists()) {
-                    outFolder.mkdirs();
-                }
-
-                int ret = CookerEngine.runCooker(
-                    pythonHome, scriptsDir, cookInputPath, outputDir, withMovies,
-                    new CookerEngine.CookerCallback() {
-                        @Override public void onLog(String line) { appendLog(line); }
-                        @Override
-                        public void onProgress(int percent, String message) {
-                            mHandler.post(() -> {
-                                if (percent >= 0) {
-                                    progressBar.setIndeterminate(false);
-                                    progressBar.setProgress(percent);
-                                }
-                                if (message != null) txtProgressStatus.setText(message);
-                            });
-                        }
-                        @Override public void onFinished(boolean success, String message) {
-                            mHandler.post(() -> onCookingCompleted(success, message));
-                        }
-                    }
-                );
-
-                if (ret != 0) {
-                    mHandler.post(() -> onCookingCompleted(false, "Cooker returned error code: " + ret));
-                } else {
-                    // Clean up temporary cache on success to free device storage
-                    if (tempExtractionDir != null && tempExtractionDir.exists()) {
-                        appendLog("[Clean] Freeing temporary cache storage...");
-                        CookerEngine.deleteRecursive(tempExtractionDir);
-                    }
-                    mHandler.post(() -> onCookingCompleted(true, "All game assets cooked successfully!"));
-                }
-
-            } catch (Exception e) {
-                Log.e(TAG, "Cooking failed with exception", e);
-                appendLog("[ERROR] " + e.getMessage());
-                mHandler.post(() -> onCookingCompleted(false, e.getMessage()));
             }
-        }).start();
+            @Override public void onFinished(boolean success, String message) {
+                mHandler.post(() -> onCookingCompleted(success, message));
+            }
+        });
     }
 
     private void onCookingCompleted(boolean success, String message) {

@@ -9,26 +9,11 @@
 
 #include "gpu.h"
 #include "gx_record.h"
-#include "gl_shadergen.h"
+#include "gx_shader_uid.h"
+#include "gx_camera.h"
+#include "gx_state_blocks.h"
 
 namespace gpu {
-
-#ifndef _CAMERA_INFO_DEFINED_
-#define _CAMERA_INFO_DEFINED_
-struct CameraInfo {
-    bool valid = false;
-    float view[12];
-    float pos[3];
-    float watch[3];
-    float up[3];
-    float watchUp[3];
-    float fovy;
-    uint32_t flags;
-    float aspect;
-    float player[3];
-    float playerUp[3];
-};
-#endif
 
 enum ItemType : u8 { IT_DRAW, IT_COPY, IT_MARKER };
 
@@ -37,8 +22,8 @@ struct Item {
     ItemType type;
     // Batch
     u32 uid;           // index into Prepared::uids
-    uint32_t program;  // resolved by the render thread (GL program or Vulkan pipeline)
-    uint32_t prim;     // GL_TRIANGLES, GL_LINES or GL_POINTS (or corresponding Vulkan primitive)
+    uint32_t program;  // resolved by the render thread (Vulkan pipeline index)
+    uint32_t prim;     // Vulkan primitive topology
     u8 useVr, hud, hudSafe;
     u8 player;         // between the player markers (SpaceWarp stencil tag)
     u32 flags;

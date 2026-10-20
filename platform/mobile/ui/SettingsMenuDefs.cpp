@@ -27,7 +27,6 @@ static const MenuRowDef kControlsRows[] = {
 
 static const MenuRowDef kGraphicsRows[] = {
     {ACT_SECTION_HEADER, ROW_SECTION, 36.0f, "GRAPHICS ENGINE", "Hardware renderer, resolution & frame pacing", 0, {}, 0.0f, 0.0f, 0.0f, nullptr},
-    {ACT_GRAPHICS_BACKEND, ROW_DROPDOWN, 50.0f, "Graphics Backend", "Select high-performance rendering pipeline", 2, {"Vulkan 1.0 (Recommended)", "OpenGL ES 3.2 (Fallback)"}, 0.0f, 0.0f, 0.0f, nullptr},
     {ACT_RENDER_SCALE, ROW_DROPDOWN, 50.0f, "Internal Resolution", "Geometric render buffer scaling", 4, {"480p Native (Fastest)", "720p HD (Balanced)", "1080p FHD (Sharp)", "1440p 2K (Ultra)"}, 0.0f, 0.0f, 0.0f, nullptr},
     {ACT_TARGET_FPS, ROW_SLIDER, 54.0f, "Target Framerate", "Engine frame limiter & target cap", 0, {}, 30.0f, 144.0f, 1.0f, "%.0f FPS"},
     {ACT_DISPLAY_REFRESH, ROW_DROPDOWN, 50.0f, "Display Refresh Rate", "Panel hardware sync frequency", 4, {"60 Hz", "90 Hz", "120 Hz", "144 Hz"}, 0.0f, 0.0f, 0.0f, nullptr},

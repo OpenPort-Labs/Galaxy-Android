@@ -15,8 +15,13 @@ set_target_properties(python310 PROPERTIES
 
 add_library(installer SHARED
     py_bridge.cpp
+    disc_bridge.cpp
+    bridge_common.cpp
     wii_extractor.cpp
+    wii_disc_reader.cpp
+    wii_partition.cpp
     aes.c
+    aes_modes.c
     yaz0.c
 )
 

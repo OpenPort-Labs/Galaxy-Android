@@ -3,7 +3,7 @@
 #include <string>
 #include <vector>
 #include <cstdint>
-#include "gl_shadergen.h"
+#include "gx_shader_uid.h"
 
 namespace gpu {
 

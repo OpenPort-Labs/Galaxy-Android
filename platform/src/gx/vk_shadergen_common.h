@@ -6,10 +6,11 @@
 #include <cstring>
 #include <string>
 
-#include "gl_shadergen.h"
+#include "gx_shader_uid.h"
 #include "gpu.h"
 #include "gx_record.h"
 #include "port/port.h"
+#include "gx_state_blocks.h"
 #include "vk_shadergen.h"
 
 namespace gpu {

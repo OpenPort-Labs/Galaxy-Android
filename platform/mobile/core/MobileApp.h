@@ -4,13 +4,11 @@
 #include <stdint.h>
 #include <string>
 
-#include "gx/gl_renderer.h"
 #include "gx/vk_renderer.h"
 #include "port/input.h"
 #include "../display/FramePacer.h"
 #include "../display/ViewportManager.h"
 #include "../input/GamepadInput.h"
-#include "../render/EglContext.h"
 
 namespace mobile_core {
 
@@ -38,13 +36,10 @@ private:
     void updateInputState();
 
     android_app* mAndroid = nullptr;
-    mobile_render::EglContext mEgl;
-    gpu::EfbTarget mEfbTarget{};
     gpu::VkTarget mVkTarget{};
 
     bool mWindowReady = false;
     bool mVkReady = false;
-    bool mTargetReady = false;
     bool mGameBooted = false;
     int mScreenWidth = 0;
     int mScreenHeight = 0;

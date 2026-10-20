@@ -27,7 +27,6 @@ enum MenuActionId {
     ACT_REPOSITION_STAR_STICK,
     ACT_RIGHT_STICK_MODE,
     // Graphics & Display Tab
-    ACT_GRAPHICS_BACKEND,
     ACT_RENDER_SCALE,
     ACT_TARGET_FPS,
     ACT_DISPLAY_REFRESH,

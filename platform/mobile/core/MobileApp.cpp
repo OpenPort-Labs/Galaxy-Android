@@ -18,7 +18,9 @@
 #include "port/port.h"
 
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, "GalaxyCore", __VA_ARGS__)
+#ifndef LOGW
 #define LOGW(...) __android_log_print(ANDROID_LOG_WARN, "GalaxyCore", __VA_ARGS__)
+#endif
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, "GalaxyCore", __VA_ARGS__)
 
 extern "C" void port_mem_set_reserved_window(uintptr_t base, size_t size);
@@ -37,25 +39,14 @@ MobileApp& MobileApp::get() {
 void MobileApp::handleAppCmd(int32_t cmd) {
     switch (cmd) {
     case APP_CMD_INIT_WINDOW: {
-        bool useVulkan = (mobile_ui::UIOverlay::get().settings().graphicsBackend == 1);
-        if (useVulkan) {
-            LOGI("Selected Vulkan 1.0 backend, initializing VkRenderer...");
-            if (!mobile_render::VulkanLifecycle::bringUp(mAndroid->window, mScreenWidth, mScreenHeight, mVkTarget, mVpMgr)) {
-                LOGE("Vulkan initialization failed; falling back to OpenGL ES 3.2");
-                mVkReady = false;
-                mEgl.init();
-                mEgl.createSurface(mAndroid->window, mScreenWidth, mScreenHeight);
-                gpu::renderer().init();
-                mobile_ui::UIOverlay::get().setActiveBackend(0);
-            } else {
-                mVkReady = true;
-            }
-        } else {
-            mEgl.init();
-            mEgl.createSurface(mAndroid->window, mScreenWidth, mScreenHeight);
-            gpu::renderer().init();
-            mobile_ui::UIOverlay::get().setActiveBackend(0);
+        LOGI("Initializing Vulkan 1.0 native renderer...");
+        if (!mobile_render::VulkanLifecycle::bringUp(mAndroid->window, mScreenWidth, mScreenHeight, mVkTarget, mVpMgr)) {
+            LOGE("FATAL: Vulkan initialization failed. Device lacks required Vulkan support.");
+            mVkReady = false;
+            mWindowReady = false;
+            break;
         }
+        mVkReady = true;
         mobile_system::SystemManager::enforceOrientation(mAndroid, mobile_ui::UIOverlay::get().settings().screenOrientationChoice);
         int initialFps = mobile_ui::UIOverlay::get().settings().targetFps;
         if (mobile_ui::UIOverlay::get().settings().batterySaver) initialFps = 30;
@@ -70,8 +61,6 @@ void MobileApp::handleAppCmd(int32_t cmd) {
             if (mVkTarget.framebuffer) gpu::VkRenderer::get().destroyTarget(mVkTarget);
             gpu::VkRenderer::get().shutdown();
             mVkReady = false;
-        } else {
-            mEgl.destroySurface();
         }
         mWindowReady = false;
         break;
@@ -83,9 +72,6 @@ void MobileApp::handleAppCmd(int32_t cmd) {
             mScreenWidth = ANativeWindow_getWidth(mAndroid->window);
             mScreenHeight = ANativeWindow_getHeight(mAndroid->window);
             mVpMgr.update(mScreenWidth, mScreenHeight, mobile_ui::UIOverlay::get().settings().fullscreen);
-        } else if (mEgl.hasSurface()) {
-            mEgl.destroySurface();
-            mEgl.createSurface(mAndroid->window, mScreenWidth, mScreenHeight);
         }
         break;
     case APP_CMD_RESUME:
@@ -111,8 +97,6 @@ void MobileApp::handleAppCmd(int32_t cmd) {
             if (mVkTarget.framebuffer) gpu::VkRenderer::get().destroyTarget(mVkTarget);
             gpu::VkRenderer::get().shutdown();
             mVkReady = false;
-        } else {
-            mEgl.destroySurface();
         }
         mWindowReady = false;
         break;
@@ -271,7 +255,7 @@ void MobileApp::run(android_app* app, uintptr_t windowBase, size_t windowSize) {
 
         if (mVkReady && gpu::VkRenderer::get().hasFailed()) {
             if (!mobile_render::VulkanLifecycle::handleDeviceLoss(
-                    mAndroid->window, mScreenWidth, mScreenHeight, mVkTarget, mVpMgr, mEgl, mVkReady)) {
+                    mAndroid->window, mScreenWidth, mScreenHeight, mVkTarget, mVpMgr, mVkReady)) {
                 continue;
             }
         }
@@ -280,15 +264,10 @@ void MobileApp::run(android_app* app, uintptr_t windowBase, size_t windowSize) {
             mobile_render::ScenePresenter::presentVulkan(
                 gpu::VkRenderer::get(), mVkTarget, mScreenWidth, mScreenHeight,
                 mGameBooted, mVpMgr, mFramePacer, mAndroid);
-        } else {
-            mobile_render::ScenePresenter::presentGles(
-                gpu::renderer(), mEfbTarget, mTargetReady, mScreenWidth, mScreenHeight,
-                mGameBooted, mVpMgr, mFramePacer, mEgl, mAndroid);
         }
     }
 
     LOGI("GalaxyMobile exiting cleanly");
-    mEgl.destroySurface();
     _exit(0);
 }
 

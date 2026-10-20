@@ -38,7 +38,7 @@ bool UIOverlay::init() {
     port_set_infinite_health(mSettings.modInfiniteHealth ? 1 : 0);
     port_set_infinite_lives(mSettings.modInfiniteLives ? 1 : 0);
     port_set_infinite_starbits(mSettings.modInfiniteStarBits ? 1 : 0);
-    return mGles.init();
+    return true;
 }
 
 void UIOverlay::setSavePath(const std::string& path) {
@@ -164,15 +164,6 @@ void UIOverlay::generateVertices(int screenW, int screenH, std::vector<UIVertex>
     mRenderer.generateVertices(screenW, screenH, mSettings, mLayout, mTouch,
                                mPerf, mMenu, mSave, mActiveBackend,
                                mToastMessage, mToastTimer, outVerts);
-}
-
-void UIOverlay::render(int screenW, int screenH) {
-    if (!init()) return;
-    std::vector<UIVertex> verts;
-    generateVertices(screenW, screenH, verts);
-    if (!verts.empty()) {
-        mGles.render(screenW, screenH, verts);
-    }
 }
 
 }  // namespace mobile_ui

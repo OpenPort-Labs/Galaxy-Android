@@ -44,7 +44,7 @@ set(DECOMP_INCLUDES
   ${DECOMP}/libs/RVLFaceLib/include
 )
 
-option(TARGET_MOBILE "Build flat-screen Android mobile target without OpenXR" OFF)
+option(TARGET_MOBILE "Build flat-screen Android mobile target without OpenXR" ON)
 
 set(PORT_DEFS TARGET_PC=1 NDEBUG=1 VERSION=0)
 if(TARGET_MOBILE)
@@ -119,15 +119,9 @@ target_compile_options(decomp PRIVATE ${PORT_COMMON_FLAGS} $<$<COMPILE_LANGUAGE:
 # ---------------------------------------------------------------------------
 file(GLOB_RECURSE PLATFORM_SRCS CONFIGURE_DEPENDS
   ${CMAKE_SOURCE_DIR}/platform/src/*.c
-  ${CMAKE_SOURCE_DIR}/platform/src/*.cpp)
-
-if(TARGET_MOBILE)
-  list(FILTER PLATFORM_SRCS EXCLUDE REGEX "/xr/(xr_app|vr_game|vr_settings|vr_setup|xr_sim|ui_canvas)\\.cpp$")
-  file(GLOB_RECURSE MOBILE_SRCS CONFIGURE_DEPENDS
-    ${CMAKE_SOURCE_DIR}/platform/mobile/*.cpp
-    ${CMAKE_SOURCE_DIR}/platform/mobile/*.c)
-  list(APPEND PLATFORM_SRCS ${MOBILE_SRCS})
-endif()
+  ${CMAKE_SOURCE_DIR}/platform/src/*.cpp
+  ${CMAKE_SOURCE_DIR}/platform/mobile/*.c
+  ${CMAKE_SOURCE_DIR}/platform/mobile/*.cpp)
 
 add_library(game SHARED $<TARGET_OBJECTS:decomp> ${PLATFORM_SRCS})
 target_include_directories(game PRIVATE ${DECOMP_INCLUDES} ${CMAKE_SOURCE_DIR}/platform ${CMAKE_SOURCE_DIR}/platform/src)
@@ -156,31 +150,20 @@ if(ANDROID)
   endif()
   set(GLUE_DIR ${ANDROID_NDK}/sources/android/native_app_glue)
 
-  if(TARGET_MOBILE)
-    set(SHADERC_STATIC "${ANDROID_NDK}/sources/third_party/shaderc/libs/c++_static/${ANDROID_ABI}/libshaderc.a")
-    if(NOT EXISTS "${SHADERC_STATIC}")
-      find_program(NDK_BUILD_CMD NAMES ndk-build ndk-build.cmd PATHS "${ANDROID_NDK}" NO_DEFAULT_PATH)
-      if(NDK_BUILD_CMD)
-        message(STATUS "libshaderc.a not found in NDK; auto-building via ndk-build...")
-        execute_process(
-          COMMAND "${NDK_BUILD_CMD}" -C "${ANDROID_NDK}/sources/third_party/shaderc"
-                  NDK_PROJECT_PATH=. APP_BUILD_SCRIPT=Android.mk APP_ABI=${ANDROID_ABI} APP_STL=c++_static APP_PLATFORM=android-30 libshaderc_combined
-          RESULT_VARIABLE NDK_BUILD_RES
-        )
-      endif()
+  set(SHADERC_STATIC "${ANDROID_NDK}/sources/third_party/shaderc/libs/c++_static/${ANDROID_ABI}/libshaderc.a")
+  if(NOT EXISTS "${SHADERC_STATIC}")
+    find_program(NDK_BUILD_CMD NAMES ndk-build ndk-build.cmd PATHS "${ANDROID_NDK}" NO_DEFAULT_PATH)
+    if(NDK_BUILD_CMD)
+      message(STATUS "libshaderc.a not found in NDK; auto-building via ndk-build...")
+      execute_process(
+        COMMAND "${NDK_BUILD_CMD}" -C "${ANDROID_NDK}/sources/third_party/shaderc"
+                NDK_PROJECT_PATH=. APP_BUILD_SCRIPT=Android.mk APP_ABI=${ANDROID_ABI} APP_STL=c++_static APP_PLATFORM=android-30 libshaderc_combined
+        RESULT_VARIABLE NDK_BUILD_RES
+      )
     endif()
-    target_include_directories(game PRIVATE ${GLUE_DIR} ${ANDROID_NDK}/sources/third_party/shaderc/include)
-    target_link_libraries(game PRIVATE EGL GLESv3 aaudio vulkan "${SHADERC_STATIC}")
-  else()
-    # The Khronos OpenXR loader (tools/fetch_openxr.sh puts it there).
-    set(OPENXR_DIR ${CMAKE_SOURCE_DIR}/third_party/openxr/prefab/modules)
-
-    add_library(openxr_loader SHARED IMPORTED)
-    set_target_properties(openxr_loader PROPERTIES IMPORTED_LOCATION ${OPENXR_DIR}/openxr_loader/libs/android.arm64-v8a/libopenxr_loader.so)
-
-    target_include_directories(game PRIVATE ${OPENXR_DIR}/headers/include ${GLUE_DIR})
-    target_link_libraries(game PRIVATE openxr_loader EGL GLESv3 aaudio)
   endif()
+  target_include_directories(game PRIVATE ${GLUE_DIR} ${ANDROID_NDK}/sources/third_party/shaderc/include)
+  target_link_libraries(game PRIVATE aaudio vulkan "${SHADERC_STATIC}")
 
   # Launcher: reserves the 32-bit game window and loads libgame.so into it.
   add_library(main SHARED platform/android/launcher.c ${GLUE_DIR}/android_native_app_glue.c)
@@ -206,8 +189,13 @@ if(ANDROID)
     )
     add_library(installer SHARED
         installer-mobile/jni/py_bridge.cpp
+        installer-mobile/jni/disc_bridge.cpp
+        installer-mobile/jni/bridge_common.cpp
         installer-mobile/jni/wii_extractor.cpp
+        installer-mobile/jni/wii_disc_reader.cpp
+        installer-mobile/jni/wii_partition.cpp
         installer-mobile/jni/aes.c
+        installer-mobile/jni/aes_modes.c
         installer-mobile/jni/yaz0.c
     )
     target_include_directories(installer PRIVATE
@@ -220,7 +208,7 @@ if(ANDROID)
     )
   endif()
 
-  add_executable(vk_inventory_test tests/test_vk_inventory.cpp)
+  add_executable(vk_inventory_test tests/test_vk_inventory.cpp platform/src/gx/gx_shader_uid.cpp platform/src/gx/vk_shader_manifest.cpp platform/src/gx/vk_shader_catalog.cpp)
   target_include_directories(vk_inventory_test PRIVATE platform platform/src platform/include decomp/include)
   target_link_libraries(vk_inventory_test PRIVATE log)
 endif()

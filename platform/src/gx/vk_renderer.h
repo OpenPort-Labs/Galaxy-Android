@@ -1,6 +1,6 @@
 #pragma once
 
-#include "gl_renderer.h"
+#include "gx_camera.h"
 #include "gpu.h"
 #include "gx/vk/vk_types.h"
 #include "gx_builder.h"

@@ -37,6 +37,12 @@ void queueVkTextureDelete(uint64_t image, uint64_t memory, uint64_t view) {
     sVkPendingDeletes.push_back(d);
 }
 
+TexImage::~TexImage() {
+    if (vkGeneration == vkDeviceGeneration()) {
+        queueVkTextureDelete(vkImage, vkMemory, vkView);
+    }
+}
+
 void VkRenderer::flushDeferredDeletes() {
     if (mDevice == VK_NULL_HANDLE) return;
     std::vector<VkPendingDelete> list;

@@ -212,82 +212,10 @@ bool TouchInputHandler::handleTouch(const AInputEvent* event, PortPadState& pad,
             mTouches[slot].startX = mTouches[slot].lastX = px;
             mTouches[slot].startY = mTouches[slot].lastY = py;
             mTouches[slot].startTime = currentTimeMs();
-            mTouches[slot].role = TouchRole::NONE;
-
-            int bestBtnIdx = -1;
-            if (settings.showControls) {
-                struct BtnCandidate { TouchRole role; float distSq; float maxDistSq; };
-                BtnCandidate cands[5] = {
-                    {TouchRole::BTN_A, (px - aX)*(px - aX) + (py - aY)*(py - aY), (aR * 1.15f) * (aR * 1.15f)},
-                    {TouchRole::BTN_B, (px - bX)*(px - bX) + (py - bY)*(py - bY), (bR * 1.15f) * (bR * 1.15f)},
-                    {TouchRole::BTN_Z, (px - zX)*(px - zX) + (py - zY)*(py - zY), (zR * 1.15f) * (zR * 1.15f)},
-                    {TouchRole::BTN_SPIN, (px - spinX)*(px - spinX) + (py - spinY)*(py - spinY), (spinR * 1.15f) * (spinR * 1.15f)},
-                    {TouchRole::BTN_PLUS, (px - plusX)*(px - plusX) + (py - plusY)*(py - plusY), (plusR * 1.25f) * (plusR * 1.25f)},
-                };
-                float bestNormDist = 1.0f;
-                for (int b = 0; b < 5; b++) {
-                    float normDist = cands[b].distSq / cands[b].maxDistSq;
-                    if (normDist <= 1.0f && normDist < bestNormDist) {
-                        bestNormDist = normDist;
-                        bestBtnIdx = b;
-                    }
-                }
-            }
-
-            StarStickLayout starL = layoutMgr.calculateStarStickLayout(screenW, screenH, settings);
-            float d2Star = (px - starL.cx)*(px - starL.cx) + (py - starL.cy)*(py - starL.cy);
-            bool starEligible = (settings.starStick && mStarStickPointerId < 0 && d2Star <= (starL.r * 1.45f)*(starL.r * 1.45f));
-
-            bool dpadEligible = false;
-            if (settings.showControls && settings.showDpad) {
-                float d2Dpad = (px - dpadX)*(px - dpadX) + (py - dpadY)*(py - dpadY);
-                dpadEligible = (d2Dpad <= (dpadTotalR * 1.35f)*(dpadTotalR * 1.35f));
-            }
-
-            bool stickEligible = false;
-            if (settings.showControls && mStickPointerId < 0 && !starEligible && !dpadEligible && bestBtnIdx < 0) {
-                if (settings.dynamicStick) {
-                    stickEligible = (px <= w * 0.40f && py >= h * 0.45f);
-                } else {
-                    float d2 = (px - defaultStickX)*(px - defaultStickX) + (py - defaultStickY)*(py - defaultStickY);
-                    stickEligible = (d2 <= (stickBaseR * 2.2f)*(stickBaseR * 2.2f));
-                }
-            }
-
-            bool cameraSwipeEligible = (settings.touchCamera && !starEligible && bestBtnIdx < 0 && px >= w * 0.40f);
-
-            if (bestBtnIdx >= 0) {
-                TouchRole btnRoles[5] = {TouchRole::BTN_A, TouchRole::BTN_B, TouchRole::BTN_Z, TouchRole::BTN_SPIN, TouchRole::BTN_PLUS};
-                mTouches[slot].role = btnRoles[bestBtnIdx];
-            } else if (starEligible) {
-                mTouches[slot].role = TouchRole::STAR_STICK;
-                mStarStickPointerId = pid;
-                mStarStickBaseX = starL.cx;
-                mStarStickBaseY = starL.cy;
-                mStarStickKnobX = px;
-                mStarStickKnobY = py;
-            } else if (dpadEligible) {
-                mTouches[slot].role = TouchRole::DPAD;
-            } else if (stickEligible) {
-                mTouches[slot].role = TouchRole::STICK;
-                mStickPointerId = pid;
-                mStickBaseX = settings.dynamicStick ? px : defaultStickX;
-                mStickBaseY = settings.dynamicStick ? py : defaultStickY;
-                mStickKnobX = px;
-                mStickKnobY = py;
-            } else if (cameraSwipeEligible) {
-                mTouches[slot].role = TouchRole::CAMERA_SWIPE;
-            } else {
-                mTouches[slot].role = TouchRole::STAR_POINTER;
-            }
-
-            if (mTouches[slot].role == TouchRole::STAR_POINTER && vpW > 0 && vpH > 0) {
-                if (!settings.relativePointer) {
-                    mPointerX = std::max(-1.0f, std::min(1.0f, ((px - vpX) / (float)vpW) * 2.0f - 1.0f));
-                    mPointerY = std::max(-1.0f, std::min(1.0f, ((py - vpY) / (float)vpH) * 2.0f - 1.0f));
-                }
-                mPointerActiveFrames = 120;
-            }
+            assignTouchRoleOnDown(slot, pid, px, py, w, h, settings, layoutMgr, bl,
+                                  plusX, plusY, plusR, dpadX, dpadY, dpadTotalR,
+                                  defaultStickX, defaultStickY, stickBaseR,
+                                  vpX, vpY, vpW, vpH);
         }
     }
 

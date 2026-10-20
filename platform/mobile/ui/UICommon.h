@@ -4,7 +4,7 @@
 
 namespace mobile_ui {
 
-// In-shader vertex for 2D batching (used by both GLES 3.2 and Vulkan 1.0)
+// In-shader vertex for 2D batching (Vulkan)
 struct UIVertex {
     float x, y;
     float u, v;

@@ -86,6 +86,13 @@ private:
                              float dpadY, float dpadTotalR, int vpX, int vpY, int vpW, int vpH,
                              uint32_t& touchButtons);
 
+    void assignTouchRoleOnDown(int slot, int32_t pid, float px, float py, float w, float h,
+                               const Settings& settings, const LayoutManager& layout,
+                               const ButtonLayout& bl, float plusX, float plusY, float plusR,
+                               float dpadX, float dpadY, float dpadTotalR,
+                               float defaultStickX, float defaultStickY, float stickBaseR,
+                               int vpX, int vpY, int vpW, int vpH);
+
     int mTapPendingFrames = 0, mTapDelayFrames = 0;
     int mTouchPointerId = -1;
     int64_t mTouchStartTime = 0;

@@ -9,7 +9,8 @@
 #include <cstdlib>
 #include <cstring>
 
-#include "gl_shadergen.h"
+#include "vk_shadergen.h"
+#include "gx_shader_uid.h"
 #include "gx_record.h"
 
 static uint32_t parseHex(const char* s) {

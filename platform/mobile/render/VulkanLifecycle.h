@@ -3,7 +3,6 @@
 #include <android/native_window.h>
 #include "gx/vk_renderer.h"
 #include "../display/ViewportManager.h"
-#include "EglContext.h"
 
 namespace mobile_render {
 
@@ -13,10 +12,10 @@ public:
     static bool bringUp(ANativeWindow* window, int& screenW, int& screenH,
                         gpu::VkTarget& target, mobile_display::ViewportManager& vpMgr);
 
-    // Handles device loss: attempts to recreate Vulkan device before falling back to GLES 3.2
+    // Handles device loss: attempts to recreate Vulkan device safely
     static bool handleDeviceLoss(ANativeWindow* window, int& screenW, int& screenH,
                                 gpu::VkTarget& target, mobile_display::ViewportManager& vpMgr,
-                                EglContext& egl, bool& vkReady);
+                                bool& vkReady);
 
     // Prepares on-disk caches (SPIR-V shader binary and Vulkan pipeline cache)
     static void initCaches(const std::string& internalPath);

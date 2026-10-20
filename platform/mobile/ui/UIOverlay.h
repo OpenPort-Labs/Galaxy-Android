@@ -8,7 +8,6 @@
 #include "SaveManager.h"
 #include "SettingsMenuHandler.h"
 #include "OverlayRenderer.h"
-#include "GlesOverlayPipeline.h"
 #include "FontAtlas.h"
 
 #include <string>
@@ -44,7 +43,6 @@ public:
         FontAtlas::getAtlas(width, height, coverage);
     }
 
-    void render(int screenW, int screenH);
 
     void reportFramePresented() { mPerf.reportFramePresented(); }
     void reportGpuRenderTime(int64_t dur) { mPerf.reportGpuRenderTime(dur); }
@@ -96,7 +94,6 @@ private:
     SaveManager mSave;
     SettingsMenuHandler mMenu;
     OverlayRenderer mRenderer;
-    GlesOverlayPipeline mGles;
 
     int mActiveBackend = 1;
     bool mPlusEdition = true;

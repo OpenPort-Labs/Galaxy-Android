@@ -14,7 +14,7 @@ void SettingsMenuHandler::drawDrawerChrome(
     vb.drawText("v0.0.4-gamma TESTER BUILD • PLUS", drawerX + padX + 36.0f * uiScale, 38.0f * uiScale, 0.22f * uiScale, rgba(0.55f, 0.60f, 0.68f, 0.85f), 0);
 
     // Active Backend tag pill (minimalist outline)
-    const char* backendTag = (activeBackend == 1) ? "VULKAN 1.0" : "GLES 3.2";
+    const char* backendTag = "VULKAN 1.1";
     float tagW = 66.0f * uiScale;
     float tagX = drawerX + drawerW - 56.0f * uiScale - tagW;
     vb.drawRoundRect(tagX, 18.0f * uiScale, tagX + tagW, 36.0f * uiScale, 8.0f * uiScale, rgba(0.12f, 0.14f, 0.17f, 0.90f));

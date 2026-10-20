@@ -7,6 +7,11 @@
 
 namespace gpu {
 
+// The on-disk UID width must track ShaderUid exactly: a mismatch silently
+// rewrites pipeline identity, which is what schema 2 did.
+static_assert(sizeof(ShaderUid) == kManifestUidWords * sizeof(uint32_t),
+              "kManifestUidWords must match sizeof(ShaderUid)");
+
 uint32_t fnv1a32(const void* data, size_t size, uint32_t seed) {
     const uint8_t* p = (const uint8_t*)data;
     uint32_t h = seed;

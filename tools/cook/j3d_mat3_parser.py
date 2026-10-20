@@ -1,6 +1,11 @@
 import struct
 import os
 
+try:
+    from manifest_schema import UID_WORDS as SHADER_UID_WORDS
+except ImportError:  # imported as tools.cook.j3d_mat3_parser
+    from tools.cook.manifest_schema import UID_WORDS as SHADER_UID_WORDS
+
 # Canonical Enums matching platform/src/gx/vk/vk_types.h
 CANONICAL_DEPTH_NEVER = 0
 CANONICAL_DEPTH_LESS = 1
@@ -201,8 +206,8 @@ def parse_j3d_mat3(b: bytes, model_name: str, archive_name: str = ""):
                     comp1 = b[ac_o + 3] & 7
                     alpha_func = comp0 | (comp1 << 3) | (op << 6)
 
-                # 6. Build authentic 90-word ShaderUid matching native C++ engine
-                uid_words = [0] * 90
+                # 6. Build authentic full-width ShaderUid matching the native C++ engine
+                uid_words = [0] * SHADER_UID_WORDS
                 vtx_flags = 0x4047  # Pos | PosMtx | Nrm | Tex0 | TexMtx
                 uid_words[0] = vtx_flags
                 uid_words[1] = num_texgens

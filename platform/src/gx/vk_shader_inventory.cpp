@@ -253,6 +253,11 @@ bool ShaderInventory::verifyStartupReadiness() const {
     return readyCount > 0;
 }
 
+bool ShaderInventory::hasUid(const ShaderUid& uid) const {
+    std::lock_guard<std::mutex> lock(mMutex);
+    return mUidIndex.find(uid) != mUidIndex.end();
+}
+
 ShaderInventoryStats ShaderInventory::stats() const {
     std::lock_guard<std::mutex> lock(mMutex);
     ShaderInventoryStats s = mStats;

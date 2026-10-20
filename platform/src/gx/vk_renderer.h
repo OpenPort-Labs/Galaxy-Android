@@ -2,6 +2,7 @@
 
 #include "gx_camera.h"
 #include "gpu.h"
+#include "gx/vk/vk_hot_path.h"
 #include "gx/vk/vk_types.h"
 #include "gx_builder.h"
 #include "gx_record.h"
@@ -31,6 +32,15 @@ enum class PrewarmResult {
     PlaceholderReturned,  // Placeholder returned (never counted as success)
     CreationFailed,       // vkCreateGraphicsPipelines failed
     UnsupportedState      // Unsupported state or incompatible render pass
+};
+
+// Per-draw texture resolution counters reported by the draw diagnostic log.
+struct DrawTexStats {
+  uint32_t realTex = 0;
+  uint32_t dummyTex = 0;
+  uint32_t copyHits = 0;
+  uint32_t copyFallbacks = 0;
+  uint32_t copyMisses = 0;
 };
 
 class VkRenderer {
@@ -114,6 +124,8 @@ public:
   VkDescriptorSet
   getSamplerDescriptorSet(const std::array<VkImageView, 8> &views,
                           const std::array<VkSampler, 8> &samplers);
+  VkDescriptorSet resolveDrawTextureSet(const Frame &f, const Item &it,
+                                        DrawTexStats &stats);
 
   VkShaderModule createShaderModule(const uint32_t *code, size_t sizeBytes);
   VkCopyTex &getCopyTex(uint64_t key, int w, int h);
@@ -223,11 +235,19 @@ public:
 
   // Caches
   std::unordered_map<PipelineKey, VkPipeline, PipelineKeyHash> mPipelines;
-  PipelineKey mLastPipelineKey{};
-  VkPipeline mLastPipeline = VK_NULL_HANDLE;
+  PipelineMru mPipelineMru;
+  uint64_t mPipelineMruHits = 0;
+  uint64_t mPipelineMruMisses = 0;
+  // Pipeline keys created at runtime (not prewarmed) and how many of those
+  // already had their ShaderUid in the inventory catalogue.
+  uint64_t mRuntimePipelineCreates = 0;
+  uint64_t mRuntimeCreatesKnownUid = 0;
   std::unordered_map<uint64_t, VkSampler> mSamplers;
   std::unordered_map<SamplerDescKey, SamplerSetEntry, SamplerDescKeyHash>
       mSamplerDescSets;
+  // Bumped whenever cached sampler descriptor sets are freed, so a cached
+  // set handle from an earlier draw can never be bound again by accident.
+  uint64_t mSamplerDescEpoch = 0;
   std::unordered_map<uint64_t, VkCopyTex> mCopies;
 
   VkTexture mDummyTexture;

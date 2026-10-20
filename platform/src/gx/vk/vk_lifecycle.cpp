@@ -174,7 +174,7 @@ void VkRenderer::shutdown() {
             if (pair.second) vkDestroyPipeline(mDevice, pair.second, nullptr);
         }
         mPipelines.clear();
-        mLastPipeline = VK_NULL_HANDLE;
+        mPipelineMru.reset();
 
         mSamplerDescSets.clear();
 
@@ -277,6 +277,10 @@ void VkRenderer::shutdown() {
     mInitialized = false;
     mFrameNumber = 0;
     mFrameIndex = 0;
+    mPipelineMruHits = 0;
+    mPipelineMruMisses = 0;
+    mRuntimePipelineCreates = 0;
+    mRuntimeCreatesKnownUid = 0;
     mCurrentFrame.reset();
     mPrepared.reset();
     LOGI("Vulkan 1.0 renderer shut down cleanly.");

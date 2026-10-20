@@ -65,6 +65,9 @@ void VkRenderer::uploadTextures(VkCommandBuffer cmd, const std::vector<std::shar
 
         if (img->vkView != 0 || img->vkImage != 0 || img->vkMemory != 0) {
             if (sameDevice) {
+                // Descriptor sets still cached for this view would dangle once
+                // the view is destroyed, so drop them first.
+                if (img->vkView) invalidateSamplerDescSetsForView((VkImageView)img->vkView);
                 if (img->vkView) vkDestroyImageView(mDevice, (VkImageView)img->vkView, nullptr);
                 if (img->vkImage) vkDestroyImage(mDevice, (VkImage)img->vkImage, nullptr);
                 if (img->vkMemory) vkFreeMemory(mDevice, (VkDeviceMemory)img->vkMemory, nullptr);

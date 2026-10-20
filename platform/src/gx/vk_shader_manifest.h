@@ -9,10 +9,13 @@
 namespace gpu {
 
 constexpr uint32_t kInventoryMagic = 0x55535450;      // "PTSU"
-constexpr uint32_t kInventoryVersion = 2;
-constexpr uint32_t kBuildVersion = 20261019;
+// Schema 3 widened the serialized ShaderUid from 90 to all 100 words so the
+// record carries the complete pipeline identity (hud, efbHasAlpha, zTex,
+// cutaway, screenTexGens, indCmd, iref, indScale).
+constexpr uint32_t kInventoryVersion = 3;
+constexpr uint32_t kBuildVersion = 20261020;
 constexpr uint32_t kShaderGenVersion = 1;
-constexpr size_t kManifestUidWords = 90;
+constexpr size_t kManifestUidWords = 100;
 
 uint32_t fnv1a32(const void* data, size_t size, uint32_t seed = 2166136261u);
 

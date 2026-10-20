@@ -32,13 +32,17 @@ PipelineKey pipelineKeyFor(const Item& it, const ShaderUid& uid) {
 
 VkPipeline VkRenderer::getPipeline(const Item& it, const ShaderUid& uid) {
     const PipelineKey key = pipelineKeyFor(it, uid);
-    if (mLastPipeline != VK_NULL_HANDLE && key == mLastPipelineKey) {
-        return mLastPipeline;
+    if (VkPipeline cached = mPipelineMru.lookup(key)) {
+        mPipelineMruHits++;
+        return cached;
     }
+    mPipelineMruMisses++;
+    // Catalogue probe before the miss is recorded, so it answers "was this UID
+    // known before this draw?" rather than trivially true.
+    const bool uidAlreadyCatalogued = ShaderInventory::get().hasUid(uid);
     auto pit = mPipelines.find(key);
-    if (pit != mPipelines.end()) {
-        mLastPipelineKey = key;
-        mLastPipeline = pit->second;
+    if (pit != mPipelines.end() && pit->second != VK_NULL_HANDLE) {
+        mPipelineMru.store(key, pit->second);
         return pit->second;
     }
 
@@ -53,7 +57,18 @@ VkPipeline VkRenderer::getPipeline(const Item& it, const ShaderUid& uid) {
     }
 
     ShaderInventory::get().recordRuntimePipelineKeyMiss(uid, key, "runtime_key_miss");
-    return createPipeline(key, vsSpirv, fsSpirv);
+    VkPipeline created = createPipeline(key, vsSpirv, fsSpirv);
+    if (created != VK_NULL_HANDLE) {
+        mPipelineMru.store(key, created);
+        mRuntimePipelineCreates++;
+        if (uidAlreadyCatalogued) mRuntimeCreatesKnownUid++;
+        if (mRuntimePipelineCreates <= 32) {
+            LOGI("VkRuntimeKey: uid=%016llx flags=%08x hud=%u efbAlpha=%u fog=%u ztex=%u catalogued=%d",
+                 (unsigned long long)ShaderUidHash()(uid), key.flags, uid.hud, uid.efbHasAlpha,
+                 uid.fogSel, uid.zTex, uidAlreadyCatalogued ? 1 : 0);
+        }
+    }
+    return created;
 }
 
 PrewarmResult VkRenderer::prewarmExactPipeline(const PipelineKey& key, const ShaderUid& uid) {

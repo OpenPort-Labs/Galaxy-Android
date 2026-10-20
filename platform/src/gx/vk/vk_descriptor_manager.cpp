@@ -114,6 +114,9 @@ VkDescriptorSet VkRenderer::getSamplerDescriptorSet(const std::array<VkImageView
         waitInFlightSubmissions("samplerPoolReset");
         vkResetDescriptorPool(mDevice, mDescriptorPool, 0);
         mSamplerDescSets.clear();
+        // Every set handed out before the reset is now invalid, including the
+        // one the draw loop still caches as its last bound set.
+        mSamplerDescEpoch++;
         if (vkAllocateDescriptorSets(mDevice, &ai, &set) != VK_SUCCESS) {
             LOGE("getSamplerDescriptorSet: allocation failed even after pool reset");
             return VK_NULL_HANDLE;

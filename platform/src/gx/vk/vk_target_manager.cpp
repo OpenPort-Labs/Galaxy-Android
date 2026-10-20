@@ -186,6 +186,7 @@ void VkRenderer::destroyTarget(VkTarget& target) {
 
 void VkRenderer::invalidateSamplerDescSetsForView(VkImageView view) {
     if (view == VK_NULL_HANDLE) return;
+    bool erased = false;
     for (auto it = mSamplerDescSets.begin(); it != mSamplerDescSets.end();) {
         bool hasView = false;
         for (int u = 0; u < 8; u++) {
@@ -196,10 +197,13 @@ void VkRenderer::invalidateSamplerDescSetsForView(VkImageView view) {
                 vkFreeDescriptorSets(mDevice, mDescriptorPool, 1, &it->second.set);
             }
             it = mSamplerDescSets.erase(it);
+            erased = true;
         } else {
             ++it;
         }
     }
+    // Any draw loop holding one of the freed sets must resolve it again.
+    if (erased) mSamplerDescEpoch++;
 }
 
 VkCopyTex& VkRenderer::getCopyTex(uint64_t key, int w, int h) {

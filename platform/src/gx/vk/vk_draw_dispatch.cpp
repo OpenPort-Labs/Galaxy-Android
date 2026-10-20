@@ -4,6 +4,7 @@ namespace gpu {
 
 void VkRenderer::executeDrawPass(VkCommandBuffer cmd, const Frame& f, const Prepared& p,
                                  VkTarget& target, HudMode hudMode, FrameResource& fr) {
+    const int64_t drawPassStartNs = port_host_time_ns();
     const std::vector<Item>& items = p.items;
     float fx = (float)target.width / (float)p.nativeW;
     float fy = (float)target.height / (float)p.nativeH;
@@ -38,13 +39,9 @@ void VkRenderer::executeDrawPass(VkCommandBuffer cmd, const Frame& f, const Prep
     VkDeviceSize lastVOffset = ~(VkDeviceSize)0;
     int lastVx = -1, lastVy = -1, lastVw = -1, lastVh = -1;
     int lastSx = -1, lastSy = -1, lastSw = -1, lastSh = -1;
-    uint32_t lastTexMask = ~0u;
-    uint32_t lastTex[8]{};
-    uint32_t lastTexMode0[8]{};
-    uint32_t lastTexMode1[8]{};
-    bool hasLastTex = false;
-    uint32_t diagDraws = 0, diagHud = 0, diagScSkip = 0, diagRealTex = 0, diagDummyTex = 0;
-    uint32_t diagCopyHits = 0, diagCopyFallbacks = 0, diagCopyMisses = 0;
+    DrawDescriptorCache texCache;
+    uint32_t diagDraws = 0, diagHud = 0, diagScSkip = 0, diagSetBinds = 0;
+    DrawTexStats texStats;
     bool diagLog = (mFrameNumber % 300 == 0);
 
     for (const Item& it : items) {
@@ -63,7 +60,7 @@ void VkRenderer::executeDrawPass(VkCommandBuffer cmd, const Frame& f, const Prep
             lastVOffset = ~(VkDeviceSize)0;
             lastVx = lastVy = lastVw = lastVh = -1;
             lastSx = lastSy = lastSw = lastSh = -1;
-            hasLastTex = false;
+            texCache.reset();
             continue;
         }
 
@@ -87,7 +84,7 @@ void VkRenderer::executeDrawPass(VkCommandBuffer cmd, const Frame& f, const Prep
             lastVOffset = ~(VkDeviceSize)0;
             lastVx = lastVy = lastVw = lastVh = -1;
             lastSx = lastSy = lastSw = lastSh = -1;
-            hasLastTex = false;
+            texCache.reset();
         }
 
         int vx, vy, vw, vh;
@@ -166,68 +163,28 @@ void VkRenderer::executeDrawPass(VkCommandBuffer cmd, const Frame& f, const Prep
 
         vkCmdPushConstants(cmd, mPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(uint32_t), &it.firstOrdinal);
 
-        VkDescriptorSet set1 = VK_NULL_HANDLE;
-        bool sameTex = hasLastTex && (it.texMask == lastTexMask) &&
-                       (it.texMask == 0 || (memcmp(it.tex, lastTex, sizeof(lastTex)) == 0 &&
-                        memcmp(it.texMode0, lastTexMode0, sizeof(lastTexMode0)) == 0 &&
-                        memcmp(it.texMode1, lastTexMode1, sizeof(lastTexMode1)) == 0));
-        if (sameTex && lastSet1 != VK_NULL_HANDLE) {
-            set1 = lastSet1;
-        } else {
-            std::array<VkImageView, 8> views;
-            std::array<VkSampler, 8> samplers;
-            views.fill(mDummyTexture.view);
-            samplers.fill(mDummySampler);
-            uint32_t activeMask = it.texMask & 0xFFu;
-            while (activeMask) {
-                int u = __builtin_ctz(activeMask);
-                activeMask &= activeMask - 1;
-                uint32_t tr = it.tex[u];
-                if (tr == ~0u) continue;
-                if (tr & 0x80000000u) {
-                    uint32_t addr = (tr & 0x7FFFFFFF) << 5;
-                    uint64_t key = copyKey(mCopySlot, addr);
-                    auto cit = mCopies.find(key);
-                    if (cit == mCopies.end() && mCopySlot != 0) {
-                        cit = mCopies.find(copyKey(0, addr));
-                        if (cit != mCopies.end()) diagCopyFallbacks++;
-                    } else if (cit != mCopies.end()) {
-                        diagCopyHits++;
-                    }
-                    if (cit != mCopies.end() && cit->second.view != VK_NULL_HANDLE) {
-                        views[u] = cit->second.view;
-                        samplers[u] = getSampler(it.texMode0[u], it.texMode1[u], 1);
-                    } else {
-                        diagCopyMisses++;
-                    }
-                } else if (tr < f.textures.size()) {
-                    const std::shared_ptr<TexImage>& ti = f.textures[tr];
-                    if (ti && ti->vkView != 0 && ti->vkVersion == ti->version && ti->vkGeneration == sVkDeviceGeneration) {
-                        views[u] = (VkImageView)ti->vkView;
-                        samplers[u] = getSampler(it.texMode0[u], it.texMode1[u], ti->levels);
-                        diagRealTex++;
-                    } else {
-                        diagDummyTex++;
-                    }
-                } else {
-                    diagDummyTex++;
-                }
-            }
-            set1 = getSamplerDescriptorSet(views, samplers);
+        DrawTexState curTex;
+        curTex.mask = it.texMask;
+        if (it.texMask != 0) {
+            memcpy(curTex.tex, it.tex, sizeof(curTex.tex));
+            memcpy(curTex.mode0, it.texMode0, sizeof(curTex.mode0));
+            memcpy(curTex.mode1, it.texMode1, sizeof(curTex.mode1));
+        }
+
+        VkDescriptorSet set1 = texCache.lookup(curTex, mSamplerDescEpoch);
+        if (set1 == VK_NULL_HANDLE) {
+            set1 = resolveDrawTextureSet(f, it, texStats);
             if (set1 == VK_NULL_HANDLE) {
                 LOGE("VkRenderer: failed to allocate sampler descriptor set - skipping draw");
                 continue;
             }
-            lastTexMask = it.texMask;
-            memcpy(lastTex, it.tex, sizeof(lastTex));
-            memcpy(lastTexMode0, it.texMode0, sizeof(lastTexMode0));
-            memcpy(lastTexMode1, it.texMode1, sizeof(lastTexMode1));
-            hasLastTex = true;
+            texCache.store(curTex, set1, mSamplerDescEpoch);
         }
 
         if (set1 != lastSet1) {
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mPipelineLayout, 1, 1, &set1, 0, nullptr);
             lastSet1 = set1;
+            diagSetBinds++;
         }
 
         VkDeviceSize vOffset = (VkDeviceSize)it.firstWord * 4;
@@ -261,9 +218,12 @@ void VkRenderer::executeDrawPass(VkCommandBuffer cmd, const Frame& f, const Prep
     }
 
     if (diagLog) {
-        LOGI("VkDrawDiag: frame=%llu draws=%u (hud=%u scSkip=%u) realTex=%u dummyTex=%u fTextures=%zu copySlot=%u copyHits=%u copyFallbacks=%u copyMisses=%u",
-             (unsigned long long)mFrameNumber, diagDraws, diagHud, diagScSkip, diagRealTex, diagDummyTex, f.textures.size(),
-             mCopySlot, diagCopyHits, diagCopyFallbacks, diagCopyMisses);
+        LOGI("VkDrawDiag: frame=%llu draws=%u (hud=%u scSkip=%u setBinds=%u) realTex=%u dummyTex=%u fTextures=%zu copySlot=%u copyHits=%u copyFallbacks=%u copyMisses=%u mruHit=%llu mruMiss=%llu rtNew=%llu rtKnownUid=%llu record=%.2fms",
+             (unsigned long long)mFrameNumber, diagDraws, diagHud, diagScSkip, diagSetBinds, texStats.realTex, texStats.dummyTex, f.textures.size(),
+             mCopySlot, texStats.copyHits, texStats.copyFallbacks, texStats.copyMisses,
+             (unsigned long long)mPipelineMruHits, (unsigned long long)mPipelineMruMisses,
+             (unsigned long long)mRuntimePipelineCreates, (unsigned long long)mRuntimeCreatesKnownUid,
+             (double)(port_host_time_ns() - drawPassStartNs) / 1e6);
     }
 }
 

@@ -143,9 +143,10 @@ class TestStarTextureAndFilterSemantics(unittest.TestCase):
                 if name.endswith(".bdl") or name.endswith(".bmd"):
                     mats, gaps, count = parse_j3d_mat3(b, name)
                     self.assertGreater(len(mats), 0, f"Expected materials in {name}")
+                    from tools.cook.manifest_schema import UID_WORDS, KEY_WORDS
                     for uid_words, key, desc in mats:
-                        self.assertEqual(len(uid_words), 90)
-                        self.assertEqual(len(key), 5)
+                        self.assertEqual(len(uid_words), UID_WORDS)
+                        self.assertEqual(len(key), KEY_WORDS)
                     found_model = True
             self.assertTrue(found_model, f"Expected at least one model in {candidate_name}")
 

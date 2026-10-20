@@ -104,6 +104,9 @@ public:
     // Add entry to inventory catalog
     void addEntry(const ShaderUid& uid, const PipelineKey& key, const std::string& source, bool isRuntime);
 
+    // True when this exact ShaderUid is already catalogued (prewarm coverage probe)
+    bool hasUid(const ShaderUid& uid) const;
+
 private:
     void addEntryLocked(const ShaderUid& uid, const PipelineKey& key, const std::string& source, bool isRuntime);
     mutable std::mutex mMutex;

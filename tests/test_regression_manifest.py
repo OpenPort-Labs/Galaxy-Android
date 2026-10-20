@@ -54,25 +54,28 @@ class TestTextureUploadStagingSafety(unittest.TestCase):
 
 class TestShaderManifestContract(unittest.TestCase):
     """
-    Verifies 90-word UID binary manifest serialization, CRC checks,
-    and truncated record handling.
+    Verifies full-width UID binary manifest serialization, CRC checks,
+    and truncated record handling against the shared schema constants.
     """
+    @staticmethod
+    def schema():
+        from tools.cook.manifest_schema import (
+            MAGIC_PTSU, SCHEMA_VERSION, BUILD_VERSION, UID_WORDS, KEY_WORDS)
+        return MAGIC_PTSU, SCHEMA_VERSION, BUILD_VERSION, UID_WORDS, KEY_WORDS
     def fnv1a32(self, data: bytes, seed: int = 2166136261) -> int:
         h = seed
         for b in data:
             h = ((h ^ b) * 16777619) & 0xFFFFFFFF
         return h
 
-    def test_90_word_uid_manifest_structure(self):
-        magic = 0x55535450
-        schema_version = 2
-        build_version = 20261019
+    def test_full_width_uid_manifest_structure(self):
+        magic, schema_version, build_version, uid_word_count, key_word_count = self.schema()
         count = 1
         hdr_data = struct.pack('<IIII', magic, schema_version, build_version, count)
         hdr_crc = self.fnv1a32(hdr_data)
         header = hdr_data + struct.pack('<I', hdr_crc)
 
-        uid_words = [i for i in range(90)]
+        uid_words = [i for i in range(uid_word_count)]
         key_words = [10, 20, 30, 40, 50]
         flags = 0
         src_str = "TestMaterial/Model.bdl"
@@ -80,8 +83,8 @@ class TestShaderManifestContract(unittest.TestCase):
         str_len = len(src_bytes)
 
         rec_payload = (
-            struct.pack('<90I', *uid_words) +
-            struct.pack('<5I', *key_words) +
+            struct.pack('<%dI' % uid_word_count, *uid_words) +
+            struct.pack('<%dI' % key_word_count, *key_words) +
             struct.pack('<B', flags) +
             struct.pack('<H', str_len) +
             src_bytes
@@ -91,22 +94,25 @@ class TestShaderManifestContract(unittest.TestCase):
 
         data = header + record
         # Verify sizes
+        uid_bytes = uid_word_count * 4
+        key_bytes = key_word_count * 4
         self.assertEqual(len(header), 20)
-        self.assertEqual(len(rec_payload), 360 + 20 + 1 + 2 + str_len)
-        self.assertEqual(len(record), 387 + str_len)
+        self.assertEqual(len(rec_payload), uid_bytes + key_bytes + 1 + 2 + str_len)
+        self.assertEqual(len(record), uid_bytes + key_bytes + 7 + str_len)
 
         # Parse header
         m, s, b, cnt, c = struct.unpack('<IIIII', data[:20])
         self.assertEqual(m, magic)
-        self.assertEqual(s, 2)
+        self.assertEqual(s, schema_version)
+        self.assertEqual(b, build_version)
         self.assertEqual(self.fnv1a32(data[:16]), c)
 
         # Parse record
         offset = 20
-        parsed_uid = struct.unpack_from('<90I', data, offset)
-        offset += 360
-        parsed_key = struct.unpack_from('<5I', data, offset)
-        offset += 20
+        parsed_uid = struct.unpack_from('<%dI' % uid_word_count, data, offset)
+        offset += uid_bytes
+        parsed_key = struct.unpack_from('<%dI' % key_word_count, data, offset)
+        offset += key_bytes
         flags_val = data[offset]
         offset += 1
         parsed_len = struct.unpack_from('<H', data, offset)[0]
@@ -121,18 +127,17 @@ class TestShaderManifestContract(unittest.TestCase):
         self.assertEqual(self.fnv1a32(data[20:offset]), parsed_crc)
 
     def test_truncated_record_detection(self):
-        magic = 0x55535450
-        schema_version = 2
-        build_version = 20261019
+        magic, schema_version, build_version, uid_word_count, key_word_count = self.schema()
         count = 1
         hdr_data = struct.pack('<IIII', magic, schema_version, build_version, count)
         hdr_crc = self.fnv1a32(hdr_data)
         header = hdr_data + struct.pack('<I', hdr_crc)
 
-        # Truncated record with only 100 bytes (less than 387 required)
+        # Truncated record with only 100 bytes (far less than a full record)
+        min_record = uid_word_count * 4 + key_word_count * 4 + 1 + 2 + 4
         truncated_record = b'\xAA' * 100
         data = header + truncated_record
-        self.assertLess(len(data) - 20, 387, "Truncated record must be detected as incomplete")
+        self.assertLess(len(data) - 20, min_record, "Truncated record must be detected as incomplete")
 
 
 class TestDualEndianJ3DAndRarcParsing(unittest.TestCase):

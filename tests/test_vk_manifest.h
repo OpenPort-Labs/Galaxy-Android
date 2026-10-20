@@ -9,13 +9,19 @@
 #include <string>
 #include <algorithm>
 #include "gx/vk/vk_types.h"
+#include "gx/vk_shader_manifest.h"
 
+// Format model for the on-disk record.  Kept in sync with kManifestUidWords;
+// the production reader is exercised separately in test_manifest_roundtrip.h.
 struct StagedRecord {
-    uint32_t uid[90];
+    uint32_t uid[100];
     uint32_t pipelineKey[5];
     uint8_t flags;
     std::string source;
 };
+
+constexpr size_t kStagedUidBytes = 100 * sizeof(uint32_t);
+constexpr size_t kStagedKeyBytes = 5 * sizeof(uint32_t);
 
 static inline uint32_t test_fnv1a32(const void* data, size_t size, uint32_t seed = 2166136261u) {
     const uint8_t* p = (const uint8_t*)data;
@@ -37,8 +43,8 @@ static inline bool validateAndParseManifestBytes(const uint8_t* data, size_t fil
     uint32_t headerCrc = *(uint32_t*)(data + 16);
 
     if (magic != 0x55535450) return false;
-    if (schema != 2) return false;
-    if (build < 20261019) return false;
+    if (schema != gpu::kInventoryVersion) return false;
+    if (build != gpu::kBuildVersion) return false;
 
     uint32_t computedHeaderCrc = test_fnv1a32(data, 16);
     if (headerCrc != computedHeaderCrc) return false;
@@ -49,9 +55,9 @@ static inline bool validateAndParseManifestBytes(const uint8_t* data, size_t fil
 
     for (uint32_t i = 0; i < count; i++) {
         size_t recStart = offset;
-        if (offset + 380 + 1 + 2 > fileSize) return false;
+        if (offset + kStagedUidBytes + kStagedKeyBytes + 1 + 2 > fileSize) return false;
 
-        offset += 380;
+        offset += kStagedUidBytes + kStagedKeyBytes;
         uint8_t flags = data[offset];
         offset += 1;
 
@@ -84,7 +90,7 @@ static inline void test_atomic_manifest_validation() {
     printf("[TEST] Running Atomic Manifest Validation & Rejection tests...\n");
 
     auto buildManifest = [](uint32_t count, uint32_t magic = 0x55535450,
-                            uint32_t schema = 2, uint32_t build = 20261019,
+                            uint32_t schema = gpu::kInventoryVersion, uint32_t build = gpu::kBuildVersion,
                             bool corruptHdrCrc = false, bool corruptRecCrc = false,
                             bool corruptStrLen = false, bool addTrailingBytes = false,
                             bool truncatePayload = false) -> std::vector<uint8_t> {
@@ -99,7 +105,7 @@ static inline void test_atomic_manifest_validation() {
 
         for (uint32_t i = 0; i < count; i++) {
             size_t recStart = buf.size();
-            uint32_t uid[90]{};
+            uint32_t uid[100]{};
             uid[0] = i + 1;
             uint32_t key[5]{ 1, 2, 3, 4, 5 };
             uint8_t flags = 0;
@@ -107,8 +113,8 @@ static inline void test_atomic_manifest_validation() {
             uint16_t strLen = (uint16_t)src.size();
             if (corruptStrLen && i == count - 1) strLen = 999;
 
-            buf.insert(buf.end(), (uint8_t*)uid, (uint8_t*)uid + 360);
-            buf.insert(buf.end(), (uint8_t*)key, (uint8_t*)key + 20);
+            buf.insert(buf.end(), (uint8_t*)uid, (uint8_t*)uid + kStagedUidBytes);
+            buf.insert(buf.end(), (uint8_t*)key, (uint8_t*)key + kStagedKeyBytes);
             buf.push_back(flags);
             buf.insert(buf.end(), (uint8_t*)&strLen, (uint8_t*)&strLen + 2);
             buf.insert(buf.end(), src.begin(), src.end());
@@ -142,31 +148,45 @@ static inline void test_atomic_manifest_validation() {
         assert(committed.empty());
     }
     {
-        std::vector<uint8_t> buf = buildManifest(3, 0x55535450, 2, 20261019, true);
+        std::vector<uint8_t> buf = buildManifest(3, 0x55535450, gpu::kInventoryVersion, gpu::kBuildVersion, true);
         std::vector<StagedRecord> committed;
         assert(!validateAndParseManifestBytes(buf.data(), buf.size(), committed));
         assert(committed.empty());
     }
     {
-        std::vector<uint8_t> buf = buildManifest(3, 0x55535450, 2, 20261019, false, true);
+        std::vector<uint8_t> buf = buildManifest(3, 0x55535450, gpu::kInventoryVersion, gpu::kBuildVersion, false, true);
         std::vector<StagedRecord> committed;
         assert(!validateAndParseManifestBytes(buf.data(), buf.size(), committed));
         assert(committed.empty());
     }
     {
-        std::vector<uint8_t> buf = buildManifest(3, 0x55535450, 2, 20261019, false, false, true);
+        std::vector<uint8_t> buf = buildManifest(3, 0x55535450, gpu::kInventoryVersion, gpu::kBuildVersion, false, false, true);
         std::vector<StagedRecord> committed;
         assert(!validateAndParseManifestBytes(buf.data(), buf.size(), committed));
         assert(committed.empty());
     }
     {
-        std::vector<uint8_t> buf = buildManifest(3, 0x55535450, 2, 20261019, false, false, false, false, true);
+        std::vector<uint8_t> buf = buildManifest(3, 0x55535450, gpu::kInventoryVersion, gpu::kBuildVersion, false, false, false, false, true);
         std::vector<StagedRecord> committed;
         assert(!validateAndParseManifestBytes(buf.data(), buf.size(), committed));
         assert(committed.empty());
     }
     {
-        std::vector<uint8_t> buf = buildManifest(3, 0x55535450, 2, 20261019, false, false, false, true);
+        std::vector<uint8_t> buf = buildManifest(3, 0x55535450, gpu::kInventoryVersion, gpu::kBuildVersion, false, false, false, true);
+        std::vector<StagedRecord> committed;
+        assert(!validateAndParseManifestBytes(buf.data(), buf.size(), committed));
+        assert(committed.empty());
+    }
+    {
+        // Schema 2 (90-word) manifests must be rejected, not reinterpreted.
+        std::vector<uint8_t> buf = buildManifest(3, 0x55535450, 2, gpu::kBuildVersion);
+        std::vector<StagedRecord> committed;
+        assert(!validateAndParseManifestBytes(buf.data(), buf.size(), committed));
+        assert(committed.empty());
+    }
+    {
+        // A future schema must be rejected instead of silently accepted.
+        std::vector<uint8_t> buf = buildManifest(3, 0x55535450, gpu::kInventoryVersion + 1, gpu::kBuildVersion);
         std::vector<StagedRecord> committed;
         assert(!validateAndParseManifestBytes(buf.data(), buf.size(), committed));
         assert(committed.empty());

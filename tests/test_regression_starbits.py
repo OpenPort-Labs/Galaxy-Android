@@ -121,20 +121,23 @@ class TestCookerManifestCrossImplementation(unittest.TestCase):
         file_size = len(data)
         self.assertGreaterEqual(file_size, 20)
 
+        from tools.cook.manifest_schema import (
+            MAGIC_PTSU, SCHEMA_VERSION, BUILD_VERSION, UID_WORDS, KEY_WORDS)
+
         magic, schema, build, count, hdr_crc = struct.unpack('<IIIII', data[:20])
-        self.assertEqual(magic, 0x55535450, "Header magic must be 0x55535450 ('PTSU')")
-        self.assertEqual(schema, 2, "Schema version must be 2")
-        self.assertEqual(build, 20261019, "Build version must be 20261019")
+        self.assertEqual(magic, MAGIC_PTSU, "Header magic must be 0x55535450 ('PTSU')")
+        self.assertEqual(schema, SCHEMA_VERSION, "Schema version must match manifest_schema.py")
+        self.assertEqual(build, BUILD_VERSION, "Build version must match manifest_schema.py")
         self.assertEqual(self.fnv1a32(data[:16]), hdr_crc, "Header CRC must match")
         self.assertGreater(count, 0)
 
         offset = 20
         for i in range(count):
             rec_start = offset
-            uid_words = struct.unpack_from('<90I', data, offset)
-            offset += 360
-            key_words = struct.unpack_from('<5I', data, offset)
-            offset += 20
+            uid_words = struct.unpack_from('<%dI' % UID_WORDS, data, offset)
+            offset += UID_WORDS * 4
+            key_words = struct.unpack_from('<%dI' % KEY_WORDS, data, offset)
+            offset += KEY_WORDS * 4
             flags = data[offset]
             offset += 1
             str_len = struct.unpack_from('<H', data, offset)[0]
@@ -165,12 +168,14 @@ class TestCookerManifestCrossImplementation(unittest.TestCase):
         with open(manifest_path, "rb") as f:
             data = f.read()
 
+        from tools.cook.manifest_schema import UID_WORDS, KEY_WORDS
+
         count = struct.unpack_from('<I', data, 12)[0]
         offset = 20
         verified_tex_mtx = False
         for i in range(count):
-            uid_words = struct.unpack_from('<90I', data, offset)
-            offset += 360 + 20 + 1
+            uid_words = struct.unpack_from('<%dI' % UID_WORDS, data, offset)
+            offset += UID_WORDS * 4 + KEY_WORDS * 4 + 1
             str_len = struct.unpack_from('<H', data, offset)[0]
             offset += 2 + str_len + 4
 

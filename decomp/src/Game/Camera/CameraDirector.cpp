@@ -258,13 +258,13 @@ void CameraDirector::calcPose() {
         rx = -rx;
     }
 
-    if (rx > 0.02f || rx < -0.02f) {
-        sOrbitYaw += rx * 0.040f;
-        if (sOrbitYaw > 3.14159265f) sOrbitYaw -= 6.2831853f;
-        if (sOrbitYaw < -3.14159265f) sOrbitYaw += 6.2831853f;
+    if (rx > 0.005f || rx < -0.005f) {
+        sOrbitYaw += rx * 0.080f;
+        while (sOrbitYaw > 3.14159265f) sOrbitYaw -= 6.2831853f;
+        while (sOrbitYaw < -3.14159265f) sOrbitYaw += 6.2831853f;
     }
-    if (ry > 0.02f || ry < -0.02f) {
-        sOrbitPitch += ry * 0.030f;
+    if (ry > 0.005f || ry < -0.005f) {
+        sOrbitPitch += ry * 0.060f;
         if (sOrbitPitch > 1.20f) sOrbitPitch = 1.20f;
         if (sOrbitPitch < -1.05f) sOrbitPitch = -1.05f;
     }

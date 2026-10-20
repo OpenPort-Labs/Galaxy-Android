@@ -98,10 +98,13 @@ void TouchInputHandler::updateActivePointers(
                 float dy = py - mTouches[slot].lastY;
                 mTouches[slot].lastX = px;
                 mTouches[slot].lastY = py;
-                if (fabsf(dx) > 0.05f || fabsf(dy) > 0.05f) {
-                    float sens = 0.045f * settings.starStickSensitivity;
-                    pad.rightStickX = std::max(-1.0f, std::min(1.0f, -dx * sens));
-                    pad.rightStickY = std::max(-1.0f, std::min(1.0f, -dy * sens));
+                float deadzone = 1.5f * scale;
+                if (fabsf(dx) > deadzone || fabsf(dy) > deadzone) {
+                    float normW = (float)(vpW > 0 ? vpW : 1920);
+                    float normH = (float)(vpH > 0 ? vpH : 1080);
+                    float sens = settings.stickSensitivity * settings.starStickSensitivity;
+                    pad.rightStickX += -(dx / normW) * 6.2831853f * sens * 2.25f;
+                    pad.rightStickY += -(dy / normH) * 2.2f * sens * 2.25f;
                 }
             }
         } else {
@@ -121,9 +124,9 @@ void TouchInputHandler::updateActivePointers(
             }
 
             if (!hitButton && (role == TouchRole::STAR_POINTER || role == TouchRole::NONE) && vpW > 0 && vpH > 0) {
+                float dx = (slot >= 0) ? (px - mTouches[slot].lastX) : 0.0f;
+                float dy = (slot >= 0) ? (py - mTouches[slot].lastY) : 0.0f;
                 if (settings.relativePointer && slot >= 0) {
-                    float dx = px - mTouches[slot].lastX;
-                    float dy = py - mTouches[slot].lastY;
                     mPointerX = std::max(-1.0f, std::min(1.0f, mPointerX + (dx / (float)vpW) * 2.0f));
                     mPointerY = std::max(-1.0f, std::min(1.0f, mPointerY + (dy / (float)vpH) * 2.0f));
                 } else {
@@ -131,6 +134,18 @@ void TouchInputHandler::updateActivePointers(
                     mPointerY = std::max(-1.0f, std::min(1.0f, ((py - vpY) / (float)vpH) * 2.0f - 1.0f));
                 }
                 mPointerActiveFrames = 120;
+
+                if (settings.touchCamera && !settings.starStick && slot >= 0) {
+                    float deadzone = 1.5f * scale;
+                    if (fabsf(dx) > deadzone || fabsf(dy) > deadzone) {
+                        cameraSwipeFound = true;
+                        float normW = (float)vpW;
+                        float normH = (float)vpH;
+                        float sens = settings.stickSensitivity * settings.starStickSensitivity;
+                        pad.rightStickX += -(dx / normW) * 6.2831853f * sens * 2.25f;
+                        pad.rightStickY += -(dy / normH) * 2.2f * sens * 2.25f;
+                    }
+                }
             }
             if (slot >= 0) { mTouches[slot].lastX = px; mTouches[slot].lastY = py; }
         }
@@ -165,7 +180,6 @@ void TouchInputHandler::updateActivePointers(
 
     if (!stickFound) { mTouchStickX = mTouchStickY = pad.stickX = pad.stickY = 0.0f; mStickPointerId = -1; }
     if (!starStickFound) { mStarStickX = mStarStickY = 0.0f; mStarStickPointerId = -1; }
-    if (!cameraSwipeFound) pad.rightStickX = pad.rightStickY = 0.0f;
 }
 
 void TouchInputHandler::assignTouchRoleOnDown(
@@ -224,8 +238,6 @@ void TouchInputHandler::assignTouchRoleOnDown(
         }
     }
 
-    bool cameraSwipeEligible = (settings.touchCamera && !settings.starStick && px >= w * 0.55f && py <= h * 0.50f && bestBtnIdx < 0);
-
     if (bestBtnIdx >= 0) {
         TouchRole btnRoles[5] = {TouchRole::BTN_A, TouchRole::BTN_B, TouchRole::BTN_Z, TouchRole::BTN_SPIN, TouchRole::BTN_PLUS};
         mTouches[slot].role = btnRoles[bestBtnIdx];
@@ -245,8 +257,6 @@ void TouchInputHandler::assignTouchRoleOnDown(
         mStickBaseY = settings.dynamicStick ? py : defaultStickY;
         mStickKnobX = px;
         mStickKnobY = py;
-    } else if (cameraSwipeEligible) {
-        mTouches[slot].role = TouchRole::CAMERA_SWIPE;
     } else {
         mTouches[slot].role = TouchRole::STAR_POINTER;
     }

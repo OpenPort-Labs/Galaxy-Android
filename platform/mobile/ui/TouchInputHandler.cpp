@@ -54,10 +54,10 @@ void TouchInputHandler::update(PortPadState& pad, int& spinFrames, bool fullTouc
 
     mBtnPlusPressed = mFingerDownOnPlus;
 
-    pad.rightStickX *= 0.5f;
-    pad.rightStickY *= 0.5f;
-    if (fabsf(pad.rightStickX) < 0.01f) pad.rightStickX = 0.0f;
-    if (fabsf(pad.rightStickY) < 0.01f) pad.rightStickY = 0.0f;
+    pad.rightStickX *= 0.82f;
+    pad.rightStickY *= 0.82f;
+    if (fabsf(pad.rightStickX) < 0.005f) pad.rightStickX = 0.0f;
+    if (fabsf(pad.rightStickY) < 0.005f) pad.rightStickY = 0.0f;
 
     if (mPointerActiveFrames > 0 || mStarStickPointerId >= 0) {
         pad.pointerValid = 1;
@@ -189,8 +189,6 @@ bool TouchInputHandler::handleTouch(const AInputEvent* event, PortPadState& pad,
                     mStarStickKnobX = mStarStickBaseX;
                     mStarStickKnobY = mStarStickBaseY;
                     mStarStickX = mStarStickY = 0.0f;
-                } else if (mTouches[i].role == TouchRole::CAMERA_SWIPE) {
-                    pad.rightStickX = pad.rightStickY = 0.0f;
                 }
                 mTouches[i] = {};
             }

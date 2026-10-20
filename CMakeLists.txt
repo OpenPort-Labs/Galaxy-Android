@@ -218,6 +218,7 @@ endif()
 if(NOT ANDROID)
   add_executable(dvd_fst_test
     tests/test_dvd_fst.cpp
+    tests/test_dvd_io.cpp
     platform/src/dvd/dvd_fst.cpp
     platform/src/dvd/dvd_read.cpp
   )

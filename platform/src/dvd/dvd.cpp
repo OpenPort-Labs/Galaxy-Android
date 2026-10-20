@@ -15,7 +15,9 @@ static void dvdIrq() {
             break;
         }
         s32 result = (s32)b->currTransferSize;
-        b->state = result < 0 ? kStateFatal : kStateEnd;
+        if (b->state != kStateCanceled) {
+            b->state = result < 0 ? kStateFatal : kStateEnd;
+        }
         if (b->callback) {
             b->callback(result, b);
         }
@@ -25,7 +27,7 @@ static void dvdIrq() {
 
 static void fileCallback(s32 result, DVDCommandBlock* block) {
     DVDFileInfo* fi = (DVDFileInfo*)block;
-    if (fi->callback) {
+    if (fi && fi->callback) {
         fi->callback(result, fi);
     }
 }
@@ -47,7 +49,7 @@ void DVDInit(void) {
 }
 
 BOOL DVDFastOpen(s32 entrynum, DVDFileInfo* fileInfo) {
-    if (entrynum < 0 || (u32)entrynum >= sFst.size() || sFst[entrynum].isDir) {
+    if (!fileInfo || entrynum < 0 || (u32)entrynum >= sFst.size() || sFst[entrynum].isDir) {
         return FALSE;
     }
     memset(fileInfo, 0, sizeof(*fileInfo));
@@ -59,6 +61,9 @@ BOOL DVDFastOpen(s32 entrynum, DVDFileInfo* fileInfo) {
 }
 
 BOOL DVDOpen(const char* fileName, DVDFileInfo* fileInfo) {
+    if (!fileName || !fileInfo) {
+        return FALSE;
+    }
     s32 entry = DVDConvertPathToEntrynum(fileName);
     if (entry < 0) {
         port_log("dvd: file not found: %s", fileName);
@@ -68,12 +73,14 @@ BOOL DVDOpen(const char* fileName, DVDFileInfo* fileInfo) {
 }
 
 BOOL DVDClose(DVDFileInfo* fileInfo) {
-    (void)fileInfo;
-    return TRUE;
+    return fileInfo != nullptr ? TRUE : FALSE;
 }
 
 BOOL DVDReadAsyncPrio(DVDFileInfo* fileInfo, void* addr, s32 length, s32 offset, DVDCallback callback, s32 prio) {
     (void)prio;
+    if (!fileInfo) {
+        return FALSE;
+    }
     fileInfo->callback = callback;
     DVDCommandBlock* b = &fileInfo->cb;
     b->addr = addr;
@@ -81,8 +88,6 @@ BOOL DVDReadAsyncPrio(DVDFileInfo* fileInfo, void* addr, s32 length, s32 offset,
     b->offset = (u32)offset;
     b->callback = fileCallback;
     if (!dvd_io_validate(fileInfo, addr, length, offset, "DVDReadAsyncPrio")) {
-        // Deliver the failure now: callers wait on the callback, so rejecting
-        // the request silently would hang them.
         b->state = kStateFatal;
         b->transferredSize = 0;
         b->currTransferSize = (u32)-1;
@@ -91,12 +96,23 @@ BOOL DVDReadAsyncPrio(DVDFileInfo* fileInfo, void* addr, s32 length, s32 offset,
         }
         return FALSE;
     }
-    dvd_io_submit(b, fileInfo->startAddr);
+    if (!dvd_io_submit(b, fileInfo->startAddr)) {
+        b->state = kStateFatal;
+        b->transferredSize = 0;
+        b->currTransferSize = (u32)-1;
+        if (callback) {
+            callback(-1, fileInfo);
+        }
+        return FALSE;
+    }
     return TRUE;
 }
 
 s32 DVDReadPrio(DVDFileInfo* fileInfo, void* addr, s32 length, s32 offset, s32 prio) {
     (void)prio;
+    if (!fileInfo) {
+        return -1;
+    }
     DVDCommandBlock* b = &fileInfo->cb;
     fileInfo->callback = nullptr;
     b->addr = addr;
@@ -109,7 +125,12 @@ s32 DVDReadPrio(DVDFileInfo* fileInfo, void* addr, s32 length, s32 offset, s32 p
         b->currTransferSize = (u32)-1;
         return -1;
     }
-    dvd_io_submit(b, fileInfo->startAddr);
+    if (!dvd_io_submit(b, fileInfo->startAddr)) {
+        b->state = kStateFatal;
+        b->transferredSize = 0;
+        b->currTransferSize = (u32)-1;
+        return -1;
+    }
     BOOL en = OSDisableInterrupts();
     while (b->state == kStateBusy || b->state == kStateWaiting) {
         OSSleepThread(&sSyncQueue);
@@ -119,8 +140,16 @@ s32 DVDReadPrio(DVDFileInfo* fileInfo, void* addr, s32 length, s32 offset, s32 p
 }
 
 BOOL DVDCancelAsync(DVDCommandBlock* block, DVDCBCallback callback) {
-    if (dvd_io_cancel(block)) {
+    if (!block) {
+        return FALSE;
+    }
+    int res = dvd_io_cancel(block);
+    if (res == 1) {
         block->state = kStateCanceled;
+        block->currTransferSize = (u32)-3;
+        if (block->callback) {
+            block->callback(-3, block);
+        }
     }
     if (callback) {
         callback(0, block);
@@ -129,23 +158,36 @@ BOOL DVDCancelAsync(DVDCommandBlock* block, DVDCBCallback callback) {
 }
 
 s32 DVDCancel(DVDCommandBlock* block) {
-    if (dvd_io_cancel(block)) {
+    if (!block) {
+        return -1;
+    }
+    int res = dvd_io_cancel(block);
+    if (res == 1) {
         block->state = kStateCanceled;
+        block->currTransferSize = (u32)-3;
+        if (block->callback) {
+            block->callback(-3, block);
+        }
         return 0;
     }
     BOOL en = OSDisableInterrupts();
-    while (block->state == kStateBusy) {
+    while (block->state == kStateBusy || block->state == kStateWaiting) {
         OSSleepThread(&sSyncQueue);
     }
     OSRestoreInterrupts(en);
     return 0;
 }
 
-s32 DVDGetCommandBlockStatus(const DVDCommandBlock* block) { return block->state; }
+s32 DVDGetCommandBlockStatus(const DVDCommandBlock* block) {
+    return block ? block->state : kStateFatal;
+}
 
 s32 DVDGetDriveStatus(void) { return dvd_io_idle() ? 0 : 1; }
 
 BOOL DVDCheckDiskAsync(DVDCommandBlock* block, DVDCBCallback callback) {
+    if (!block) {
+        return FALSE;
+    }
     block->state = kStateEnd;
     if (callback) {
         callback(1, block);
@@ -154,6 +196,9 @@ BOOL DVDCheckDiskAsync(DVDCommandBlock* block, DVDCBCallback callback) {
 }
 
 BOOL DVDOpenDir(const char* dirName, DVDDir* dir) {
+    if (!dirName || !dir) {
+        return FALSE;
+    }
     s32 entry = DVDConvertPathToEntrynum(dirName);
     if (entry < 0 || (u32)entry >= sFst.size() || !sFst[entry].isDir) {
         return FALSE;
@@ -165,6 +210,9 @@ BOOL DVDOpenDir(const char* dirName, DVDDir* dir) {
 }
 
 BOOL DVDReadDir(DVDDir* dir, DVDDirEntry* dirent) {
+    if (!dir || !dirent) {
+        return FALSE;
+    }
     u32 loc = dir->location;
     if (loc <= dir->entryNum || loc >= dir->next || loc >= sFst.size()) {
         return FALSE;
@@ -178,11 +226,13 @@ BOOL DVDReadDir(DVDDir* dir, DVDDirEntry* dirent) {
 }
 
 BOOL DVDCloseDir(DVDDir* dir) {
-    (void)dir;
-    return TRUE;
+    return dir != nullptr ? TRUE : FALSE;
 }
 
 BOOL DVDChangeDir(const char* dirName) {
+    if (!dirName) {
+        return FALSE;
+    }
     s32 entry = DVDConvertPathToEntrynum(dirName);
     if (entry < 0 || (u32)entry >= sFst.size() || !sFst[entry].isDir) {
         return FALSE;

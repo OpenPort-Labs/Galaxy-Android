@@ -26,6 +26,8 @@ std::condition_variable sQueueCv;
 std::deque<ReadRequest> sPending;
 std::deque<DVDCommandBlock*> sDone;
 DVDCommandBlock* sActive = nullptr;
+bool sActiveCanceled = false;
+bool sWorkerRunning = false;
 
 int openEntry(u32 entry) {
     if (entry >= sFst.size() || sFst[entry].isDir) {
@@ -47,14 +49,23 @@ void workerMain() {
         ReadRequest req;
         {
             std::unique_lock<std::mutex> lk(sQueueMutex);
-            sQueueCv.wait(lk, [] { return !sPending.empty(); });
+            sQueueCv.wait(lk, [] { return !sPending.empty() || !sWorkerRunning; });
+            if (!sWorkerRunning && sPending.empty()) {
+                break;
+            }
             req = sPending.front();
             sPending.pop_front();
             sActive = req.block;
+            sActiveCanceled = false;
+            sActive->state = kStateBusy;
         }
         DVDCommandBlock* b = req.block;
         s32 result;
-        int fd = openEntry(req.entry);
+        int fd = -1;
+        {
+            std::lock_guard<std::mutex> lk(sQueueMutex);
+            fd = openEntry(req.entry);
+        }
         if (fd < 0) {
             result = -1;
         } else {
@@ -64,8 +75,6 @@ void workerMain() {
             if (got < 0) {
                 result = -1;
             } else if ((size_t)got != want) {
-                // Requests are range-checked on submission, so a short read means
-                // the file changed underneath us: fail instead of inventing zeros.
                 port_log("dvd: short read on entry %u: wanted %zu, got %zd at %u", req.entry, want, got,
                          b->offset);
                 result = -1;
@@ -76,8 +85,14 @@ void workerMain() {
         }
         {
             std::lock_guard<std::mutex> lk(sQueueMutex);
-            b->currTransferSize = (u32)result;
+            if (sActiveCanceled) {
+                b->state = kStateCanceled;
+                b->currTransferSize = (u32)-3;
+            } else {
+                b->currTransferSize = (u32)result;
+            }
             sActive = nullptr;
+            sActiveCanceled = false;
             sDone.push_back(b);
         }
         port_irq_raise(PORT_IRQ_DVD);
@@ -87,6 +102,14 @@ void workerMain() {
 }  // namespace
 
 bool dvd_io_validate(const DVDFileInfo* fileInfo, const void* addr, s32 length, s32 offset, const char* api) {
+    if (!fileInfo) {
+        port_log("dvd: %s rejected null fileInfo", api);
+        return false;
+    }
+    if (fileInfo->startAddr >= sFst.size() || sFst[fileInfo->startAddr].isDir) {
+        port_log("dvd: %s rejected invalid/dir entry %u", api, fileInfo->startAddr);
+        return false;
+    }
     if (length < 0 || offset < 0) {
         port_log("dvd: %s rejected negative length %d / offset %d on entry %u", api, length, offset,
                  fileInfo->startAddr);
@@ -98,36 +121,63 @@ bool dvd_io_validate(const DVDFileInfo* fileInfo, const void* addr, s32 length, 
     }
     const s64 size = dvd_entry_size(fileInfo->startAddr);
     if (size < 0 || (s64)offset + (s64)length > size) {
-        port_log("dvd: %s rejected range [%d,%d) of %lld-byte entry %u", api, offset, offset + length,
-                 (long long)size, fileInfo->startAddr);
+        port_log("dvd: %s rejected range [%d,%lld) of %lld-byte entry %u", api, offset,
+                 (long long)offset + (long long)length, (long long)size, fileInfo->startAddr);
         return false;
     }
     return true;
 }
 
 void dvd_io_start() {
-    PortHostAllocScope scope;
-    std::thread(workerMain).detach();
+    std::lock_guard<std::mutex> lk(sQueueMutex);
+    if (!sWorkerRunning) {
+        sWorkerRunning = true;
+        PortHostAllocScope scope;
+        std::thread(workerMain).detach();
+    }
+}
+
+void dvd_io_stop() {
+    {
+        std::lock_guard<std::mutex> lk(sQueueMutex);
+        sWorkerRunning = false;
+        sQueueCv.notify_all();
+    }
 }
 
 BOOL dvd_io_submit(DVDCommandBlock* block, u32 entry) {
-    block->state = kStateBusy;
-    block->transferredSize = 0;
+    if (!block) {
+        return FALSE;
+    }
     std::lock_guard<std::mutex> lk(sQueueMutex);
+    if (block->state == kStateBusy || block->state == kStateWaiting) {
+        port_log("dvd: refusing re-submission of busy/waiting command block %p", block);
+        return FALSE;
+    }
+    block->state = kStateWaiting;
+    block->transferredSize = 0;
+    block->currTransferSize = 0;
     sPending.push_back({block, entry});
     sQueueCv.notify_one();
     return TRUE;
 }
 
-bool dvd_io_cancel(DVDCommandBlock* block) {
+int dvd_io_cancel(DVDCommandBlock* block) {
+    if (!block) {
+        return 0;
+    }
     std::lock_guard<std::mutex> lk(sQueueMutex);
     for (auto it = sPending.begin(); it != sPending.end(); ++it) {
         if (it->block == block) {
             sPending.erase(it);
-            return true;
+            return 1;
         }
     }
-    return false;
+    if (sActive == block) {
+        sActiveCanceled = true;
+        return 2;
+    }
+    return 0;
 }
 
 bool dvd_io_pop_done(DVDCommandBlock** block) {

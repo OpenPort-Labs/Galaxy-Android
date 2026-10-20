@@ -27,10 +27,13 @@ enum DvdIoState {
     kStateFatal = -1,
 };
 
-u32 dvd_be32(const u8* p);
+inline u32 dvd_be32(const u8* p) {
+    return ((u32)p[0] << 24) | ((u32)p[1] << 16) | ((u32)p[2] << 8) | p[3];
+}
 std::vector<u8> dvd_read_fst(const std::string& root);
 bool dvd_fst_has_root_dir(const std::vector<u8>& fst, const char* name);
 bool dvd_load_fst();
+void dvd_fst_clear();
 s64 dvd_entry_size(u32 entry);
 s32 dvd_find_child(u32 dir, const char* name, size_t len);
 
@@ -38,8 +41,9 @@ s32 dvd_find_child(u32 dir, const char* name, size_t len);
 // validation that gates every request.  dvd.cpp owns the interrupt handler and
 // the public DVD API.
 void dvd_io_start();
+void dvd_io_stop();
 BOOL dvd_io_submit(DVDCommandBlock* block, u32 entry);
-bool dvd_io_cancel(DVDCommandBlock* block);  // true when dequeued before it ran
+int dvd_io_cancel(DVDCommandBlock* block);  // 1: dequeued from queue, 2: active, 0: not found
 bool dvd_io_pop_done(DVDCommandBlock** block);
 bool dvd_io_idle();
 bool dvd_io_validate(const DVDFileInfo* fileInfo, const void* addr, s32 length, s32 offset, const char* api);

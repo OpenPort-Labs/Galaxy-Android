@@ -10,10 +10,6 @@
 #include "port/heap_routing.h"
 #include "revolution/sc.h"
 
-u32 dvd_be32(const u8* p) {
-    return ((u32)p[0] << 24) | ((u32)p[1] << 16) | ((u32)p[2] << 8) | p[3];
-}
-
 std::vector<u8> dvd_read_fst(const std::string& root) {
     std::vector<u8> data;
     FILE* f = fopen((root + "/sys/fst.bin").c_str(), "rb");
@@ -33,29 +29,6 @@ std::vector<u8> dvd_read_fst(const std::string& root) {
     return data;
 }
 
-bool dvd_fst_has_root_dir(const std::vector<u8>& fst, const char* name) {
-    if (fst.size() < 12) {
-        return false;
-    }
-    u32 count = dvd_be32(&fst[8]);
-    if (count < 1 || (size_t)count > fst.size() / 12) {
-        return false;
-    }
-    const char* strings = (const char*)&fst[(size_t)count * 12];
-    size_t stringsSize = fst.size() - (size_t)count * 12;
-    size_t len = strlen(name);
-    for (u32 i = 1; i < count;) {
-        const u8* e = &fst[i * 12];
-        bool isDir = e[0] != 0;
-        u32 nameOff = dvd_be32(e) & 0x00FFFFFF;
-        if (isDir && (size_t)nameOff + len < stringsSize && strncasecmp(strings + nameOff, name, len + 1) == 0) {
-            return true;
-        }
-        u32 next = dvd_be32(e + 8);
-        i = (isDir && next > i) ? next : i + 1;
-    }
-    return false;
-}
 
 static const PortDisc kDiscs[] = {
     {"RMGP01",

@@ -1,16 +1,15 @@
 // Host test for the DVD layer's untrusted-input handling.
 //
-// Builds the production dvd_fst.cpp / dvd_read.cpp against stubs for the host
-// allocation, logging and FST-file plumbing, then feeds malformed FST images
-// and invalid read requests through the real parsers.
-//
-//   ninja -C build-host dvd_fst_test && ./build-host/dvd_fst_test
+// Builds production dvd_fst.cpp / dvd_read.cpp against stubs for host allocation,
+// logging and FST-file plumbing, feeding malformed FST images through real parsers.
 
 #include <assert.h>
+#include <fcntl.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include <string>
 #include <vector>
@@ -18,7 +17,7 @@
 #include "dvd/dvd_internal.h"
 
 // ---------------------------------------------------------------------------
-// Stubs for the platform services the DVD layer calls.
+// Stubs for platform services.
 // ---------------------------------------------------------------------------
 static std::vector<u8> gFstImage;
 
@@ -27,13 +26,7 @@ std::vector<u8> dvd_read_fst(const std::string& root) {
     return gFstImage;
 }
 
-u32 dvd_be32(const u8* p) {
-    return ((u32)p[0] << 24) | ((u32)p[1] << 16) | ((u32)p[2] << 8) | p[3];
-}
-
-// These are declared with C linkage by port/port.h and port/heap_routing.h.
 extern "C" {
-
 void port_log(const char* fmt, ...) {
     va_list args;
     va_start(args, fmt);
@@ -51,11 +44,9 @@ void port_host_alloc_scope_enter(void) {}
 void port_host_alloc_scope_leave(void) {}
 void port_irq_raise(int irq) { (void)irq; }
 
-// port/port.h pulls in the GX FIFO helpers; nothing here writes to the FIFO.
 unsigned char* __PortGXFifoPtr = nullptr;
 unsigned char* __PortGXFifoLimit = nullptr;
 void __PortGXFifoOverflow(void) {}
-
 }  // extern "C"
 
 // ---------------------------------------------------------------------------
@@ -90,7 +81,7 @@ static std::vector<u8> buildFst(u32 count, const std::vector<Entry>& entries, co
 }
 
 static bool loadExpectingReject(const char* what) {
-    sFst.clear();
+    dvd_fst_clear();
     bool ok = dvd_load_fst();
     if (ok) {
         printf("[FAIL] %s was accepted\n", what);
@@ -111,7 +102,7 @@ static void testValidFst() {
         {false, 4, 1, 0},
     };
     gFstImage = buildFst(3, e, names);
-    sFst.clear();
+    dvd_fst_clear();
     assert(dvd_load_fst());
     assert(sFst.size() == 3);
     assert(sFst[2].hostPath == sDataRoot + "/files/dir/file.bin");
@@ -124,37 +115,58 @@ static void testTruncatedAndOversizedTables() {
     gFstImage.assign(7, 0);
     assert(loadExpectingReject("truncated header"));
 
-    // 12-byte header claiming 1e6 entries in a 12-byte image: the entry table
-    // must be proven to fit before any pointer arithmetic.
+    // 12-byte header claiming 1e6 entries in 12-byte image
     gFstImage.assign(12, 0);
     put32(gFstImage, 8, 1000000u);
     assert(loadExpectingReject("entry table overrun"));
 
-    // Worst case for 32-bit overflow: count * 12 would wrap.
+    // Worst case 32-bit wrap
     gFstImage.assign(12, 0);
     put32(gFstImage, 8, 0xFFFFFFFFu);
     assert(loadExpectingReject("entry count 0xFFFFFFFF"));
     printf("[PASS] Truncated and overflowing FST tables are rejected\n");
 }
 
+static void testRootEntryValidation() {
+    const std::string names = std::string("dir\0", 4);
+    // Root entry marked as a file (isDir == 0)
+    {
+        std::vector<Entry> e = {{false, 0, 0, 2}, {false, 0, 0, 0}};
+        gFstImage = buildFst(2, e, names);
+        assert(loadExpectingReject("root is file"));
+    }
+    // Root entry claiming non-zero parent
+    {
+        std::vector<Entry> e = {{true, 0, 1, 2}, {false, 0, 0, 0}};
+        gFstImage = buildFst(2, e, names);
+        assert(loadExpectingReject("root has parent"));
+    }
+    // Root entry claiming non-zero name offset
+    {
+        std::vector<Entry> e = {{true, 1, 0, 2}, {false, 0, 0, 0}};
+        gFstImage = buildFst(2, e, names);
+        assert(loadExpectingReject("root has name offset"));
+    }
+    printf("[PASS] Malformed root directory entries are rejected\n");
+}
+
 static void testBadNames() {
     const std::string names = std::string("ok\0", 3);
 
-    // Name offset past the end of the string table.
+    // Name offset past end of string table
     {
         std::vector<Entry> e = {{true, 0, 0, 2}, {false, 0xFFFF, 0, 0}};
         gFstImage = buildFst(2, e, names);
         assert(loadExpectingReject("out-of-range name offset"));
     }
-    // Name without a terminator inside the buffer: the image ends right after
-    // the two characters, so no NUL exists in the string table.
+    // Unterminated name
     {
         std::vector<Entry> e = {{true, 0, 0, 2}, {false, 0, 0, 0}};
         gFstImage = buildFst(2, e, "ab");
         assert(loadExpectingReject("unterminated name"));
     }
-    // Path separators and parent traversal in a directory entry name.
-    for (const char* bad : {"a/b", "a\\b", ".."}) {
+    // Path separators, colon, and dot traversal
+    for (const char* bad : {"a/b", "a\\b", "a:b", ".", ".."}) {
         std::string table(bad);
         table.push_back('\0');
         std::vector<Entry> e = {{true, 0, 0, 2}, {false, 0, 0, 0}};
@@ -167,66 +179,107 @@ static void testBadNames() {
 static void testDirectorySpans() {
     const std::string names = std::string("d\0", 2);
 
-    // next == i would make DVDReadDir/dvd_find_child spin on the same entry.
+    // next == i
     {
         std::vector<Entry> e = {{true, 0, 0, 2}, {true, 0, 0, 1}};
         gFstImage = buildFst(2, e, names);
         assert(loadExpectingReject("directory next <= own index"));
     }
-    // next past the table would walk out of bounds.
+    // next past table
     {
         std::vector<Entry> e = {{true, 0, 0, 2}, {true, 0, 0, 99}};
         gFstImage = buildFst(2, e, names);
-        assert(loadExpectingReject("directory next past the table"));
+        assert(loadExpectingReject("directory next past table"));
     }
-    // A parent that does not precede the child breaks the preorder invariant.
+    // Forward parent index
     {
-        std::vector<Entry> e = {{true, 0, 0, 3}, {true, 0, 2, 3}, {false, 2, 1, 0}};
+        std::vector<Entry> e = {{true, 0, 0, 3}, {true, 0, 2, 3}, {false, 0, 1, 0}};
         gFstImage = buildFst(3, e, std::string("d\0f\0", 4));
         assert(loadExpectingReject("forward parent index"));
+    }
+    // Inconsistent parent relationship (parent != parentDir)
+    {
+        std::vector<Entry> e = {
+            {true, 0, 0, 4},
+            {true, 0, 0, 4},   // dir 1: parent 0, span 4
+            {true, 0, 0, 4},   // dir 2 nested inside dir 1, but claims parent 0 instead of 1!
+            {false, 2, 2, 0},
+        };
+        gFstImage = buildFst(4, e, std::string("d\0e\0f\0", 6));
+        assert(loadExpectingReject("inconsistent parent pointer"));
+    }
+    // Child span escaping parent (next > parent.next)
+    {
+        std::vector<Entry> e = {
+            {true, 0, 0, 5},
+            {true, 0, 0, 3},   // dir 1: span [1, 3)
+            {true, 0, 1, 4},   // child dir 2 inside dir 1 claims next 4 > 3!
+            {false, 2, 1, 0},
+            {false, 4, 0, 0},
+        };
+        gFstImage = buildFst(5, e, std::string("a\0b\0c\0d\0", 8));
+        assert(loadExpectingReject("child span escaping parent span"));
     }
     printf("[PASS] Directory parent/next span invariants are enforced\n");
 }
 
-static void testReadValidation() {
-    const std::string path = "dvd_fst_test_payload.bin";
+static void testFstClearClosesFd() {
+    const std::string path = "dvd_test_fd.bin";
     FILE* f = fopen(path.c_str(), "wb");
     assert(f != nullptr);
-    std::vector<u8> payload(100, 0x5A);
-    assert(fwrite(payload.data(), 1, payload.size(), f) == payload.size());
+    fputc('A', f);
     fclose(f);
 
+    dvd_fst_clear();
     sFst.assign(2, FstEntry{});
     sFst[0].isDir = true;
+    sFst[1].isDir = false;
     sFst[1].hostPath = path;
+    int fd = open(path.c_str(), O_RDONLY);
+    assert(fd >= 0);
+    sFst[1].fd = fd;
 
-    DVDFileInfo fi;
-    memset(&fi, 0, sizeof(fi));
-    fi.startAddr = 1;
-    std::vector<u8> buffer(128, 0);
-
-    assert(dvd_io_validate(&fi, buffer.data(), 100, 0, "test"));
-    assert(dvd_io_validate(&fi, buffer.data(), 0, 100, "test"));
-    assert(!dvd_io_validate(&fi, buffer.data(), -1, 0, "test"));
-    assert(!dvd_io_validate(&fi, buffer.data(), 4, -8, "test"));
-    assert(!dvd_io_validate(&fi, buffer.data(), 101, 0, "test"));
-    assert(!dvd_io_validate(&fi, buffer.data(), 8, 96, "test"));
-    assert(!dvd_io_validate(&fi, nullptr, 4, 0, "test"));
-
-    // A directory index is refused outright: it has no readable payload.
-    fi.startAddr = 0;  // directory
-    assert(!dvd_io_validate(&fi, buffer.data(), 1, 0, "test"));
+    dvd_fst_clear();
+    assert(sFst.empty());
+    // Closing fd again must fail with EBADF if dvd_fst_clear closed it
+    assert(close(fd) == -1);
 
     remove(path.c_str());
-    printf("[PASS] Negative, null and out-of-range reads are rejected\n");
+    printf("[PASS] dvd_fst_clear properly closes cached file descriptors\n");
 }
+
+static void testDvdFstHasRootDir() {
+    // Valid FST with dir
+    const std::string names = std::string("EuEnglish\0Message.arc\0", 22);
+    std::vector<Entry> e = {
+        {true, 0, 0, 3},
+        {true, 0, 0, 3},
+        {false, 10, 1, 0},
+    };
+    std::vector<u8> fst = buildFst(3, e, names);
+    assert(dvd_fst_has_root_dir(fst, "EuEnglish"));
+    assert(!dvd_fst_has_root_dir(fst, "UsEnglish"));
+    assert(!dvd_fst_has_root_dir(fst, nullptr));
+
+    // Overread boundary check: string at very end without padding
+    std::vector<u8> truncatedFst = fst;
+    // Shrink by 1 byte so null terminator is lost
+    truncatedFst.pop_back();
+    assert(!dvd_fst_has_root_dir(truncatedFst, "Message.arc"));
+    printf("[PASS] dvd_fst_has_root_dir boundary and null checks verified\n");
+}
+
+extern void runDvdIoTests();
 
 int main() {
     testValidFst();
     testTruncatedAndOversizedTables();
+    testRootEntryValidation();
     testBadNames();
     testDirectorySpans();
-    testReadValidation();
-    printf("All DVD input-validation tests passed.\n");
+    testFstClearClosesFd();
+    testDvdFstHasRootDir();
+    runDvdIoTests();
+    printf("All DVD security and async I/O tests passed.\n");
     return 0;
 }

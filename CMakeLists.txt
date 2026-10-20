@@ -194,6 +194,7 @@ if(ANDROID)
         installer-mobile/jni/wii_extractor.cpp
         installer-mobile/jni/wii_disc_reader.cpp
         installer-mobile/jni/wii_partition.cpp
+        installer-mobile/jni/path_security.cpp
         installer-mobile/jni/aes.c
         installer-mobile/jni/aes_modes.c
         installer-mobile/jni/yaz0.c
@@ -229,4 +230,17 @@ if(NOT ANDROID)
     ${CMAKE_SOURCE_DIR}/decomp/libs/RVL_SDK/include
   )
   target_compile_options(dvd_fst_test PRIVATE -include ${CMAKE_SOURCE_DIR}/tests/dvd_host_compat.h)
+
+  add_executable(extraction_security_test
+    tests/test_extraction_security.cpp
+    installer-mobile/jni/path_security.cpp
+    installer-mobile/jni/wii_extractor.cpp
+    installer-mobile/jni/wii_partition.cpp
+    installer-mobile/jni/wii_disc_reader.cpp
+    installer-mobile/jni/aes.c
+    installer-mobile/jni/aes_modes.c
+  )
+  target_include_directories(extraction_security_test PRIVATE
+    ${CMAKE_SOURCE_DIR}/installer-mobile/jni
+  )
 endif()

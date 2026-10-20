@@ -20,6 +20,7 @@ add_library(installer SHARED
     wii_extractor.cpp
     wii_disc_reader.cpp
     wii_partition.cpp
+    path_security.cpp
     aes.c
     aes_modes.c
     yaz0.c

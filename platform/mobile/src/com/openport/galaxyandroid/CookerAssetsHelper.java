@@ -38,6 +38,7 @@ public class CookerAssetsHelper {
                     if (!outFile.getPath().startsWith(pythonHomePrefix) && !outFile.equals(pythonHomeCanonical)) {
                         throw new java.io.IOException("ZIP entry escapes target directory: " + entry.getName());
                     }
+                    CookerEngine.verifyNoSymlinksBeneath(pythonHomeCanonical, outFile);
                     if (entry.isDirectory()) {
                         outFile.mkdirs();
                     } else {
@@ -50,6 +51,9 @@ public class CookerAssetsHelper {
                             while ((len = zis.read(buffer)) > 0) {
                                 fos.write(buffer, 0, len);
                             }
+                        } catch (Exception writeEx) {
+                            if (outFile.exists()) outFile.delete();
+                            throw writeEx;
                         }
                         if (outFile.getName().endsWith(".so")) {
                             outFile.setReadable(true, false);

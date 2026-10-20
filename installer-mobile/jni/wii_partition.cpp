@@ -1,4 +1,5 @@
 #include "wii_partition.h"
+#include "path_security.h"
 #include <cstdio>
 #include <cstring>
 #include <algorithm>
@@ -25,14 +26,10 @@ static bool rangeFits(uint64_t offset, uint64_t length, uint64_t limit) {
 }
 
 void ensure_directory_exists(const std::string& path) {
-    size_t pos = 0;
-    while ((pos = path.find_first_of('/', pos + 1)) != std::string::npos) {
-        std::string sub = path.substr(0, pos);
-        if (!sub.empty()) {
-            mkdir(sub.c_str(), 0777);
-        }
-    }
-    mkdir(path.c_str(), 0777);
+    size_t lastSlash = path.find_last_of("/\\");
+    std::string root = (lastSlash == std::string::npos) ? "." : path.substr(0, lastSlash);
+    std::string rel = (lastSlash == std::string::npos) ? path : path.substr(lastSlash + 1);
+    ensureSafeDirectories(root, rel);
 }
 
 WiiPartitionSession::WiiPartitionSession(DiscImageReader* disc) : m_disc(disc) {}
@@ -95,6 +92,9 @@ bool WiiPartitionSession::initDataPartition(LogCallback log) {
 }
 
 bool WiiPartitionSession::readDecrypted(uint64_t decOffset, size_t len, uint8_t* out) {
+    if (!rangeFits(decOffset, len, m_dataSize)) {
+        return false;
+    }
     while (len > 0) {
         uint32_t clusterIdx = (uint32_t)(decOffset / 0x7C00);
         uint32_t clusterRem = (uint32_t)(decOffset % 0x7C00);
@@ -125,13 +125,25 @@ bool WiiPartitionSession::readDecrypted(uint64_t decOffset, size_t len, uint8_t*
     return true;
 }
 
-bool WiiPartitionSession::extractFileToDisk(uint64_t decOffset, size_t len, const std::string& outPath) {
-    size_t lastSlash = outPath.find_last_of('/');
-    if (lastSlash != std::string::npos) {
-        ensure_directory_exists(outPath.substr(0, lastSlash));
+bool WiiPartitionSession::extractFileToDisk(uint64_t decOffset, size_t len,
+                                           const std::string& outPath,
+                                           const std::string& rootDir) {
+    if (!rangeFits(decOffset, len, m_dataSize)) {
+        return false;
     }
 
-    FILE* fp = fopen(outPath.c_str(), "wb");
+    FILE* fp = nullptr;
+    std::string safeFullPath;
+
+    if (!rootDir.empty()) {
+        fp = openSafeFileForWrite(rootDir, outPath, &safeFullPath);
+    } else {
+        size_t lastSlash = outPath.find_last_of("/\\");
+        std::string dirPart = (lastSlash == std::string::npos) ? "." : outPath.substr(0, lastSlash);
+        std::string filePart = (lastSlash == std::string::npos) ? outPath : outPath.substr(lastSlash + 1);
+        fp = openSafeFileForWrite(dirPart, filePart, &safeFullPath);
+    }
+
     if (!fp) return false;
 
     uint8_t buf[64 * 1024];
@@ -142,10 +154,12 @@ bool WiiPartitionSession::extractFileToDisk(uint64_t decOffset, size_t len, cons
         size_t chunk = std::min(remaining, sizeof(buf));
         if (!readDecrypted(curOffset, chunk, buf)) {
             fclose(fp);
+            removePartialFile(safeFullPath);
             return false;
         }
         if (fwrite(buf, 1, chunk, fp) != chunk) {
             fclose(fp);
+            removePartialFile(safeFullPath);
             return false;
         }
         curOffset += chunk;

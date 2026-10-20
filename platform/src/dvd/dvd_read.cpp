@@ -1,9 +1,11 @@
 #include "dvd_internal.h"
-
 #include <errno.h>
 #include <fcntl.h>
 #include <string.h>
 #include <unistd.h>
+#if defined(_WIN32)
+#include <windows.h>
+#endif
 
 #include <condition_variable>
 #include <deque>
@@ -36,7 +38,17 @@ int openEntry(u32 entry) {
     }
     FstEntry& fe = sFst[entry];
     if (fe.fd < 0) {
-        fe.fd = open(fe.hostPath.c_str(), O_RDONLY | O_CLOEXEC);
+#if defined(_WIN32)
+        DWORD attr = GetFileAttributesA(fe.hostPath.c_str());
+        if (attr != INVALID_FILE_ATTRIBUTES && (attr & FILE_ATTRIBUTE_REPARSE_POINT)) {
+            port_log("dvd: refusing to open symlink %s", fe.hostPath.c_str());
+            return -1;
+        }
+#endif
+#ifndef O_NOFOLLOW
+#define O_NOFOLLOW 0
+#endif
+        fe.fd = open(fe.hostPath.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
         if (fe.fd < 0) {
             port_log("dvd: open %s failed: %s", fe.hostPath.c_str(), strerror(errno));
         }
@@ -71,14 +83,22 @@ void workerMain() {
         } else {
             u8* dst = (u8*)b->addr;
             size_t want = b->length;
-            ssize_t got = pread(fd, dst, want, (off_t)b->offset);
-            if (got < 0) {
-                result = -1;
-            } else if ((size_t)got != want) {
+            s64 fileSize = dvd_entry_size(req.entry);
+            size_t toRead = want;
+            size_t pad = 0;
+            if (fileSize > 0 && (s64)b->offset < fileSize && (s64)b->offset + (s64)want > fileSize) {
+                toRead = (size_t)(fileSize - (s64)b->offset);
+                pad = want - toRead;
+            }
+            ssize_t got = pread(fd, dst, toRead, (off_t)b->offset);
+            if (got < 0 || (size_t)got != toRead) {
                 port_log("dvd: short read on entry %u: wanted %zu, got %zd at %u", req.entry, want, got,
                          b->offset);
                 result = -1;
             } else {
+                if (pad > 0) {
+                    memset(dst + toRead, 0, pad);
+                }
                 b->transferredSize = b->length;
                 result = (s32)b->length;
             }
@@ -87,8 +107,12 @@ void workerMain() {
             std::lock_guard<std::mutex> lk(sQueueMutex);
             if (sActiveCanceled) {
                 b->state = kStateCanceled;
+                b->transferredSize = 0;
                 b->currTransferSize = (u32)-3;
             } else {
+                if (result < 0) {
+                    b->transferredSize = 0;
+                }
                 b->currTransferSize = (u32)result;
             }
             sActive = nullptr;
@@ -120,7 +144,8 @@ bool dvd_io_validate(const DVDFileInfo* fileInfo, const void* addr, s32 length, 
         return false;
     }
     const s64 size = dvd_entry_size(fileInfo->startAddr);
-    if (size < 0 || (s64)offset + (s64)length > size) {
+    const s64 alignedSize = (size >= 0) ? ((size + 31) & ~31LL) : -1;
+    if (size < 0 || (length > 0 && (s64)offset >= size) || (s64)offset + (s64)length > alignedSize) {
         port_log("dvd: %s rejected range [%d,%lld) of %lld-byte entry %u", api, offset,
                  (long long)offset + (long long)length, (long long)size, fileInfo->startAddr);
         return false;

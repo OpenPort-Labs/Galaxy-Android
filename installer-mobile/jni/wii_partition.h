@@ -30,7 +30,7 @@ public:
     uint64_t dataSize() const { return m_dataSize; }
     bool initDataPartition(LogCallback log);
     bool readDecrypted(uint64_t decOffset, size_t len, uint8_t* out);
-    bool extractFileToDisk(uint64_t decOffset, size_t len, const std::string& outPath);
+    bool extractFileToDisk(uint64_t decOffset, size_t len, const std::string& outPath, const std::string& rootDir = "");
 };
 
 } // namespace wii

@@ -63,6 +63,7 @@ public class CookerEngine {
                 if (!outFile.getPath().startsWith(rootPath) && !outFile.equals(root)) {
                     throw new java.io.IOException("ZIP entry escapes extraction directory (path traversal blocked): " + entry.getName());
                 }
+                verifyNoSymlinksBeneath(root, outFile);
 
                 if (entry.isDirectory()) {
                     outFile.mkdirs();
@@ -80,6 +81,9 @@ public class CookerEngine {
                             }
                             fos.write(buffer, 0, len);
                         }
+                    } catch (Exception writeEx) {
+                        if (outFile.exists()) outFile.delete();
+                        throw writeEx;
                     }
                 }
                 zis.closeEntry();
@@ -93,6 +97,22 @@ public class CookerEngine {
             Log.e(TAG, "Failed to unpack zip: " + zipFile.getAbsolutePath(), e);
             if (callback != null) callback.onLog("[Error] Failed to unpack zip: " + e.getMessage());
             return false;
+        }
+    }
+
+    public static void verifyNoSymlinksBeneath(File root, File file) throws java.io.IOException {
+        if (root == null || file == null) return;
+        java.nio.file.Path rootPath = root.toPath();
+        java.nio.file.Path target = file.toPath();
+        if (java.nio.file.Files.isSymbolicLink(target)) {
+            throw new java.io.IOException("Refusing to extract into pre-existing symlink: " + file.getName());
+        }
+        java.nio.file.Path cur = target.getParent();
+        while (cur != null && cur.startsWith(rootPath) && !cur.equals(rootPath)) {
+            if (java.nio.file.Files.isSymbolicLink(cur)) {
+                throw new java.io.IOException("Refusing to extract through symlink directory: " + cur);
+            }
+            cur = cur.getParent();
         }
     }
 
@@ -190,6 +210,7 @@ public class CookerEngine {
                     if (!outFile.getPath().startsWith(pythonHomePrefix) && !outFile.equals(pythonHomeCanonical)) {
                         throw new java.io.IOException("ZIP entry escapes target directory: " + entry.getName());
                     }
+                    verifyNoSymlinksBeneath(pythonHomeCanonical, outFile);
                     if (entry.isDirectory()) {
                         outFile.mkdirs();
                     } else {
@@ -202,6 +223,9 @@ public class CookerEngine {
                             while ((len = zis.read(buffer)) > 0) {
                                 fos.write(buffer, 0, len);
                             }
+                        } catch (Exception writeEx) {
+                            if (outFile.exists()) outFile.delete();
+                            throw writeEx;
                         }
                         if (outFile.getName().endsWith(".so")) {
                             outFile.setReadable(true, false);

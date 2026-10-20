@@ -1,6 +1,7 @@
 #include "wii_extractor.h"
 #include "wii_disc_reader.h"
 #include "wii_partition.h"
+#include "path_security.h"
 
 #include <cstdio>
 #include <cstring>
@@ -14,21 +15,12 @@ static bool rangeFits(uint64_t offset, uint64_t length, uint64_t limit) {
     return length <= limit && offset <= limit - length;
 }
 
-static bool safeName(const char* name) {
-    if (!name || !*name) return false;
-    if (strcmp(name, ".") == 0 || strcmp(name, "..") == 0) return false;
-    for (const char* p = name; *p; ++p) {
-        if (*p == '/' || *p == '\\') return false;
-    }
-    return true;
-}
-
 static const char* fstName(const char* stringTable, size_t stringTableSize, uint32_t offset) {
     if (offset >= stringTableSize) return nullptr;
     const char* start = stringTable + offset;
     const void* nullTerminator = memchr(start, '\0', stringTableSize - offset);
     if (!nullTerminator) return nullptr;
-    return safeName(start) ? start : nullptr;
+    return isSafeName(start) ? start : nullptr;
 }
 
 bool extractWiiDisc(
@@ -37,6 +29,11 @@ bool extractWiiDisc(
     bool includeMovies,
     LogCallback logCb,
     ProgressCallback progressCb) {
+
+    if (outDir.empty()) {
+        if (logCb) logCb("[Error] Destination directory path is empty.");
+        return false;
+    }
 
     if (logCb) logCb("[Extractor] Opening disc image: " + imagePath);
 
@@ -53,10 +50,11 @@ bool extractWiiDisc(
 
     if (logCb) logCb("[Extractor] Decrypted partition initialized. Reading disc filesystem...");
 
-    std::string sysDir = outDir + "/sys";
-    std::string filesDir = outDir + "/files";
-    ensure_directory_exists(sysDir);
-    ensure_directory_exists(filesDir);
+    std::string safeRoot = normalizePath(outDir);
+    if (!ensureSafeDirectories(safeRoot, "sys") || !ensureSafeDirectories(safeRoot, "files")) {
+        if (logCb) logCb("[Error] Destination directory initialization failed or symlink detected.");
+        return false;
+    }
 
     uint8_t bootBin[0x440];
     if (!session.readDecrypted(0, sizeof(bootBin), bootBin)) {
@@ -96,13 +94,13 @@ bool extractWiiDisc(
         if (logCb) logCb("[Error] DOL offset/size in the disc header is out of range.");
         return false;
     }
-    if (!session.extractFileToDisk(dolOffset, dolSize, sysDir + "/main.dol")) {
+    if (!session.extractFileToDisk(dolOffset, dolSize, "sys/main.dol", safeRoot)) {
         if (logCb) logCb("[Error] Failed to extract sys/main.dol.");
         return false;
     }
 
     if (logCb) logCb("[Extractor] Extracting sys/fst.bin...");
-    if (!session.extractFileToDisk(fstOffset, fstSize, sysDir + "/fst.bin")) {
+    if (!session.extractFileToDisk(fstOffset, fstSize, "sys/fst.bin", safeRoot)) {
         if (logCb) logCb("[Error] Failed to extract sys/fst.bin.");
         return false;
     }
@@ -153,9 +151,13 @@ bool extractWiiDisc(
                 if (logCb) logCb("[Warning] Skipping an FST directory with an invalid span.");
                 continue;
             }
+            if (dirStack.size() >= 32) {
+                if (logCb) logCb("[Warning] Skipping FST directory exceeding max depth (32).");
+                continue;
+            }
             std::string dirPath = dirStack.back().path.empty() ? name : dirStack.back().path + "/" + name;
             dirStack.push_back({nextIdx, dirPath});
-            ensure_directory_exists(filesDir + "/" + dirPath);
+            ensureSafeDirectories(safeRoot, "files/" + dirPath);
         } else {
             uint64_t fileOffset = (uint64_t)read_be32_val(entry + 4) << 2;
             uint32_t fileLen    = read_be32_val(entry + 8);
@@ -172,8 +174,7 @@ bool extractWiiDisc(
                 }
             }
 
-            std::string fullOutPath = filesDir + "/" + filePath;
-            if (!session.extractFileToDisk(fileOffset, fileLen, fullOutPath)) {
+            if (!session.extractFileToDisk(fileOffset, fileLen, "files/" + filePath, safeRoot)) {
                 if (logCb) logCb("[Error] Failed to extract: " + filePath);
                 failedFiles++;
                 continue;

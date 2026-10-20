@@ -30,7 +30,7 @@ public:
     }
 
     bool read(uint64_t virtualOffset, size_t len, uint8_t* out) override {
-        if (!m_fp || virtualOffset + len > m_fileSize) return false;
+        if (!m_fp || !rangeFits(virtualOffset, len, m_fileSize)) return false;
         if (fseeko(m_fp, (off_t)virtualOffset, SEEK_SET) != 0) return false;
         return fread(out, 1, len, m_fp) == len;
     }
@@ -55,6 +55,7 @@ public:
     }
 
     bool read(uint64_t virtualOffset, size_t len, uint8_t* out) override {
+        if (!rangeFits(virtualOffset, len, size())) return false;
         while (len > 0) {
             uint64_t blockIdx = virtualOffset / m_wbfsBlockSize;
             uint64_t blockRem = virtualOffset % m_wbfsBlockSize;

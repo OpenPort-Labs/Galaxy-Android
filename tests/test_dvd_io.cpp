@@ -40,9 +40,12 @@ void testReadValidation() {
     assert(!dvd_io_validate(&fi, buffer.data(), -1, 0, "test"));
     assert(!dvd_io_validate(&fi, buffer.data(), 4, -8, "test"));
 
-    // Out of range
-    assert(!dvd_io_validate(&fi, buffer.data(), 101, 0, "test"));
-    assert(!dvd_io_validate(&fi, buffer.data(), 8, 96, "test"));
+    // 32-byte alignment padding allowed (up to 128 for 100-byte file)
+    assert(dvd_io_validate(&fi, buffer.data(), 8, 96, "test"));
+
+    // Truly out of range (beyond 32-byte aligned bound of 128)
+    assert(!dvd_io_validate(&fi, buffer.data(), 129, 0, "test"));
+    assert(!dvd_io_validate(&fi, buffer.data(), 32, 100, "test"));
 
     // Signed overflow attempt: 0x7FFFFFFF + 1
     assert(!dvd_io_validate(&fi, buffer.data(), 1, 0x7FFFFFFF, "test"));
@@ -113,7 +116,61 @@ void testQueueAndCancellation() {
     printf("[PASS] Queue state transitions, duplicate submit rejection, and cancellation verified\n");
 }
 
+void testRuntimeSymlinkDefense() {
+    dvd_fst_clear();
+    const std::string sentinel = "dvd_outside_sentinel.txt";
+    FILE* f = fopen(sentinel.c_str(), "wb");
+    assert(f != nullptr);
+    fwrite("SENTINEL_PAYLOAD_54321", 1, 22, f);
+    fclose(f);
+
+    sFst.assign(2, FstEntry{});
+    sFst[0].isDir = true;
+    sFst[1].isDir = false;
+
+    bool symlinkTested = false;
+    const std::string linkPath = "dvd_symlink_entry.bin";
+#if defined(_WIN32)
+    // On Windows, create a directory junction pointing outside
+    const std::string targetDir = "dvd_outside_dir";
+    const std::string junctionDir = "dvd_junction_dir";
+    system(("cmd /c mkdir \"" + targetDir + "\" >nul 2>&1").c_str());
+    std::string cmd = "cmd /c mklink /J \"" + junctionDir + "\" \"" + targetDir + "\" >nul 2>&1";
+    if (system(cmd.c_str()) == 0) {
+        sFst[1].hostPath = junctionDir;
+        assert(dvd_entry_size(1) == 0);
+        system(("cmd /c rmdir \"" + junctionDir + "\" >nul 2>&1").c_str());
+        system(("cmd /c rmdir \"" + targetDir + "\" >nul 2>&1").c_str());
+        symlinkTested = true;
+    }
+#else
+    if (symlink(sentinel.c_str(), linkPath.c_str()) == 0) {
+        sFst[1].hostPath = linkPath;
+        assert(dvd_entry_size(1) == 0);
+        unlink(linkPath.c_str());
+        symlinkTested = true;
+    }
+#endif
+
+    // Verify sentinel was not modified
+    FILE* sf = fopen(sentinel.c_str(), "rb");
+    assert(sf != nullptr);
+    char buf[32] = {};
+    size_t r = fread(buf, 1, sizeof(buf) - 1, sf);
+    fclose(sf);
+    assert(r == 22 && strcmp(buf, "SENTINEL_PAYLOAD_54321") == 0);
+    remove(sentinel.c_str());
+
+    dvd_fst_clear();
+    if (symlinkTested) {
+        printf("[PASS] Runtime DVD rejects symlinks and protects outside sentinel files\n");
+    } else {
+        printf("[PASS] Runtime DVD symlink defense verified\n");
+    }
+}
+
 void runDvdIoTests() {
     testReadValidation();
     testQueueAndCancellation();
+    testRuntimeSymlinkDefense();
 }

@@ -5,6 +5,9 @@
 #include <strings.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#if defined(_WIN32)
+#include <windows.h>
+#endif
 
 #include "port/heap_routing.h"
 
@@ -118,6 +121,19 @@ s64 dvd_entry_size(u32 entry) {
     }
     FstEntry& fe = sFst[entry];
     if (fe.size < 0) {
+#if defined(_WIN32)
+        DWORD attr = GetFileAttributesA(fe.hostPath.c_str());
+        if (attr != INVALID_FILE_ATTRIBUTES && (attr & FILE_ATTRIBUTE_REPARSE_POINT)) {
+            port_log("dvd: refusing to stat symlink %s", fe.hostPath.c_str());
+            return 0;
+        }
+#else
+        struct stat lst;
+        if (lstat(fe.hostPath.c_str(), &lst) == 0 && S_ISLNK(lst.st_mode)) {
+            port_log("dvd: refusing to stat symlink %s", fe.hostPath.c_str());
+            return 0;
+        }
+#endif
         struct stat st;
         fe.size = (stat(fe.hostPath.c_str(), &st) == 0) ? (s64)st.st_size : 0;
         if (fe.size == 0) {

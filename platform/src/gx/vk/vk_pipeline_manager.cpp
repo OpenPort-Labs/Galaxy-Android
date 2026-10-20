@@ -40,6 +40,13 @@ VkPipeline VkRenderer::getPipeline(const Item& it, const ShaderUid& uid) {
     // Catalogue probe before the miss is recorded, so it answers "was this UID
     // known before this draw?" rather than trivially true.
     const bool uidAlreadyCatalogued = ShaderInventory::get().hasUid(uid);
+    // Sampled before this key is catalogued, so it compares against the cooked
+    // catalogue rather than against itself.
+    uint32_t uidDiffWords[8] = {0};
+    size_t uidDiff = SIZE_MAX;
+    if (!uidAlreadyCatalogued && mRuntimePipelineCreates < 8) {
+        uidDiff = ShaderInventory::get().nearestUidDiff(uid, uidDiffWords, 8);
+    }
     auto pit = mPipelines.find(key);
     if (pit != mPipelines.end() && pit->second != VK_NULL_HANDLE) {
         mPipelineMru.store(key, pit->second);
@@ -63,9 +70,16 @@ VkPipeline VkRenderer::getPipeline(const Item& it, const ShaderUid& uid) {
         mRuntimePipelineCreates++;
         if (uidAlreadyCatalogued) mRuntimeCreatesKnownUid++;
         if (mRuntimePipelineCreates <= 32) {
-            LOGI("VkRuntimeKey: uid=%016llx flags=%08x hud=%u efbAlpha=%u fog=%u ztex=%u catalogued=%d",
-                 (unsigned long long)ShaderUidHash()(uid), key.flags, uid.hud, uid.efbHasAlpha,
-                 uid.fogSel, uid.zTex, uidAlreadyCatalogued ? 1 : 0);
+            LOGI("VkRuntimeKey: uid=%016llx flags=%08x hud=%u fog=%u ztex=%u cutaway=%u catalogued=%d",
+                 (unsigned long long)ShaderUidHash()(uid), key.flags, uid.hud,
+                 uid.fogSel, uid.zTex, uid.cutaway, uidAlreadyCatalogued ? 1 : 0);
+        }
+        if (uidDiff != SIZE_MAX) {
+            // Which ShaderUid words block the match against the cooked catalogue.
+            // Word indices map to ShaderUid fields (see gx_shader_uid.h).
+            LOGI("VkKeyDiff: dist=%zu words=%u,%u,%u,%u,%u,%u,%u,%u flags=%08x",
+                 uidDiff, uidDiffWords[0], uidDiffWords[1], uidDiffWords[2], uidDiffWords[3],
+                 uidDiffWords[4], uidDiffWords[5], uidDiffWords[6], uidDiffWords[7], key.flags);
         }
     }
     return created;

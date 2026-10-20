@@ -107,9 +107,18 @@ public:
     // True when this exact ShaderUid is already catalogued (prewarm coverage probe)
     bool hasUid(const ShaderUid& uid) const;
 
+    // Number of distinct vertex layouts (key.flags) in the catalogue
+    size_t distinctVertexLayouts() const;
+
+    // Diagnostic: how far the closest catalogued ShaderUid is from `uid`.
+    // Writes up to maxWords differing word indices; returns the word distance
+    // (SIZE_MAX when the catalogue is empty).
+    size_t nearestUidDiff(const ShaderUid& uid, uint32_t* wordsOut, size_t maxWords) const;
+
 private:
     void addEntryLocked(const ShaderUid& uid, const PipelineKey& key, const std::string& source, bool isRuntime);
     mutable std::mutex mMutex;
+    size_t mSavedRuntimeEntries = 0;
     std::string mCacheDir;
     std::string mInventoryFilePath;
     std::string mDataRoot;

@@ -9,13 +9,14 @@
 namespace gpu {
 
 constexpr uint32_t kInventoryMagic = 0x55535450;      // "PTSU"
-// Schema 3 widened the serialized ShaderUid from 90 to all 100 words so the
-// record carries the complete pipeline identity (hud, efbHasAlpha, zTex,
-// cutaway, screenTexGens, indCmd, iref, indScale).
-constexpr uint32_t kInventoryVersion = 3;
+// Schema 3 widened the serialized ShaderUid from 90 words to the full struct.
+// Schema 4 drops efbHasAlpha, which no shader or pipeline field depends on.
+constexpr uint32_t kInventoryVersion = 4;
 constexpr uint32_t kBuildVersion = 20261020;
 constexpr uint32_t kShaderGenVersion = 1;
-constexpr size_t kManifestUidWords = 100;
+constexpr size_t kManifestUidWords = 99;
+static_assert(sizeof(ShaderUid) == kManifestUidWords * sizeof(uint32_t),
+              "kManifestUidWords must serialise every ShaderUid word");
 
 uint32_t fnv1a32(const void* data, size_t size, uint32_t seed = 2166136261u);
 
@@ -28,6 +29,12 @@ struct ManifestStagedEntry {
 bool parseAssetManifest(const std::string& manifestPath,
                         std::vector<ManifestStagedEntry>& outEntries,
                         uint32_t& outBuildVersion);
+
+// Writes the same format the reader above accepts.  Used for the cooked
+// manifest and for the runtime-discovered inventory cache.
+bool writeAssetManifest(const std::string& path,
+                        const std::vector<ManifestStagedEntry>& entries,
+                        uint32_t buildVersion);
 
 std::vector<std::string> getManifestCandidates(const std::string& cacheDir,
                                               const std::string& dataRoot,

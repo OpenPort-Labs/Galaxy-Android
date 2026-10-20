@@ -25,7 +25,6 @@ struct ShaderUid {
     uint32_t indCmd[16];
     uint32_t iref;
     uint32_t indScale[2];
-    uint32_t efbHasAlpha;
     uint32_t hud;         // drawn into the HUD layer
     uint32_t zTex;        // BP 0xF5: Z texture type (bits 0-1) and op (bits 2-3)
     uint32_t cutaway;     // VR cutaway variant; has a discard

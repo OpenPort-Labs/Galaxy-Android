@@ -77,9 +77,10 @@ static inline void test_manifest_schema_roundtrip() {
         return;
     }
 
-    // Every word distinct and non-zero, including the ten words schema 2 used
-    // to drop (74..99): fogSel, indCmd, iref, indScale, efbHasAlpha, hud,
-    // zTex, cutaway and screenTexGens.
+    // Every word distinct and non-zero, including the fields schema 2 dropped
+    // (alphaFunc, fogSel, indCmd, iref, indScale, hud, zTex, cutaway,
+    // screenTexGens).
+    static_assert(gpu::kManifestUidWords == 99, "schema 4 serialises all 99 ShaderUid words");
     uint32_t uid[gpu::kManifestUidWords] = {0};
     for (size_t i = 0; i < gpu::kManifestUidWords; i++) uid[i] = 0xA5A50000u + (uint32_t)i;
     uid[74] = 0x0000000F;  // alphaFunc
@@ -87,11 +88,10 @@ static inline void test_manifest_schema_roundtrip() {
     uid[92] = 0x12345678;  // iref
     uid[93] = 0x00000011;  // indScale[0]
     uid[94] = 0x00000022;  // indScale[1]
-    uid[95] = 1;           // efbHasAlpha
-    uid[96] = 1;           // hud
-    uid[97] = 2;           // zTex
-    uid[98] = 1;           // cutaway
-    uid[99] = 0x00000007;  // screenTexGens
+    uid[95] = 1;           // hud
+    uid[96] = 2;           // zTex
+    uid[97] = 1;           // cutaway
+    uid[98] = 0x00000007;  // screenTexGens
     const uint32_t key[5] = {0x4047, 0x13, 0x0000000A, 0x0000100F, 0x00000002};
     const std::string source = "Model.bdl:Material";
 
@@ -113,7 +113,6 @@ static inline void test_manifest_schema_roundtrip() {
         assert(entries[0].source == "asset:" + source);
         // Explicitly check the fields that schema 2 truncated.
         assert(entries[0].uid.hud == 1);
-        assert(entries[0].uid.efbHasAlpha == 1);
         assert(entries[0].uid.zTex == 2);
         assert(entries[0].uid.cutaway == 1);
         assert(entries[0].uid.screenTexGens == 7);
@@ -122,7 +121,7 @@ static inline void test_manifest_schema_roundtrip() {
         assert(entries[0].uid.indScale[0] == 0x11 && entries[0].uid.indScale[1] == 0x22);
     }
     {
-        // Schema 2 records are 40 bytes shorter: they must be rejected outright.
+        // Older-schema records are shorter: they must be rejected outright.
         std::vector<uint8_t> data = buildProductionManifest(uid, key, source, 2, gpu::kBuildVersion);
         assert(writeBytes(path, data));
         std::vector<gpu::ManifestStagedEntry> entries;
@@ -156,6 +155,36 @@ static inline void test_manifest_schema_roundtrip() {
         assert(entries.empty());
     }
 
+    {
+        // The inventory cache writes through the production writer and must be
+        // readable again by the production reader (that is how runtime keys
+        // survive into the next launch's prewarm pass).
+        std::vector<gpu::ManifestStagedEntry> written(2);
+        memcpy(&written[0].uid, uid, sizeof(written[0].uid));
+        written[0].key.flags = 0x22;
+        written[0].key.depthState = 0x13;
+        written[0].key.blendState = 0x0A;
+        written[0].key.blendState2 = 0x100F;
+        written[0].key.rasterState = 0x02;
+        written[0].source = "runtime_key_miss";
+        written[1] = written[0];
+        written[1].uid.hud = 1;
+        written[1].key.flags = 0x2A;
+        written[1].source = "asset:Model.bdl:Material";
+
+        assert(gpu::writeAssetManifest(path, written, gpu::kBuildVersion));
+        std::vector<gpu::ManifestStagedEntry> roundtrip;
+        uint32_t build = 0;
+        assert(gpu::parseAssetManifest(path, roundtrip, build));
+        assert(build == gpu::kBuildVersion);
+        assert(roundtrip.size() == 2);
+        assert(memcmp(&roundtrip[0].uid, &written[0].uid, sizeof(written[0].uid)) == 0);
+        assert(roundtrip[1].uid.hud == 1);
+        assert(roundtrip[1].key.flags == 0x2A);
+        assert(roundtrip[0].source == "asset:runtime_key_miss");
+        assert(roundtrip[1].source == "asset:Model.bdl:Material");
+    }
+
     remove(path.c_str());
-    printf("[PASS] Production manifest reader preserves all 100 UID words and rejects stale schemas!\n");
+    printf("[PASS] Production manifest reader/writer preserve every UID word and reject stale schemas!\n");
 }

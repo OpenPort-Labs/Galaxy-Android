@@ -13,12 +13,12 @@ Every CRC is FNV-1a 32 over the bytes that precede it.
 """
 
 MAGIC_PTSU = 0x55535450
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 BUILD_VERSION = 20261020
-UID_WORDS = 100
+UID_WORDS = 99
 KEY_WORDS = 5
 MAX_SOURCE_BYTES = 512
 HEADER_SIZE = 5 * 4
 HEADER_CRC_BYTES = 4 * 4
 
-assert UID_WORDS * 4 == 400, "ShaderUid must stay 400 bytes (100 words)"
+assert UID_WORDS * 4 == 396, "ShaderUid is 99 words (efbHasAlpha removed in schema 4)"

@@ -6,64 +6,21 @@ try:
 except ImportError:  # imported as tools.cook.j3d_mat3_parser
     from tools.cook.manifest_schema import UID_WORDS as SHADER_UID_WORDS
 
-# Canonical Enums matching platform/src/gx/vk/vk_types.h
-CANONICAL_DEPTH_NEVER = 0
-CANONICAL_DEPTH_LESS = 1
-CANONICAL_DEPTH_EQUAL = 2
-CANONICAL_DEPTH_LEQUAL = 3
-CANONICAL_DEPTH_GREATER = 4
-CANONICAL_DEPTH_NEQUAL = 5
-CANONICAL_DEPTH_GEQUAL = 6
-CANONICAL_DEPTH_ALWAYS = 7
+try:
+    from j3d_shape_attrs import ShapeAttrError, material_vertex_flags
+except ImportError:  # imported as tools.cook.j3d_mat3_parser
+    from tools.cook.j3d_shape_attrs import ShapeAttrError, material_vertex_flags
 
-CANONICAL_BLEND_ZERO = 0
-CANONICAL_BLEND_ONE = 1
-CANONICAL_BLEND_SRCCLR = 2
-CANONICAL_BLEND_INVSRCCLR = 3
-CANONICAL_BLEND_SRCATTR = 4
-CANONICAL_BLEND_INVSRCATTR = 5
-CANONICAL_BLEND_DSTATTR = 6
-CANONICAL_BLEND_INVDSTATTR = 7
-CANONICAL_BLEND_DSTCLR = 8
-CANONICAL_BLEND_INVDSTCLR = 9
-
-CANONICAL_BLEND_OP_ADD = 0
-CANONICAL_BLEND_OP_SUBTRACT = 1
-CANONICAL_BLEND_OP_REVERSE_SUBTRACT = 2
-
-CANONICAL_CULL_NONE = 0
-CANONICAL_CULL_FRONT = 1
-CANONICAL_CULL_BACK = 2
-CANONICAL_CULL_FRONT_AND_BACK = 3
-
-CANONICAL_TOPO_POINT_LIST = 0
-CANONICAL_TOPO_LINE_LIST = 1
-CANONICAL_TOPO_LINE_STRIP = 2
-CANONICAL_TOPO_TRIANGLE_LIST = 3
-CANONICAL_TOPO_TRIANGLE_STRIP = 4
-CANONICAL_TOPO_TRIANGLE_FAN = 5
-
-def encode_pipeline_key(uid_words, vtx_flags, depth_test, depth_write, depth_func,
-                        blend_enable, src_color, dst_color, src_alpha, dst_alpha,
-                        color_blend_op=0, alpha_blend_op=0, color_mask=15,
-                        cull_mode=2, topology=3, front_face_cw=0, const_alpha=0):
-    """Encodes canonical pipeline key matching platform/src/gx/vk/vk_types.h exactly."""
-    flags = vtx_flags
-    depth_state = (1 if depth_test else 0) | ((1 if (depth_test and depth_write) else 0) << 1) | ((depth_func & 0x0F) << 4)
-    blend_state = ((1 if blend_enable else 0) |
-                   ((src_color & 0x1F) << 1) |
-                   ((dst_color & 0x1F) << 6) |
-                   ((src_alpha & 0x1F) << 11) |
-                   ((dst_alpha & 0x1F) << 16))
-    blend_state2 = ((color_blend_op & 7) |
-                    ((alpha_blend_op & 7) << 3) |
-                    ((color_mask & 0x0F) << 6) |
-                    ((const_alpha & 0xFF) << 10))
-    cull_val = cull_mode & 3
-    prim_val = topology & 7
-    front_bit = 1 if front_face_cw else 0
-    raster_state = cull_val | (prim_val << 2) | (front_bit << 5)
-    return (flags, depth_state, blend_state, blend_state2, raster_state)
+try:
+    from j3d_pipeline_key import (
+        CANONICAL_BLEND_ONE, CANONICAL_BLEND_OP_ADD, CANONICAL_BLEND_ZERO, CANONICAL_CULL_BACK,
+        CANONICAL_DEPTH_LEQUAL, CANONICAL_TOPO_TRIANGLE_LIST, encode_pipeline_key,
+    )
+except ImportError:  # imported as tools.cook.j3d_mat3_parser
+    from tools.cook.j3d_pipeline_key import (
+        CANONICAL_BLEND_ONE, CANONICAL_BLEND_OP_ADD, CANONICAL_BLEND_ZERO, CANONICAL_CULL_BACK,
+        CANONICAL_DEPTH_LEQUAL, CANONICAL_TOPO_TRIANGLE_LIST, encode_pipeline_key,
+    )
 
 def parse_j3d_mat3(b: bytes, model_name: str, archive_name: str = ""):
     """Extracts authentic materials from a J3D (BMD/BDL) file supporting both big-endian and little-endian formats."""
@@ -113,8 +70,32 @@ def parse_j3d_mat3(b: bytes, model_name: str, archive_name: str = ""):
                 offs.append(struct.unpack_from(fmt32, b, o+0x0C+4*t)[0])
 
             tab0 = o + offs[0]
-            if tab0 + num_mats * 0x14C > len(b):
-                gaps.append(f"Truncated MAT3 Table 0 in {model_name}")
+            block_end = o + size
+            if not offs[0] or not offs[1]:
+                gaps.append(f"MAT3 in {model_name} lacks its init/ID tables")
+                break
+            # J3DMaterialInitData records are selected through the material ID
+            # table (mpMaterialID); a material sharing state with another one
+            # points at the same record, so the table is usually shorter than
+            # num_mats. Sequential indexing reads neighbouring tables as state.
+            if o + offs[1] + 2 * num_mats > block_end:
+                gaps.append(f"MAT3 ID table truncated in {model_name}")
+                break
+            mat_ids = [struct.unpack_from(fmt16, b, o + offs[1] + 2 * i)[0] for i in range(num_mats)]
+            # Table 0 ends where the next table in the block begins; an ID past
+            # that point would read another table's bytes as material state.
+            init_limit = min((off for off in offs if off > offs[0]), default=size)
+            if tab0 + max(mat_ids) * 0x14C + 0x14C > o + init_limit:
+                gaps.append(f"MAT3 ID table points outside Table 0 in {model_name}")
+                break
+
+            # Vertex layout each material is drawn with (SHP1 vtxDesc list).
+            # Without it the pipeline key cannot be reproduced, so the model is
+            # skipped instead of being cooked with a fabricated layout.
+            try:
+                mat_vtx_flags = material_vertex_flags(b, num_mats)
+            except ShapeAttrError as e:
+                gaps.append(f"No vertex layout for {model_name}: {e}")
                 break
 
             # Read material names from Table 2 (J3D String Table)
@@ -137,7 +118,7 @@ def parse_j3d_mat3(b: bytes, model_name: str, archive_name: str = ""):
                         names.append(f"mat_{ni}")
 
             for m in range(num_mats):
-                m_off = tab0 + m * 0x14C
+                m_off = tab0 + mat_ids[m] * 0x14C
                 mat_name = names[m] if m < len(names) else f"mat_{m}"
 
                 # Material fields from Table 0 indices
@@ -208,7 +189,7 @@ def parse_j3d_mat3(b: bytes, model_name: str, archive_name: str = ""):
 
                 # 6. Build authentic full-width ShaderUid matching the native C++ engine
                 uid_words = [0] * SHADER_UID_WORDS
-                vtx_flags = 0x4047  # Pos | PosMtx | Nrm | Tex0 | TexMtx
+                vtx_flags = mat_vtx_flags[m]
                 uid_words[0] = vtx_flags
                 uid_words[1] = num_texgens
                 uid_words[2] = num_chans

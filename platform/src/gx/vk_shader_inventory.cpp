@@ -132,18 +132,22 @@ void ShaderInventory::scanAssetDirectory(const std::string& filesDir) {
 
 void ShaderInventory::recordRuntimeShaderUidMiss(const ShaderUid& uid, const PipelineKey& key, const char* source) {
     addEntry(uid, key, source ? source : "runtime_uid_miss", true);
-    std::lock_guard<std::mutex> lock(mMutex);
-    mStats.runtimeShaderUidMisses++;
-    mStats.runtimeDiscoveredEntries++;
-    saveInventory();
+    {
+        std::lock_guard<std::mutex> lock(mMutex);
+        mStats.runtimeShaderUidMisses++;
+        mStats.runtimeDiscoveredEntries++;
+    }
+    saveInventory();  // takes mMutex itself: never call while holding it
 }
 
 void ShaderInventory::recordRuntimePipelineKeyMiss(const ShaderUid& uid, const PipelineKey& key, const char* source) {
     addEntry(uid, key, source ? source : "runtime_key_miss", true);
-    std::lock_guard<std::mutex> lock(mMutex);
-    mStats.runtimePipelineKeyMisses++;
-    mStats.runtimeDiscoveredEntries++;
-    saveInventory();
+    {
+        std::lock_guard<std::mutex> lock(mMutex);
+        mStats.runtimePipelineKeyMisses++;
+        mStats.runtimeDiscoveredEntries++;
+    }
+    saveInventory();  // takes mMutex itself: never call while holding it
 }
 
 void ShaderInventory::incrementPlaceholderUses() {
@@ -228,6 +232,12 @@ void ShaderInventory::prewarmPipelines(VkRenderer& renderer, std::function<void(
 
     renderer.savePipelineCache();
     auto elapsed = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+    std::vector<uint32_t> layouts;
+    for (const auto& e : entriesCopy) {
+        if (std::find(layouts.begin(), layouts.end(), e.key.flags) == layouts.end()) layouts.push_back(e.key.flags);
+    }
+    port_log("vk_shader_inventory: prewarmed %d/%d in %.1f ms (created %d reused %d spirv-miss %d failed %d) over %zu vertex layouts",
+             created + reused, total, elapsed, created, reused, spirvMiss, pipeFail + unsupported, layouts.size());
 
     {
         std::lock_guard<std::mutex> lock(mMutex);
@@ -264,22 +274,6 @@ ShaderInventoryStats ShaderInventory::stats() const {
     s.totalUniqueKeys = mKeyIndex.size();
     s.totalUniqueUids = mUidIndex.size();
     return s;
-}
-
-std::string ShaderInventory::getDiagnostics() const {
-    std::lock_guard<std::mutex> lock(mMutex);
-    char buf[512];
-    snprintf(buf, sizeof(buf), "Vulkan Inventory: %zu keys, %zu UIDs, %zu asset records",
-             mKeyIndex.size(), mUidIndex.size(), mStats.assetDerivedEntries);
-    return std::string(buf);
-}
-
-void ShaderInventory::saveInventory() {
-    // Inventory metadata persistence handled via manifest
-}
-
-void ShaderInventory::loadInventory() {
-    // Inventory reload handled via manifest
 }
 
 void ShaderInventory::invalidateIfStale(uint32_t currentBuildVersion) {

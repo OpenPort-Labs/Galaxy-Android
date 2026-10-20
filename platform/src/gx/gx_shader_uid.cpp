@@ -41,8 +41,9 @@ ShaderUid makeShaderUid(const uint32_t* bp, const uint32_t* xf, uint32_t vtxFlag
         u.indScale[0] = bp[0x25] & 0xFF;
         u.indScale[1] = bp[0x26] & 0xFF;
     }
-    uint32_t pixFmt = bp[0x43] & 7;
-    u.efbHasAlpha = pixFmt == 1;
+    // The EFB pixel format (BP 0x43) deliberately stays out of the UID: it is
+    // draw-target state, no shader or pipeline field is derived from it, and
+    // including it split identical shaders into unmatchable prewarm keys.
     u.hud = hud;
     u.zTex = ((bp[0xF5] >> 2) & 3) ? (bp[0xF5] & 0xF) : 0;
     return u;

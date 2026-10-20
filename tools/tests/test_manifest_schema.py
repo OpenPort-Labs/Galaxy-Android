@@ -107,6 +107,44 @@ class TestCommittedManifest(unittest.TestCase):
         self.assertGreater(len(records), 0)
         self.assertGreaterEqual(len(records[0][0]), schema.UID_WORDS)
 
+    def test_every_record_uses_a_real_vertex_layout(self):
+        """Regression for the hardcoded 0x4047 "layout" the cooker used to emit.
+
+        0x4047 sets bits outside gpu::VtxFlags, so no runtime draw could ever
+        produce that key and the prewarmed pipeline was unreachable.
+        """
+        from tools.cook.j3d_shape_attrs import VALID_VF_MASK
+
+        with open(self.MANIFEST, "rb") as f:
+            data = f.read()
+        records = self.walk(data)
+        flags = {rec[1][0] for rec in records}
+        for uid, key, _flags, src in records:
+            self.assertEqual(uid[0], key[0], f"{src}: uid.vtxFlags disagrees with key.flags")
+            self.assertEqual(key[0] & ~VALID_VF_MASK, 0,
+                             f"{src}: flags {key[0]:#x} contain bits no draw can produce")
+        self.assertNotIn(0x4047, flags)
+        self.assertTrue({0x0, 0x8, 0x20} & flags,
+                        f"observed runtime layouts missing from manifest: {[hex(f) for f in flags]}")
+
+    def test_cooked_and_disc_trees_cook_to_the_same_keys(self):
+        """A cooked (little-endian) model must parse exactly like its disc original."""
+        cooked = os.path.join(ROOT, "cooked")
+        disc = os.path.join(ROOT, "extracted")
+        if not (os.path.isdir(cooked) and os.path.isdir(disc)):
+            self.skipTest("cooked/ and extracted/ are not both present")
+        from tools.cook.generate_shader_manifest import scan_directory_for_models
+
+        cooked_mats, _ = scan_directory_for_models(cooked)
+        disc_mats, _ = scan_directory_for_models(disc)
+        cooked_keys = {k for _, k, _ in cooked_mats}
+        disc_keys = {k for _, k, _ in disc_mats}
+        self.assertEqual(cooked_keys, disc_keys,
+                         "cooked tree and disc tree disagree on pipeline keys: "
+                         f"{len(cooked_keys - disc_keys)} only cooked, {len(disc_keys - cooked_keys)} only disc")
+        self.assertEqual({s: k for _, k, s in cooked_mats}, {s: k for _, k, s in disc_mats},
+                         "same model material yields different keys in the two trees")
+
     def test_committed_manifest_is_reproducible_from_cooked_root(self):
         cooked = os.path.join(ROOT, "cooked")
         if not os.path.isdir(cooked):

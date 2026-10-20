@@ -14,13 +14,13 @@
 // Format model for the on-disk record.  Kept in sync with kManifestUidWords;
 // the production reader is exercised separately in test_manifest_roundtrip.h.
 struct StagedRecord {
-    uint32_t uid[100];
+    uint32_t uid[gpu::kManifestUidWords];
     uint32_t pipelineKey[5];
     uint8_t flags;
     std::string source;
 };
 
-constexpr size_t kStagedUidBytes = 100 * sizeof(uint32_t);
+constexpr size_t kStagedUidBytes = gpu::kManifestUidWords * sizeof(uint32_t);
 constexpr size_t kStagedKeyBytes = 5 * sizeof(uint32_t);
 
 static inline uint32_t test_fnv1a32(const void* data, size_t size, uint32_t seed = 2166136261u) {
@@ -105,7 +105,7 @@ static inline void test_atomic_manifest_validation() {
 
         for (uint32_t i = 0; i < count; i++) {
             size_t recStart = buf.size();
-            uint32_t uid[100]{};
+            uint32_t uid[gpu::kManifestUidWords]{};
             uid[0] = i + 1;
             uint32_t key[5]{ 1, 2, 3, 4, 5 };
             uint8_t flags = 0;
@@ -178,7 +178,7 @@ static inline void test_atomic_manifest_validation() {
         assert(committed.empty());
     }
     {
-        // Schema 2 (90-word) manifests must be rejected, not reinterpreted.
+        // An older schema (pre-widening UID) must be rejected, not reinterpreted.
         std::vector<uint8_t> buf = buildManifest(3, 0x55535450, 2, gpu::kBuildVersion);
         std::vector<StagedRecord> committed;
         assert(!validateAndParseManifestBytes(buf.data(), buf.size(), committed));

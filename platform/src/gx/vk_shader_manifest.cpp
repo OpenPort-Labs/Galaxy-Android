@@ -7,11 +7,6 @@
 
 namespace gpu {
 
-// The on-disk UID width must track ShaderUid exactly: a mismatch silently
-// rewrites pipeline identity, which is what schema 2 did.
-static_assert(sizeof(ShaderUid) == kManifestUidWords * sizeof(uint32_t),
-              "kManifestUidWords must match sizeof(ShaderUid)");
-
 uint32_t fnv1a32(const void* data, size_t size, uint32_t seed) {
     const uint8_t* p = (const uint8_t*)data;
     uint32_t h = seed;
@@ -155,6 +150,52 @@ bool parseAssetManifest(const std::string& manifestPath,
     fclose(f);
     outBuildVersion = header[2];
     return true;
+}
+
+bool writeAssetManifest(const std::string& path,
+                        const std::vector<ManifestStagedEntry>& entries,
+                        uint32_t buildVersion) {
+    if (path.empty() || entries.size() > 100000) return false;
+    const std::string tmp = path + ".tmp";
+    FILE* f = fopen(tmp.c_str(), "wb");
+    if (!f) return false;
+
+    uint32_t header[4] = {kInventoryMagic, kInventoryVersion, buildVersion, (uint32_t)entries.size()};
+    uint32_t headerCrc = fnv1a32(header, sizeof(header));
+    bool ok = fwrite(header, sizeof(uint32_t), 4, f) == 4 &&
+              fwrite(&headerCrc, sizeof(uint32_t), 1, f) == 1;
+
+    std::vector<uint8_t> rec;
+    for (size_t i = 0; ok && i < entries.size(); i++) {
+        const ManifestStagedEntry& e = entries[i];
+        std::string src = e.source;
+        if (src.compare(0, 6, "asset:") == 0) src.erase(0, 6);
+        if (src.size() > 512) {
+            ok = false;
+            break;
+        }
+        const uint32_t key[5] = {e.key.flags, e.key.depthState, e.key.blendState,
+                                 e.key.blendState2, e.key.rasterState};
+        const uint8_t* uidBytes = (const uint8_t*)&e.uid;
+        const uint8_t* keyBytes = (const uint8_t*)key;
+        rec.assign(uidBytes, uidBytes + kManifestUidWords * sizeof(uint32_t));
+        rec.insert(rec.end(), keyBytes, keyBytes + sizeof(key));
+        rec.push_back(0);
+        rec.push_back((uint8_t)(src.size() & 0xFF));
+        rec.push_back((uint8_t)(src.size() >> 8));
+        rec.insert(rec.end(), src.begin(), src.end());
+        uint32_t crc = fnv1a32(rec.data(), rec.size());
+        const uint8_t* crcBytes = (const uint8_t*)&crc;
+        rec.insert(rec.end(), crcBytes, crcBytes + sizeof(crc));
+        ok = fwrite(rec.data(), 1, rec.size(), f) == rec.size();
+    }
+
+    if (fclose(f) != 0) ok = false;
+    if (!ok) {
+        remove(tmp.c_str());
+        return false;
+    }
+    return rename(tmp.c_str(), path.c_str()) == 0;
 }
 
 bool isInventoryFileStale(const std::string& path, uint32_t currentBuildVersion) {

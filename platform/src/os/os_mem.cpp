@@ -11,6 +11,7 @@
 
 #include <atomic>
 
+#include "port/guest_layout.h"
 #include "port/port.h"
 #include "revolution/os.h"
 
@@ -72,6 +73,9 @@ static inline void storeBE32(uintptr_t addr, u32 v) {
 extern "C" int port_mem_init(void) {
     if (sMemReady) {
         return 1;
+    }
+    if (!guest_layout_validate_definitions()) {
+        port_fatal("guest memory layout definitions failed validation");
     }
     int fd1 = makeSharedFd("wii-mem1", PORT_MEM1_SIZE);
     mapAt(PORT_MEM1_BASE, PORT_MEM1_SIZE, fd1);
@@ -136,28 +140,23 @@ extern "C" void* port_low_alloc(size_t size) {
 }
 
 extern "C" int port_is_game_memory(const void* p) {
-    uintptr_t a = (uintptr_t)p;
-    return (a >= PORT_MEM1_BASE && a < PORT_MEM1_BASE + PORT_MEM1_SIZE) || (a >= PORT_MEM2_BASE && a < PORT_MEM2_BASE + PORT_MEM2_SIZE) ||
-           (a >= PORT_MEM1_UNCACHED && a < PORT_MEM1_UNCACHED + PORT_MEM1_SIZE) ||
-           (a >= PORT_MEM2_UNCACHED && a < PORT_MEM2_UNCACHED + PORT_MEM2_SIZE);
+    return guest_layout_is_valid_virtual((uintptr_t)p, 1);
 }
 
 extern "C" void* port_phys_to_host(uint32_t phys) {
-    // MEM1, MEM2, the game library image and the low pool are all laid out
-    // at 0x80000000 + physical address.
-    return (void*)(uintptr_t)(0x80000000u + (phys & 0x3FFFFFFFu));
+    void* p = guest_layout_phys_to_virt(phys);
+    if (!p) {
+        return (void*)(uintptr_t)(0x80000000u + (phys & 0x3FFFFFFFu));
+    }
+    return p;
 }
 
 extern "C" uint32_t port_host_to_phys(const void* p) {
-    uintptr_t a = (uintptr_t)p;
-    if (a >= 0x80000000u && a < 0xB0000000u) {
-        return (uint32_t)(a - 0x80000000u);
-    }
-    if (a >= 0xC0000000u && a < 0xE0000000u) {
-        return (uint32_t)(a - 0xC0000000u);
-    }
+    int valid = 0;
+    uint32_t phys = guest_layout_virt_to_phys(p, &valid);
+    if (valid) return phys;
     port_log("port_host_to_phys: %p is outside the game address space", p);
-    return (uint32_t)a;
+    return (uint32_t)(uintptr_t)p;
 }
 
 // ---------------------------------------------------------------------------

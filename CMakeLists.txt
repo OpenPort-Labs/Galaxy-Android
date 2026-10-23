@@ -166,8 +166,12 @@ if(ANDROID)
   target_link_libraries(game PRIVATE aaudio vulkan "${SHADERC_STATIC}")
 
   # Launcher: reserves the 32-bit game window and loads libgame.so into it.
-  add_library(main SHARED platform/android/launcher.c ${GLUE_DIR}/android_native_app_glue.c)
-  target_include_directories(main PRIVATE ${GLUE_DIR})
+  add_library(main SHARED
+    platform/android/launcher.c
+    platform/src/os/guest_layout.c
+    platform/src/os/guest_maps.c
+    ${GLUE_DIR}/android_native_app_glue.c)
+  target_include_directories(main PRIVATE ${GLUE_DIR} ${CMAKE_SOURCE_DIR}/platform/include)
   target_link_libraries(main PRIVATE android log dl)
   target_link_options(main PRIVATE -u ANativeActivity_onCreate)
 
@@ -242,5 +246,17 @@ if(NOT ANDROID)
   )
   target_include_directories(extraction_security_test PRIVATE
     ${CMAKE_SOURCE_DIR}/installer-mobile/jni
+  )
+
+  add_executable(guest_memory_test
+    tests/test_guest_memory.cpp
+    platform/src/os/guest_layout.c
+    platform/src/os/guest_maps.c
+  )
+  target_include_directories(guest_memory_test PRIVATE
+    ${CMAKE_SOURCE_DIR}/platform/include
+    ${CMAKE_SOURCE_DIR}/platform/src
+    ${CMAKE_SOURCE_DIR}/decomp/include
+    ${CMAKE_SOURCE_DIR}/decomp/libs/RVL_SDK/include
   )
 endif()

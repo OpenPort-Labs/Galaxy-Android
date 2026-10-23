@@ -29,18 +29,26 @@ static std::atomic<int> sPaused{0};
 static std::atomic<int64_t> sExternalAt{0};  // host time of the last display-timed retrace
 static std::atomic<int64_t> sRaisedAt{0};    // host time of the last retrace raised
 static std::atomic<int> sDisplayRefreshRate{60};
+static std::atomic<float> sSpeedMultiplier{1.0f};
 
-// Raises the retrace interrupt, unless one was raised less than 8 ms ago: as
-// on the console, retraces are a field apart. When the display takes the
-// retraces back from the fallback clock, the two could otherwise land a
-// millisecond apart, and the game drew two frames within one retrace.
+// NTSC / EURGB60 base field period (1001/60000 s = ~16.683350 ms).
+static const int64_t kBaseViPeriodNs = 16683350LL;
+
+static inline int64_t getSimulationPeriodNs() {
+    float speed = sSpeedMultiplier.load();
+    if (speed < 0.1f) speed = 1.0f;
+    return (int64_t)((double)kBaseViPeriodNs / speed);
+}
+
+// Raises the retrace interrupt: enforces authentic Wii ~59.94 Hz simulation cadence
+// scaled ONLY by the user's game speed multiplier, completely independent of display refresh rate.
+// Allows phase-locking to display flips (60/120Hz) with ~12% jitter tolerance, but strictly prevents
+// running simulation faster than the Wii's fixed timestep (fixing Issue #112 fast forward at 90/120Hz).
 static void raiseRetrace() {
     int64_t now = port_host_time_ns();
     int64_t last = sRaisedAt.load();
-    int hz = sDisplayRefreshRate.load();
-    if (hz < 60) hz = 60; // Emulated Wii VI retrace clock must never drop below 60 Hz to preserve 100% physics speed
-    // Dynamic interval threshold: prevents double-triggering while allowing full 60/90/120/144Hz pacing
-    int64_t minInterval = (int64_t)(1000000000LL / (hz * 1.5f));
+    int64_t period = getSimulationPeriodNs();
+    int64_t minInterval = (int64_t)(period * 0.88);
     if (minInterval < 2000000LL) minInterval = 2000000LL;
 
     if (now - last < minInterval || !sRaisedAt.compare_exchange_strong(last, now)) {
@@ -69,17 +77,11 @@ static void viIrq() {
     OSWakeupThread(&sRetraceQueue);
 }
 
-static std::atomic<float> sSpeedMultiplier{1.0f};
-
 static void viClock() {
-    // NTSC / EURGB60 field rate.
-    const int64_t basePeriod = 16683350;  // ns (1001/60000 s)
-    float speed = sSpeedMultiplier.load();
-    int64_t period = (int64_t)((double)basePeriod / (speed > 0.1f ? speed : 1.0f));
+    int64_t period = getSimulationPeriodNs();
     int64_t next = port_host_time_ns() + period;
     for (;;) {
-        speed = sSpeedMultiplier.load();
-        period = (int64_t)((double)basePeriod / (speed > 0.1f ? speed : 1.0f));
+        period = getSimulationPeriodNs();
         int64_t now = port_host_time_ns();
         if (next > now) {
             port_host_sleep_ns(next - now);
@@ -92,11 +94,12 @@ static void viClock() {
         if (sPaused.load()) {
             continue;  // no retrace: the game stays in VIWaitForRetrace
         }
-        // If the display/presenter recently raised a retrace within this cadence window,
-        // let the display drive retrace pacing. The fallback clock should ONLY intervene
-        // when the display has missed its deadline (more than 1 full period has elapsed).
+        // If a retrace was already raised recently within the current cadence window
+        // (e.g. by display presentation sync), skip this tick.
+        // Otherwise (e.g. 30 FPS battery saver, dropped frames, or 90 Hz intermediate tick),
+        // fire the retrace now so simulation strictly maintains its 60 Hz cadence!
         int64_t lastRaised = sRaisedAt.load();
-        if (now - lastRaised < (int64_t)(period * 1.05)) {
+        if (now - lastRaised < (int64_t)(period * 0.70)) {
             continue;
         }
         raiseRetrace();

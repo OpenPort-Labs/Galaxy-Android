@@ -46,19 +46,21 @@ void FramePacer::sync(android_app* app, int targetFps, float gameSpeed) {
                 req.tv_sec = 0;
                 req.tv_nsec = rem - 100000ll;
                 nanosleep(&req, nullptr);
-            } else if (rem > 50000ll) {
-                sched_yield();
             } else {
-#if defined(__aarch64__) || defined(__arm__)
-                asm volatile("yield" ::: "memory");
-#endif
+                sched_yield();
+                if (targetNs - port_host_time_ns() > 20000ll) {
+                    struct timespec shortReq{0, 20000ll};
+                    nanosleep(&shortReq, nullptr);
+                }
+                break;
             }
         }
 
         if (sleepRecordedNs > 0) {
             port_perf_pace(sleepRecordedNs);
         }
-        mLastPresentNs = port_host_time_ns();
+        // Advance target timestamp monotonically to eliminate VSync drift and beating
+        mLastPresentNs = targetNs;
     } else {
         // Target deadline was already missed. Reset mLastPresentNs to nowNs immediately
         // so future frames do not inherit negative phase debt.

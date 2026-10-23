@@ -259,4 +259,12 @@ if(NOT ANDROID)
     ${CMAKE_SOURCE_DIR}/decomp/include
     ${CMAKE_SOURCE_DIR}/decomp/libs/RVL_SDK/include
   )
+
+  add_executable(timing_pacing_test
+    tests/test_timing_pacing.cpp
+  )
+  target_include_directories(timing_pacing_test PRIVATE
+    ${CMAKE_SOURCE_DIR}/platform/include
+    ${CMAKE_SOURCE_DIR}/platform/src
+  )
 endif()

@@ -8,32 +8,12 @@
 
 namespace gpu {
 
-static inline VkBlendFactor vkBlendFactor(uint32_t glFactor) {
-    switch (glFactor) {
-    case 0: return VK_BLEND_FACTOR_ZERO;
-    case 1: return VK_BLEND_FACTOR_ONE;
-    case 0x0300: return VK_BLEND_FACTOR_SRC_COLOR;
-    case 0x0301: return VK_BLEND_FACTOR_ONE_MINUS_SRC_COLOR;
-    case 0x0302: return VK_BLEND_FACTOR_SRC_ALPHA;
-    case 0x0303: return VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-    case 0x0304: return VK_BLEND_FACTOR_DST_ALPHA;
-    case 0x0305: return VK_BLEND_FACTOR_ONE_MINUS_DST_ALPHA;
-    case 0x0306: return VK_BLEND_FACTOR_DST_COLOR;
-    case 0x0307: return VK_BLEND_FACTOR_ONE_MINUS_DST_COLOR;
-    case 0x8001: return VK_BLEND_FACTOR_CONSTANT_COLOR;
-    case 0x8002: return VK_BLEND_FACTOR_ONE_MINUS_CONSTANT_COLOR;
-    case 0x8003: return VK_BLEND_FACTOR_CONSTANT_ALPHA;
-    case 0x8004: return VK_BLEND_FACTOR_ONE_MINUS_CONSTANT_ALPHA;
-    default: return VK_BLEND_FACTOR_ONE;
-    }
+static inline VkBlendFactor vkBlendFactor(uint32_t raw) {
+    return toVkBlendFactor(toCanonicalBlendFactor(raw));
 }
 
-static inline VkBlendOp vkBlendOp(uint32_t glEq) {
-    switch (glEq) {
-    case 0x8007: return VK_BLEND_OP_SUBTRACT;
-    case 0x8008: return VK_BLEND_OP_REVERSE_SUBTRACT;
-    default: return VK_BLEND_OP_ADD;
-    }
+static inline VkBlendOp vkBlendOp(uint32_t raw) {
+    return toVkBlendOp(toCanonicalBlendOp(raw));
 }
 
 struct DrawBlendState {

@@ -216,5 +216,9 @@ int main(int argc, char** argv) {
         if (dumpThreads) dumpThreads();
     }
     fprintf(stderr, "headless: %d s elapsed, exiting\n", seconds);
+    // The emulated game keeps detached threads alive; running exit handlers
+    // here would tear down stdio and C++ statics underneath them.  Flush what
+    // we produced and terminate immediately instead.
+    fflush(NULL);
     _exit(0);
 }

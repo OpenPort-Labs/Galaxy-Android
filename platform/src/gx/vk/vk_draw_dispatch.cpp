@@ -40,6 +40,7 @@ void VkRenderer::executeDrawPass(VkCommandBuffer cmd, const Frame& f, const Prep
     int lastVx = -1, lastVy = -1, lastVw = -1, lastVh = -1;
     int lastSx = -1, lastSy = -1, lastSw = -1, lastSh = -1;
     DrawDescriptorCache texCache;
+    uint64_t passEpoch = mSamplerDescEpoch;
     uint32_t diagDraws = 0, diagHud = 0, diagScSkip = 0, diagSetBinds = 0;
     DrawTexStats texStats;
     bool diagLog = (mFrameNumber % 300 == 0);
@@ -162,6 +163,13 @@ void VkRenderer::executeDrawPass(VkCommandBuffer cmd, const Frame& f, const Prep
         }
 
         vkCmdPushConstants(cmd, mPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(uint32_t), &it.firstOrdinal);
+
+        if (passEpoch != mSamplerDescEpoch) {
+            // Cached handles from before the epoch bump may have been freed.
+            passEpoch = mSamplerDescEpoch;
+            lastSet1 = VK_NULL_HANDLE;
+            texCache.reset();
+        }
 
         DrawTexState curTex;
         curTex.mask = it.texMask;

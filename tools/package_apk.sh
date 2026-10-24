@@ -37,6 +37,16 @@ if [ ! -f $KEYSTORE ]; then
     -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=PetariVR Debug,O=Local,C=US" > /dev/null
 fi
 
+GALAXY_KEYSTORE_PASS="${GALAXY_KEYSTORE_PASS:-android}"
+export GALAXY_KEYSTORE_PASS
+py3 - "$KEYSTORE" << 'PY'
+import sys
+from tools.apk_env import check_signer, keystore_fingerprint
+problem = check_signer(keystore_fingerprint(sys.argv[1]), channel='tester')
+if problem:
+    sys.exit('REFUSING TO SIGN: ' + problem)
+PY
+
 rm -f $OUT/res.zip
 "$BT/aapt2$EXE" compile --dir platform/android/res -o $OUT/res.zip
 "$BT/aapt2$EXE" link -o $OUT/base.apk --manifest platform/android/AndroidManifest.xml -R $OUT/res.zip --auto-add-overlay \
@@ -61,8 +71,6 @@ PY
 )
 
 "$BT/zipalign$EXE" -f -p 16 $OUT/base.apk $OUT/aligned.apk
-GALAXY_KEYSTORE_PASS="${GALAXY_KEYSTORE_PASS:-android}"
-export GALAXY_KEYSTORE_PASS
 if [ -n "$IS_WINDOWS" ]; then
   cmd //c "$(cygpath -w "$BT/apksigner.bat")" sign --ks "$(cygpath -w $KEYSTORE)" --ks-pass env:GALAXY_KEYSTORE_PASS \
     --out "$(cygpath -w $OUT/GalaxyQuest.apk)" "$(cygpath -w $OUT/aligned.apk)"

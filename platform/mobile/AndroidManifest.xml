@@ -52,10 +52,11 @@
             </intent-filter>
         </activity>
 
-        <!-- Native Game Engine Activity -->
+        <!-- Native Game Engine Activity.  Only MainActivity (the launcher) may
+             start this; other apps must not be able to boot into the engine. -->
         <activity
             android:name="com.openport.galaxyandroid.GameActivity"
-            android:exported="true"
+            android:exported="false"
             android:excludeFromRecents="false"
             android:launchMode="singleTask"
             android:screenOrientation="sensorLandscape"

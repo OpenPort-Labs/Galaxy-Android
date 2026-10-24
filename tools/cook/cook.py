@@ -135,6 +135,7 @@ def is_converted_kind(stats_before, stats_after):
 
 from cook_archive import cook_rarc, cook_archive, cook_dol_data
 
+
 def plan(data_dir, out_dir, args):
     jobs = []
     files = os.path.join(data_dir, 'files')
@@ -175,6 +176,7 @@ def convert(data_dir, out_dir, jobs=None, only=None, no_audio=False,
     progress(completed, total) is called in the parent process, never in
     the conversion workers. A nonzero return means files were not converted.
     """
+    from cook_output import process, promote, stage_dir
     args = argparse.Namespace(data_dir=data_dir, out_dir=out_dir,
                               jobs=jobs or os.cpu_count(), only=only,
                               no_audio=no_audio, with_movies=with_movies)
@@ -186,35 +188,59 @@ def convert(data_dir, out_dir, jobs=None, only=None, no_audio=False,
             sys.exit('%s holds no sys/fst.bin: give the folder the game partition was extracted to (with sys/ and files/)' % args.data_dir)
         args.data_dir = inner
 
-    os.makedirs(os.path.join(args.out_dir, 'sys'), exist_ok=True)
-    shutil.copyfile(os.path.join(args.data_dir, 'sys', 'fst.bin'), os.path.join(args.out_dir, 'sys', 'fst.bin'))
-    errors = cook_dol_data(args.data_dir, args.out_dir)
+    staging = stage_dir(args.out_dir)
+    try:
+        os.makedirs(os.path.join(staging, 'sys'))
+        shutil.copyfile(os.path.join(args.data_dir, 'sys', 'fst.bin'),
+                        os.path.join(staging, 'sys', 'fst.bin'))
+        errors = cook_dol_data(args.data_dir, staging)
+        if errors:
+            print('[Engine] Conversion failed: %s' % errors[0])
+            return 1
 
-    jobs = plan(args.data_dir, args.out_dir, args)
-    if progress:
-        progress(0, len(jobs))
-    t0 = time.time()
-    total = collections.Counter()
-    notes = collections.Counter()
-    # The desktop installer calls this from a thread while Tk is running.
-    # Spawn fresh workers rather than forking the GUI process on Linux.
-    with concurrent.futures.ProcessPoolExecutor(max_workers=args.jobs,
-            mp_context=multiprocessing.get_context('spawn')) as ex:
-        for done, (stats, n, err) in enumerate(ex.map(process, jobs, chunksize=8), 1):
-            total.update(stats)
-            notes.update(n)
-            if err:
-                errors.append(err)
-            if progress and (done % 16 == 0 or done == len(jobs)):
-                progress(done, len(jobs))
-    print('cooked %d disc files in %.1fs' % (len(jobs), time.time() - t0))
-    for k, v in sorted(total.items()):
-        print('  %-24s %6d' % (k, v))
-    for msg, v in notes.most_common(40):
-        print('note (%dx): %s' % (v, msg))
-    for e in errors:
-        print('ERROR', e)
-    return 1 if errors else 0
+        jobs = plan(args.data_dir, staging, args)
+        if progress:
+            progress(0, len(jobs))
+        t0 = time.time()
+        total = collections.Counter()
+        notes = collections.Counter()
+        # The desktop installer calls this from a thread while Tk is running.
+        # Spawn fresh workers rather than forking the GUI process on Linux.
+        with concurrent.futures.ProcessPoolExecutor(max_workers=args.jobs,
+                mp_context=multiprocessing.get_context('spawn')) as ex:
+            results = ex.map(process, jobs, chunksize=8)
+            for done, ((stats, n, err, src), job) in enumerate(zip(results, jobs), 1):
+                total.update(stats)
+                notes.update(n)
+                if err:
+                    errors.append(err)
+                elif not os.path.isfile(job[1]):
+                    errors.append('%s: converter reported success but wrote no output' % job[0])
+                if progress and (done % 16 == 0 or done == len(jobs)):
+                    progress(done, len(jobs))
+        print('cooked %d disc files in %.1fs' % (len(jobs), time.time() - t0))
+        for k, v in sorted(total.items()):
+            print('  %-24s %6d' % (k, v))
+        for msg, v in notes.most_common(40):
+            print('note (%dx): %s' % (v, msg))
+        if errors:
+            print('[Engine] Conversion failed with %d error(s):' % len(errors))
+            for e in errors:
+                print('  [Error]', e)
+            return 1
+        if not os.path.isfile(os.path.join(staging, 'sys', 'fst.bin')):
+            print('[Engine] Conversion failed: sys/fst.bin missing from the staged output')
+            return 1
+        try:
+            promote(staging, args.out_dir)
+            staging = None
+        except OSError as e:
+            print('[Engine] Could not move converted data into %s: %s' % (args.out_dir, e))
+            return 1
+    finally:
+        if staging is not None:
+            shutil.rmtree(staging, ignore_errors=True)
+    return 0
 
 
 def main():

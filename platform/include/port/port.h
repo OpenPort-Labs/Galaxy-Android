@@ -48,7 +48,10 @@ int port_is_game_memory(const void* p);
 // Translation between game "physical" addresses (as programmed into GPU/DSP
 // registers) and host pointers.
 void* port_phys_to_host(uint32_t phys);
-uint32_t port_host_to_phys(const void* p);
+// Range-checked translation of a host pointer range to a guest physical
+// address.  Returns 1 and stores the address only when the whole range lies
+// inside one guest-addressable region; never truncates an out-of-range pointer.
+int port_host_to_phys(const void* p, size_t size, uint32_t* outPhys);
 
 // ---------------------------------------------------------------------------
 // The disc the game's files come from (platform/src/dvd/dvd.cpp)

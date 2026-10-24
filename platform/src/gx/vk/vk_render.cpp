@@ -49,6 +49,7 @@ bool VkRenderer::render(VkTarget& target, const EyeView* eye, VkTarget* hud, Hud
     }
 
     flushDeferredDeletes();
+    flushSamplerDescriptorCaches();
     trimFrameCaches(mFrameNumber);
 
     for (auto& item : mStagingBuffersToFree) {
@@ -154,7 +155,23 @@ bool VkRenderer::render(VkTarget& target, const EyeView* eye, VkTarget* hud, Hud
     }
 
     if (mRenderSignaledSem) {
-        vkQueueWaitIdle(mQueue);
+        // The previous signal was never consumed by a present (an aborted
+        // present or a second view rendered before presenting). Binary
+        // semaphores must be unsignaled before they can be signaled again, so
+        // consume the stale signal with an empty wait-only submission.
+        VkPipelineStageFlags consumeStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+        VkSubmitInfo consumeInfo{};
+        consumeInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        consumeInfo.waitSemaphoreCount = 1;
+        consumeInfo.pWaitSemaphores = &mRenderToPresentSem;
+        consumeInfo.pWaitDstStageMask = &consumeStage;
+        VkResult consumeRes = vkQueueSubmit(mQueue, 1, &consumeInfo, VK_NULL_HANDLE);
+        if (consumeRes != VK_SUCCESS) {
+            markFatal("render", "vkQueueSubmit(consume)", (int)consumeRes);
+            mRenderSignaledSem = false;
+            target.hasValidContent = false;
+            return false;
+        }
         mRenderSignaledSem = false;
     }
 

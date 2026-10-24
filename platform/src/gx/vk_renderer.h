@@ -94,6 +94,7 @@ public:
                           VkMemoryPropertyFlags properties);
   VkFormat findSupportedDepthFormat();
   void flushDeferredDeletes();
+  void flushSamplerDescriptorCaches();
   void trimFrameCaches(uint64_t frame);
   bool waitInFlightSubmissions(const char *where);
   void markFatal(const char *where, const char *what, int result);
@@ -245,6 +246,13 @@ public:
   std::unordered_map<uint64_t, VkSampler> mSamplers;
   std::unordered_map<SamplerDescKey, SamplerSetEntry, SamplerDescKeyHash>
       mSamplerDescSets;
+  // Sets whose views were replaced must stay allocated until the next fence
+  // wait: the command buffer being recorded (or a submitted one) may still
+  // reference them, and vkFreeDescriptorSets requires that usage to have ended.
+  std::vector<VkDescriptorSet> mPendingDescSetFrees;
+  // Set when the sampler pool runs out mid-frame; resetting it then would
+  // invalidate sets the current command buffer already bound.
+  bool mSamplerPoolResetPending = false;
   // Bumped whenever cached sampler descriptor sets are freed, so a cached
   // set handle from an earlier draw can never be bound again by accident.
   uint64_t mSamplerDescEpoch = 0;

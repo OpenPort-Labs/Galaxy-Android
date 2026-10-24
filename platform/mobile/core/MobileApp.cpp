@@ -4,11 +4,13 @@
 #include <atomic>
 #include <ctype.h>
 #include <math.h>
+#include <stdio.h>
 #include <sys/stat.h>
 #include <sys/system_properties.h>
 #include <unistd.h>
 
 #include "GameBooter.h"
+#include "dvd/dvd_internal.h"
 #include "../input/Sensors.h"
 #include "../render/ScenePresenter.h"
 #include "../render/VulkanLifecycle.h"
@@ -76,11 +78,13 @@ void MobileApp::handleAppCmd(int32_t cmd) {
         break;
     case APP_CMD_RESUME:
         LOGI("APP_CMD_RESUME");
+        mobile_input::Sensors::get().setActive(true);
         port_audio_resume();
         port_set_paused(0);
         break;
     case APP_CMD_PAUSE:
         LOGI("APP_CMD_PAUSE");
+        mobile_input::Sensors::get().setActive(false);
         if (mVkReady) gpu::VkRenderer::get().savePipelineCache();
         mobile_ui::UIOverlay::get().resetInput();
         mGamepad.reset();
@@ -93,6 +97,7 @@ void MobileApp::handleAppCmd(int32_t cmd) {
         break;
     case APP_CMD_DESTROY:
         LOGI("APP_CMD_DESTROY");
+        mobile_input::Sensors::get().setActive(false);
         if (mVkReady) {
             if (mVkTarget.framebuffer) gpu::VkRenderer::get().destroyTarget(mVkTarget);
             gpu::VkRenderer::get().shutdown();
@@ -268,7 +273,20 @@ void MobileApp::run(android_app* app, uintptr_t windowBase, size_t windowSize) {
     }
 
     LOGI("GalaxyMobile exiting cleanly");
-    _exit(0);
+    // The emulated game runs on detached threads that have no join protocol,
+    // so halt it and release everything owned by this thread before returning
+    // through android_native_app_glue's teardown path.
+    port_set_paused(1);
+    port_audio_pause();
+    mobile_input::Sensors::get().setActive(false);
+    dvd_io_stop();
+    if (mVkReady) {
+        if (mVkTarget.framebuffer) gpu::VkRenderer::get().destroyTarget(mVkTarget);
+        gpu::VkRenderer::get().shutdown();
+        mVkReady = false;
+    }
+    mWindowReady = false;
+    fflush(nullptr);
 }
 
 }  // namespace mobile_core

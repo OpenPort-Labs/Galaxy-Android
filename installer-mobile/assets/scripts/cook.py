@@ -176,6 +176,7 @@ def convert(data_dir, out_dir, jobs=None, only=None, no_audio=False,
     progress(completed, total) is called in the parent process, never in
     the conversion workers. A nonzero return means files were not converted.
     """
+    from cook_output import process, promote, stage_dir
     args = argparse.Namespace(data_dir=data_dir, out_dir=out_dir,
                               jobs=jobs or os.cpu_count(), only=only,
                               no_audio=no_audio, with_movies=with_movies)
@@ -196,47 +197,65 @@ def convert(data_dir, out_dir, jobs=None, only=None, no_audio=False,
             else:
                 raise FileNotFoundError(f"{args.data_dir} holds no sys/fst.bin: extraction directory may be empty or incomplete")
 
-    os.makedirs(os.path.join(args.out_dir, 'sys'), exist_ok=True)
-    shutil.copyfile(os.path.join(args.data_dir, 'sys', 'fst.bin'), os.path.join(args.out_dir, 'sys', 'fst.bin'))
-    errors = cook_dol_data(args.data_dir, args.out_dir)
+    staging = stage_dir(args.out_dir)
+    try:
+        os.makedirs(os.path.join(staging, 'sys'))
+        shutil.copyfile(os.path.join(args.data_dir, 'sys', 'fst.bin'),
+                        os.path.join(staging, 'sys', 'fst.bin'))
+        errors = cook_dol_data(args.data_dir, staging)
+        if errors:
+            print('[Engine] Conversion failed: %s' % errors[0])
+            return 1
 
-    jobs = plan(args.data_dir, args.out_dir, args)
-    if progress:
-        progress(0, len(jobs))
-    t0 = time.time()
-    total = collections.Counter()
-    notes = collections.Counter()
-    # On Android embedded Python, child processes cannot be spawned,
-    # so we use ThreadPoolExecutor which runs natively within the app.
-    workers = min(4, args.jobs or 4)
-    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as ex:
-        for done, (stats, n, err, src) in enumerate(ex.map(process, jobs), 1):
-            total.update(stats)
-            notes.update(n)
-            if err:
-                errors.append(err)
-            if progress:
-                # Update UI frequently with current file being processed
-                if done % 2 == 0 or done == len(jobs) or done <= 50:
-                    progress(done, len(jobs), src)
-            if done % 100 == 0 or done == len(jobs):
-                pct = int(done * 100 / len(jobs)) if len(jobs) > 0 else 0
-                print(f"[Engine] Converted {done}/{len(jobs)} files ({pct}%)...")
-    print('cooked %d disc files in %.1fs' % (len(jobs), time.time() - t0))
-    for k, v in sorted(total.items()):
-        print('  %-24s %6d' % (k, v))
-    for msg, v in notes.most_common(40):
-        print('note (%dx): %s' % (v, msg))
-    if errors:
-        print('[Engine] Conversion failed with %d error(s):' % len(errors))
-        for e in errors[:20]:
-            print('  [Error]', e)
-        return 1
-    # Fail closed: whatever is left in out_dir gets installed, so never report
-    # success without the core converted output present.
-    if not os.path.isfile(os.path.join(args.out_dir, 'sys', 'fst.bin')):
-        print('[Engine] Conversion failed: sys/fst.bin missing from %s' % args.out_dir)
-        return 1
+        jobs = plan(args.data_dir, staging, args)
+        if progress:
+            progress(0, len(jobs))
+        t0 = time.time()
+        total = collections.Counter()
+        notes = collections.Counter()
+        # On Android embedded Python, child processes cannot be spawned,
+        # so we use ThreadPoolExecutor which runs natively within the app.
+        workers = min(4, args.jobs or 4)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as ex:
+            results = ex.map(process, jobs)
+            for done, ((stats, n, err, src), job) in enumerate(zip(results, jobs), 1):
+                total.update(stats)
+                notes.update(n)
+                if err:
+                    errors.append(err)
+                elif not os.path.isfile(job[1]):
+                    errors.append('%s: converter reported success but wrote no output' % job[0])
+                if progress:
+                    # Update UI frequently with current file being processed
+                    if done % 2 == 0 or done == len(jobs) or done <= 50:
+                        progress(done, len(jobs), src)
+                if done % 100 == 0 or done == len(jobs):
+                    pct = int(done * 100 / len(jobs)) if len(jobs) > 0 else 0
+                    print(f"[Engine] Converted {done}/{len(jobs)} files ({pct}%)...")
+        print('cooked %d disc files in %.1fs' % (len(jobs), time.time() - t0))
+        for k, v in sorted(total.items()):
+            print('  %-24s %6d' % (k, v))
+        for msg, v in notes.most_common(40):
+            print('note (%dx): %s' % (v, msg))
+        if errors:
+            print('[Engine] Conversion failed with %d error(s):' % len(errors))
+            for e in errors[:20]:
+                print('  [Error]', e)
+            return 1
+        # Fail closed: never report success without the core converted output,
+        # and never promote a partial tree over the live game data.
+        if not os.path.isfile(os.path.join(staging, 'sys', 'fst.bin')):
+            print('[Engine] Conversion failed: sys/fst.bin missing from the staged output')
+            return 1
+        try:
+            promote(staging, args.out_dir)
+            staging = None
+        except OSError as e:
+            print('[Engine] Could not move converted data into %s: %s' % (args.out_dir, e))
+            return 1
+    finally:
+        if staging is not None:
+            shutil.rmtree(staging, ignore_errors=True)
     return 0
 
 

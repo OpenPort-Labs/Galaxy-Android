@@ -1,5 +1,5 @@
 # Every action below is pinned to a commit SHA, with the moved tag kept as a
-# comment: tag refs are mutable, and this workflow has contents: write and
+# comment: tag refs are mutable, and the release job has contents: write and
 # publishes release artifacts, so a compromised action could sign or replace them.
 # Bump the SHA and the "# vN" comment together.
 name: Build & Release Galaxy Android
@@ -16,18 +16,21 @@ on:
         default: 'v0.0.1'
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build-android:
     name: Build Android APKs
     runs-on: ubuntu-22.04
+    permissions:
+      contents: read
     steps:
       - name: Checkout Source Code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
         with:
           ref: ${{ github.event.inputs.tag_name || github.ref }}
           submodules: recursive
+          persist-credentials: false
 
       - name: Set up JDK 17
         uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3  # v4
@@ -59,6 +62,24 @@ jobs:
       - name: 'Verify #include case matches the tracked file names'
         run: python3 tools/check_include_case.py
 
+      - name: Run source policy and tooling tests
+        run: |
+          python3 tools/check_loc.py
+          python3 -m unittest discover -s tools/tests -p 'test_*.py' -v
+          python3 -m unittest discover -s tests -p 'test_*.py' -v
+
+      # The native parsers and platform helpers have their own CTest suite;
+      # without this step they only ever ran on a developer's machine.
+      - name: Build and run host native tests
+        run: |
+          cmake -S . -B build-host -G Ninja -DCMAKE_BUILD_TYPE=Debug
+          cmake --build build-host --parallel \
+            --target dvd_fst_test extraction_security_test wii_extraction_limits_test \
+                     guest_memory_test timing_pacing_test thp_bounds_test \
+                     heap_alignment_test save_sync_test dolphin_converter_test \
+                     wstring_format_test
+          ctest --test-dir build-host --output-on-failure
+
       - name: Build Native Game Engine (libgame.so)
         run: |
           NDK_DIR="${{ steps.setup-ndk.outputs.ndk-path }}"
@@ -86,6 +107,15 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release
           ninja -C build-mobile game main reserve installer
 
+      - name: Require pinned signing certificate
+        env:
+          GALAXY_EXPECTED_SIGNER_SHA256: ${{ vars.GALAXY_EXPECTED_SIGNER_SHA256 }}
+        run: |
+          if [ -z "$GALAXY_EXPECTED_SIGNER_SHA256" ]; then
+            echo "REFUSING TO BUILD: set the GALAXY_EXPECTED_SIGNER_SHA256 repository variable to the rotated signing certificate (see docs/SIGNING.md)." >&2
+            exit 1
+          fi
+
       - name: Package Galaxy Android APK
         env:
           # Sideload tester channel: Android only honours lib/<abi>/wrap.sh in a debuggable
@@ -96,6 +126,7 @@ jobs:
           GALAXY_ALLOW_DEBUGGABLE: '1'
           GALAXY_KEYSTORE_B64: ${{ secrets.GALAXY_KEYSTORE_B64 }}
           GALAXY_KEYSTORE_PASS: ${{ secrets.GALAXY_KEYSTORE_PASS }}
+          GALAXY_EXPECTED_SIGNER_SHA256: ${{ vars.GALAXY_EXPECTED_SIGNER_SHA256 }}
         run: |
           mkdir -p out-mobile
           NDK_DIR="${{ steps.setup-ndk.outputs.ndk-path }}"
@@ -109,17 +140,38 @@ jobs:
           export ANDROID_HOME="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
           python3 package_mobile_apk.py --channel tester
 
+      # Refuse to upload an artifact that would not survive the release gate:
+      # wrong signer, missing/foreign native payload, or a non-debuggable tester
+      # build that silently loses wrap.sh.
+      - name: Verify packaged APK
+        env:
+          ANDROID_HOME: /usr/local/lib/android/sdk
+          GALAXY_RELEASE_CHANNEL: 'tester'
+          GALAXY_ALLOW_DEBUGGABLE: '1'
+          GALAXY_EXPECTED_SIGNER_SHA256: ${{ vars.GALAXY_EXPECTED_SIGNER_SHA256 }}
+        run: python3 tools/verify_release_apk.py --channel tester
+
       - name: Upload APK Artifacts
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
         with:
           name: galaxy-android-apks
           path: out-mobile/*.apk
+          if-no-files-found: error
 
   release:
     name: Create GitHub Release
     needs: build-android
     runs-on: ubuntu-22.04
+    permissions:
+      contents: write
     steps:
+      # The gate script itself has to be present in this job: runners start
+      # with an empty workspace and download-artifact only adds the APK.
+      - name: Checkout release gate
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+        with:
+          persist-credentials: false
+
       - name: Download APK Artifacts
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4
         with:
@@ -133,6 +185,7 @@ jobs:
           ANDROID_HOME: /usr/local/lib/android/sdk
           GALAXY_RELEASE_CHANNEL: 'tester'
           GALAXY_ALLOW_DEBUGGABLE: '1'
+          GALAXY_EXPECTED_SIGNER_SHA256: ${{ vars.GALAXY_EXPECTED_SIGNER_SHA256 }}
         run: python3 tools/verify_release_apk.py --channel tester release-apks/*.apk
 
       - name: Determine Release Tag

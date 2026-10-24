@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 project(GalaxyAndroid C CXX)
+enable_testing()
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -218,53 +219,7 @@ if(ANDROID)
   target_link_libraries(vk_inventory_test PRIVATE game log)
 endif()
 
-# Host-side tests for the disc image reader, which handles untrusted input.
-# dvd_host_compat.h supplies the POSIX calls MinGW lacks; bionic has them.
+# Host-side tests (see tests/CMakeLists.txt).
 if(NOT ANDROID)
-  add_executable(dvd_fst_test
-    tests/test_dvd_fst.cpp
-    tests/test_dvd_io.cpp
-    platform/src/dvd/dvd_fst.cpp
-    platform/src/dvd/dvd_read.cpp
-  )
-  target_include_directories(dvd_fst_test PRIVATE
-    ${CMAKE_SOURCE_DIR}/platform/include
-    ${CMAKE_SOURCE_DIR}/platform/src
-    ${CMAKE_SOURCE_DIR}/decomp/include
-    ${CMAKE_SOURCE_DIR}/decomp/libs/RVL_SDK/include
-  )
-  target_compile_options(dvd_fst_test PRIVATE -include ${CMAKE_SOURCE_DIR}/tests/dvd_host_compat.h)
-
-  add_executable(extraction_security_test
-    tests/test_extraction_security.cpp
-    installer-mobile/jni/path_security.cpp
-    installer-mobile/jni/wii_extractor.cpp
-    installer-mobile/jni/wii_partition.cpp
-    installer-mobile/jni/wii_disc_reader.cpp
-    installer-mobile/jni/aes.c
-    installer-mobile/jni/aes_modes.c
-  )
-  target_include_directories(extraction_security_test PRIVATE
-    ${CMAKE_SOURCE_DIR}/installer-mobile/jni
-  )
-
-  add_executable(guest_memory_test
-    tests/test_guest_memory.cpp
-    platform/src/os/guest_layout.c
-    platform/src/os/guest_maps.c
-  )
-  target_include_directories(guest_memory_test PRIVATE
-    ${CMAKE_SOURCE_DIR}/platform/include
-    ${CMAKE_SOURCE_DIR}/platform/src
-    ${CMAKE_SOURCE_DIR}/decomp/include
-    ${CMAKE_SOURCE_DIR}/decomp/libs/RVL_SDK/include
-  )
-
-  add_executable(timing_pacing_test
-    tests/test_timing_pacing.cpp
-  )
-  target_include_directories(timing_pacing_test PRIVATE
-    ${CMAKE_SOURCE_DIR}/platform/include
-    ${CMAKE_SOURCE_DIR}/platform/src
-  )
+  add_subdirectory(tests)
 endif()

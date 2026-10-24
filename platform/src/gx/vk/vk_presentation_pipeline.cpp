@@ -223,6 +223,14 @@ void VkRenderer::destroyPresentationPipeline() {
             vkDestroyPipeline(mDevice, mPresentPipelinePostProcess, nullptr);
             mPresentPipelinePostProcess = VK_NULL_HANDLE;
         }
+        if (mStaticDescPool != VK_NULL_HANDLE) {
+            for (auto& pair : mPresentDescSets) {
+                if (pair.second != VK_NULL_HANDLE) {
+                    vkFreeDescriptorSets(mDevice, mStaticDescPool, 1, &pair.second);
+                }
+            }
+        }
+        mPresentDescSets.clear();
         if (mPresentPipelineLayout != VK_NULL_HANDLE) {
             vkDestroyPipelineLayout(mDevice, mPresentPipelineLayout, nullptr);
             mPresentPipelineLayout = VK_NULL_HANDLE;
@@ -235,7 +243,6 @@ void VkRenderer::destroyPresentationPipeline() {
             vkDestroySampler(mDevice, mPresentSampler, nullptr);
             mPresentSampler = VK_NULL_HANDLE;
         }
-        mPresentDescSets.clear();
     }
 }
 

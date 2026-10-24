@@ -3,6 +3,7 @@
 #include <android/log.h>
 #include <stdio.h>
 #include <string.h>
+#include <unistd.h>
 #include <algorithm>
 
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, "MobileUI", __VA_ARGS__)
@@ -85,7 +86,10 @@ void Settings::load(const std::string& path) {
 }
 
 void Settings::save(const std::string& path) const {
-    FILE* f = fopen(path.c_str(), "w");
+    // Write beside the destination and rename, so a kill mid-save cannot leave
+    // a truncated settings file behind.
+    const std::string tmpPath = path + ".tmp";
+    FILE* f = fopen(tmpPath.c_str(), "w");
     if (!f) return;
     fprintf(f, "show_controls=%d\n", showControls ? 1 : 0);
     fprintf(f, "fullscreen=%d\n", fullscreen ? 1 : 0);
@@ -143,7 +147,13 @@ void Settings::save(const std::string& path) const {
     fprintf(f, "target_fps=%d\n", targetFps);
     fprintf(f, "adaptive_fps=%d\n", adaptiveFps ? 1 : 0);
     fprintf(f, "speedrun_hud=%d\n", speedrunHud ? 1 : 0);
-    fclose(f);
+    bool ok = !ferror(f) && fflush(f) == 0 && fsync(fileno(f)) == 0;
+    ok = (fclose(f) == 0) && ok;
+    if (!ok || rename(tmpPath.c_str(), path.c_str()) != 0) {
+        remove(tmpPath.c_str());
+        LOGI("Failed to save settings atomically to %s", path.c_str());
+        return;
+    }
     LOGI("Saved settings to %s", path.c_str());
 }
 

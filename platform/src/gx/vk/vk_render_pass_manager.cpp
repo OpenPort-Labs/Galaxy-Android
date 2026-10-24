@@ -7,13 +7,19 @@ bool VkRenderer::createRenderPasses() {
         vkDestroyRenderPass(mDevice, mPresentRenderPass, nullptr);
         mPresentRenderPass = VK_NULL_HANDLE;
     }
-    if (mEfbRenderPass != VK_NULL_HANDLE) {
-        vkDestroyRenderPass(mDevice, mEfbRenderPass, nullptr);
-        mEfbRenderPass = VK_NULL_HANDLE;
-    }
-    if (mEfbLoadRenderPass != VK_NULL_HANDLE) {
-        vkDestroyRenderPass(mDevice, mEfbLoadRenderPass, nullptr);
-        mEfbLoadRenderPass = VK_NULL_HANDLE;
+    // The EFB passes do not depend on the swapchain format, and live VkTarget
+    // framebuffers were built against them. Preserve both on a format change so
+    // those framebuffers never reference a destroyed render pass.
+    const bool rebuildEfb = (mEfbRenderPass == VK_NULL_HANDLE || mEfbLoadRenderPass == VK_NULL_HANDLE);
+    if (rebuildEfb) {
+        if (mEfbRenderPass != VK_NULL_HANDLE) {
+            vkDestroyRenderPass(mDevice, mEfbRenderPass, nullptr);
+            mEfbRenderPass = VK_NULL_HANDLE;
+        }
+        if (mEfbLoadRenderPass != VK_NULL_HANDLE) {
+            vkDestroyRenderPass(mDevice, mEfbLoadRenderPass, nullptr);
+            mEfbLoadRenderPass = VK_NULL_HANDLE;
+        }
     }
 
     if (mDepthFormat == VK_FORMAT_UNDEFINED) {
@@ -57,6 +63,10 @@ bool VkRenderer::createRenderPasses() {
 
     if (vkCreateRenderPass(mDevice, &renderPassInfo, nullptr, &mPresentRenderPass) != VK_SUCCESS) {
         return false;
+    }
+
+    if (!rebuildEfb) {
+        return createSwapchainFramebuffers();
     }
 
     // 2. EFB offscreen render pass (Color + Depth/Stencil attachments)
@@ -180,6 +190,9 @@ bool VkRenderer::createSyncObjects() {
 
     mRenderFenceInFlight = false;
     mPresentFenceInFlight = false;
+    // A fresh binary semaphore starts unsignaled even if the previous device
+    // left a pending render signal behind.
+    mRenderSignaledSem = false;
     return true;
 }
 

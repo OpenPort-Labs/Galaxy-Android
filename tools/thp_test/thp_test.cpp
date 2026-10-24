@@ -5,6 +5,8 @@
 // one frame, converted to RGB, as a PPM.
 #define THP_STANDALONE 1
 #define _USE_MATH_DEFINES
+#include "../../platform/src/sdk/thp_idct.cpp"
+#include "../../platform/src/sdk/thp_scan.cpp"
 #include "../../platform/src/sdk/thp_video.cpp"
 
 #include <math.h>
@@ -111,7 +113,14 @@ int main(int argc, char** argv) {
             break;
         }
         u32 next = rd32(buf.data());
-        const u8* p = buf.data() + 8 + ncomp * 4;
+        u32 payload = 8 + ncomp * 4;
+        if (size < payload) {
+            printf("frame %d: truncated frame header\n", n);
+            return 1;
+        }
+        const u8* p = buf.data() + payload;
+        THPSetInputSize(size - payload);
+        THPSetOutputSize(width, height);
         auto t0 = std::chrono::steady_clock::now();
         s32 err = THPVideoDecode((void*)p, y.data(), u.data(), v.data(), work.data());
         totalMs += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();

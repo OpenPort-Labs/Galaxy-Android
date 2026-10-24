@@ -59,7 +59,9 @@ void Sensors::setActive(bool enable) {
 
 void Sensors::poll(PortPadState& pad, bool isStickActive) {
     if (!mSensorQueue) return;
-    if (!mSensorsActive) {
+    // A stale event can still be delivered after APP_CMD_PAUSE disabled the
+    // queue; only re-arm while the app is actually running.
+    if (!mSensorsActive && !port_is_paused()) {
         setActive(true);
     }
 

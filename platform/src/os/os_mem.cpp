@@ -151,12 +151,17 @@ extern "C" void* port_phys_to_host(uint32_t phys) {
     return p;
 }
 
-extern "C" uint32_t port_host_to_phys(const void* p) {
+extern "C" int port_host_to_phys(const void* p, size_t size, uint32_t* outPhys) {
     int valid = 0;
-    uint32_t phys = guest_layout_virt_to_phys(p, &valid);
-    if (valid) return phys;
-    port_log("port_host_to_phys: %p is outside the game address space", p);
-    return (uint32_t)(uintptr_t)p;
+    uint32_t phys = guest_layout_virt_range_to_phys(p, size, &valid);
+    if (!valid) {
+        port_log("port_host_to_phys: [%p, +0x%zx) is outside the game address space", p, size);
+        return 0;
+    }
+    if (outPhys) {
+        *outPhys = phys;
+    }
+    return 1;
 }
 
 // ---------------------------------------------------------------------------

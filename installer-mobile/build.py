@@ -29,6 +29,9 @@ def run(cmd, cwd=None, env=None):
         sys.exit(f'Command failed with exit code {res.returncode}')
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+sys.path.insert(0, ROOT)
+from tools.apk_env import KEY_ALIAS, prepare_signing_key, resolve_keystore_pass, verify_signed_apk
+
 INSTALLER_DIR = os.path.join(ROOT, 'installer-mobile')
 BUILD_DIR = os.path.join(ROOT, 'build-installer')
 OUT_DIR = os.path.join(ROOT, 'out-mobile')
@@ -190,15 +193,9 @@ if os.path.exists(final_apk):
 
 run([ZIPALIGN, '-p', '-f', '4', base_apk, aligned_apk])
 
-keystore = os.environ.get('GALAXY_KEYSTORE')
-if not keystore or not os.path.exists(keystore):
-    keystore = os.path.join(ROOT, 'out', 'release.keystore')
-    if not os.path.exists(keystore):
-        keystore = os.path.join(ROOT, 'out', 'debug.keystore')
-        if not os.path.exists(keystore):
-            keystore = os.path.join(ROOT, 'out-mobile', 'debug.keystore')
-
-store_pass = os.environ.get('GALAXY_KEYSTORE_PASS', 'android')
+channel = os.environ.get('GALAXY_RELEASE_CHANNEL', 'tester').lower()
+keystore = prepare_signing_key(channel=channel)
+store_pass = resolve_keystore_pass(channel=channel)
 sign_env = dict(os.environ)
 sign_env['GALAXY_KEYSTORE_PASS'] = store_pass
 
@@ -206,9 +203,11 @@ run([
     APKSIGNER, 'sign',
     '--ks', keystore,
     '--ks-pass', 'env:GALAXY_KEYSTORE_PASS',
+    '--ks-key-alias', KEY_ALIAS,
     '--out', final_apk,
     aligned_apk
 ], env=sign_env)
+verify_signed_apk(final_apk, channel=channel)
 
 size = os.path.getsize(final_apk)
 print(f'SUCCESS! Created {final_apk} ({size:,} bytes)')

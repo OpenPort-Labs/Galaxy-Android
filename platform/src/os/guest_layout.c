@@ -122,6 +122,25 @@ uint32_t guest_layout_virt_to_phys(const void* p, int* outValid) {
     return 0;
 }
 
+uint32_t guest_layout_virt_range_to_phys(const void* p, size_t size, int* outValid) {
+    if (outValid) *outValid = 0;
+    if (!p || size == 0) return 0;
+    uintptr_t a = (uintptr_t)p;
+    if (a + size < a) return 0;
+    uintptr_t end = a + size;
+    for (int i = 0; i < GUEST_REGION_COUNT; i++) {
+        const GuestRegionDef* r = &sRegions[i];
+        if (a >= r->base && a < r->base + r->size && end <= r->base + r->size) {
+            int valid = 0;
+            uint32_t phys = guest_layout_virt_to_phys(p, &valid);
+            if (!valid) return 0;
+            if (outValid) *outValid = 1;
+            return phys;
+        }
+    }
+    return 0;
+}
+
 size_t guest_layout_format_audit_report(const GuestLayoutAudit* audit, char* buf, size_t maxLen) {
     if (!audit || !buf || maxLen == 0) return 0;
     size_t off = 0;

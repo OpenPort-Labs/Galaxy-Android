@@ -54,35 +54,6 @@ def cook_archive(src, dst, stats, notes):
     return cook_rarc(data, stats, replace)
 
 
-def process(job):
-    src, dst, mode = job
-    stats = collections.Counter()
-    notes = []
-    for mod in (j3d, lyt, jpa, jaudio):
-        del mod.warnings[:]
-    try:
-        os.makedirs(os.path.dirname(dst), exist_ok=True)
-        if mode == 'archive':
-            out = cook_archive(src, dst, stats, notes)
-        elif mode == 'file':
-            out = cook_blob(src.replace('\\', '/'), bytearray(open(src, 'rb').read()), stats)
-        elif mode == 'thp':
-            thp.cook_thp(src, dst + '.tmp')
-            os.replace(dst + '.tmp', dst)
-            stats['movies'] += 1
-            return stats, notes, None
-        else:
-            shutil.copyfile(src, dst)
-            stats['copied'] += 1
-            return stats, notes, None
-        with open(dst + '.tmp', 'wb') as fh:
-            fh.write(out)
-        os.replace(dst + '.tmp', dst)
-    except Exception as e:  # report and continue with the other files
-        return stats, notes, '%s: %r' % (src, e)
-    return stats, notes + j3d.warnings + lyt.warnings + jpa.warnings + jaudio.warnings, None
-
-
 def cook_dol_data(data_dir, out_dir):
     """Writes the data main.dol holds (dol_data.py) to <out>/sys; returns the
     errors."""
@@ -104,7 +75,5 @@ def cook_dol_data(data_dir, out_dir):
         with open(os.path.join(out_dir, 'sys', name), 'wb') as fh:
             fh.write(data)
     found = len(out) == 1 + len(dol_data.TABLES)
-    print('main.dol: %s' % ', '.join('%s (%d bytes)' % (n, len(d)) for n, d in out.items()))
+    print('[Engine] System tables extracted from main.dol: %s' % ', '.join(out.keys()))
     return [] if found else ['%s: the error message archive or a table was not found (not Super Mario Galaxy?)' % path]
-
-

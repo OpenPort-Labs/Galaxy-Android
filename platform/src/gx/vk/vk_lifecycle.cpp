@@ -127,6 +127,7 @@ void VkRenderer::shutdown() {
             vkDestroySemaphore(mDevice, mRenderToPresentSem, nullptr);
             mRenderToPresentSem = VK_NULL_HANDLE;
         }
+        mRenderSignaledSem = false;
         for (VkSemaphore s : mRenderFinishedSems) {
             if (s != VK_NULL_HANDLE) vkDestroySemaphore(mDevice, s, nullptr);
         }
@@ -177,6 +178,8 @@ void VkRenderer::shutdown() {
         mPipelineMru.reset();
 
         mSamplerDescSets.clear();
+        mPendingDescSetFrees.clear();
+        mSamplerPoolResetPending = false;
 
         savePipelineCache();
         if (mPipelineCache != VK_NULL_HANDLE) {
@@ -187,23 +190,23 @@ void VkRenderer::shutdown() {
         destroyPresentationPipeline();
         destroyUiPipeline();
 
+        auto destroyFrameBuffer = [this](VkBuffer& buf, VkDeviceMemory& mem, void*& mapped) {
+            if (mapped && mem != VK_NULL_HANDLE) vkUnmapMemory(mDevice, mem);
+            if (buf != VK_NULL_HANDLE) vkDestroyBuffer(mDevice, buf, nullptr);
+            if (mem != VK_NULL_HANDLE) vkFreeMemory(mDevice, mem, nullptr);
+            buf = VK_NULL_HANDLE;
+            mem = VK_NULL_HANDLE;
+            mapped = nullptr;
+        };
         for (auto& fr : mFrameRes) {
-            if (fr.vboMem) { if (fr.vboMapped) vkUnmapMemory(mDevice, fr.vboMem); vkFreeMemory(mDevice, fr.vboMem, nullptr); }
-            if (fr.vbo) vkDestroyBuffer(mDevice, fr.vbo, nullptr);
-            if (fr.iboMem) { if (fr.iboMapped) vkUnmapMemory(mDevice, fr.iboMem); vkFreeMemory(mDevice, fr.iboMem, nullptr); }
-            if (fr.ibo) vkDestroyBuffer(mDevice, fr.ibo, nullptr);
-            if (fr.rowMem) { if (fr.rowMapped) vkUnmapMemory(mDevice, fr.rowMem); vkFreeMemory(mDevice, fr.rowMem, nullptr); }
-            if (fr.rowBuf) vkDestroyBuffer(mDevice, fr.rowBuf, nullptr);
-            if (fr.recMem) { if (fr.recMapped) vkUnmapMemory(mDevice, fr.recMem); vkFreeMemory(mDevice, fr.recMem, nullptr); }
-            if (fr.recBuf) vkDestroyBuffer(mDevice, fr.recBuf, nullptr);
-            if (fr.stMem) { if (fr.stMapped) vkUnmapMemory(mDevice, fr.stMem); vkFreeMemory(mDevice, fr.stMem, nullptr); }
-            if (fr.stBuf) vkDestroyBuffer(mDevice, fr.stBuf, nullptr);
-            if (fr.vtxRecMem) { if (fr.vtxRecMapped) vkUnmapMemory(mDevice, fr.vtxRecMem); vkFreeMemory(mDevice, fr.vtxRecMem, nullptr); }
-            if (fr.vtxRecBuf) vkDestroyBuffer(mDevice, fr.vtxRecBuf, nullptr);
-            if (fr.eyeMem) { if (fr.eyeMapped) vkUnmapMemory(mDevice, fr.eyeMem); vkFreeMemory(mDevice, fr.eyeMem, nullptr); }
-            if (fr.eyeUbo) vkDestroyBuffer(mDevice, fr.eyeUbo, nullptr);
-            if (fr.uiVboMem) { if (fr.uiVboMapped) vkUnmapMemory(mDevice, fr.uiVboMem); vkFreeMemory(mDevice, fr.uiVboMem, nullptr); }
-            if (fr.uiVbo) vkDestroyBuffer(mDevice, fr.uiVbo, nullptr);
+            destroyFrameBuffer(fr.vbo, fr.vboMem, fr.vboMapped);
+            destroyFrameBuffer(fr.ibo, fr.iboMem, fr.iboMapped);
+            destroyFrameBuffer(fr.rowBuf, fr.rowMem, fr.rowMapped);
+            destroyFrameBuffer(fr.recBuf, fr.recMem, fr.recMapped);
+            destroyFrameBuffer(fr.stBuf, fr.stMem, fr.stMapped);
+            destroyFrameBuffer(fr.vtxRecBuf, fr.vtxRecMem, fr.vtxRecMapped);
+            destroyFrameBuffer(fr.eyeUbo, fr.eyeMem, fr.eyeMapped);
+            destroyFrameBuffer(fr.uiVbo, fr.uiVboMem, fr.uiVboMapped);
             fr = {};
         }
 

@@ -1,5 +1,7 @@
 #include "thp_types.h"
-#include "thp_idct.h"
+#include "thp_scan.h"
+
+#include <stddef.h>
 #include <string.h>
 
 namespace {
@@ -7,33 +9,51 @@ namespace {
 using namespace thp;
 
 Decoder sDec;
+u32 sInputSize = 4u << 20;
+u32 sOutputWidth = 0;
+u32 sOutputHeight = 0;
+
+const u32 kMaxInputSize = 64u << 20;
+const u32 kMaxFrameWidth = 1920;
+const u32 kMaxFrameHeight = 1088;
+
+const u8* beginSegment(const u8*& c, const u8* end) {
+    if (c > end || (size_t)(end - c) < 2) return nullptr;
+    u32 length = read16(c);
+    c += 2;
+    if (length < 2 || (size_t)(length - 2) > (size_t)(end - c)) return nullptr;
+    return c + (length - 2);
+}
 
 s32 readQuant(Decoder& d, const u8*& c, const u8* end) {
-    s32 length = (s32)read16(c) - 2;
-    c += 2;
-    while (length > 0 && c < end) {
-        u8 pq = *c >> 4, id = *c & 3;
-        c++;
+    const u8* segEnd = beginSegment(c, end);
+    if (!segEnd) return kErrBadSyntax;
+    while (c < segEnd) {
+        u8 head = *c++;
+        u8 pq = head >> 4, id = head & 3;
+        if (pq > 1) return kErrBadTable;
+        u32 bytes = pq ? 128 : 64;
+        if ((size_t)(segEnd - c) < bytes) return kErrBadSyntax;
         float q[64];
         for (int i = 0; i < 64; i++) {
             q[kNaturalOrder[i]] = pq ? (float)read16(c + i * 2) : (float)c[i];
         }
-        c += pq ? 128 : 64;
-        length -= pq ? 129 : 65;
+        c += bytes;
         for (int row = 0, i = 0; row < 8; row++) {
             for (int col = 0; col < 8; col++, i++) {
                 d.quant[id][i] = (float)((double)q[i] * kAanScale[row] * kAanScale[col]);
             }
         }
-        d.validQuant |= 1 << id;
+        d.validQuant |= (u8)(1 << id);
     }
     return 0;
 }
 
 s32 readHuffman(Decoder& d, const u8*& c, const u8* end) {
-    s32 length = (s32)read16(c) - 2;
-    c += 2;
-    while (length > 0 && c + 17 <= end) {
+    const u8* segEnd = beginSegment(c, end);
+    if (!segEnd) return kErrBadSyntax;
+    while (c < segEnd) {
+        if ((size_t)(segEnd - c) < 17) return kErrBadSyntax;
         u8 cls = *c >> 4, id = *c & 15;
         c++;
         if (cls > 1 || id > 1) {
@@ -46,12 +66,11 @@ s32 readHuffman(Decoder& d, const u8*& c, const u8* end) {
         for (int l = 0; l < 16; l++) {
             total += counts[l];
         }
-        if (total > 256 || c + total > end) {
+        if (total > 256 || (size_t)(segEnd - c) < (size_t)total) {
             return kErrBadTable;
         }
         memcpy(h.values, c, (size_t)total);
         c += total;
-        length -= 17 + total;
 
         memset(h.look, 0, sizeof(h.look));
         s32 code = 0, k = 0;
@@ -73,13 +92,13 @@ s32 readHuffman(Decoder& d, const u8*& c, const u8* end) {
             code <<= 1;
         }
         h.maxCode[17] = 0x7FFFFFFF;
-        d.validHuff |= 1 << (id * 2 + cls);
+        d.validHuff |= (u8)(1 << (id * 2 + cls));
     }
     return 0;
 }
 
 s32 readFrameHeader(Decoder& d, const u8*& c, const u8* end) {
-    if (c + 17 > end) return kErrBadSyntax;
+    if (c > end || (size_t)(end - c) < 17) return kErrBadSyntax;
     c += 2;
     if (*c++ != 8) {
         return kErrBadPrecision;
@@ -87,6 +106,12 @@ s32 readFrameHeader(Decoder& d, const u8*& c, const u8* end) {
     d.height = read16(c);
     d.width = read16(c + 2);
     c += 4;
+    if (!d.width || !d.height || d.width > kMaxFrameWidth || d.height > kMaxFrameHeight) {
+        return kErrBadSyntax;
+    }
+    if (sOutputWidth && sOutputHeight && (d.width != sOutputWidth || d.height != sOutputHeight)) {
+        return kErrBadSyntax;
+    }
     if (*c++ != 3) {
         return kErrBadComponents;
     }
@@ -102,7 +127,7 @@ s32 readFrameHeader(Decoder& d, const u8*& c, const u8* end) {
 }
 
 s32 readScanHeader(Decoder& d, const u8*& c, const u8* end) {
-    if (c + 14 > end) return kErrBadSyntax;
+    if (c > end || (size_t)(end - c) < 14) return kErrBadSyntax;
     c += 2;
     if (*c++ != 3) {
         return kErrBadComponents;
@@ -115,110 +140,24 @@ s32 readScanHeader(Decoder& d, const u8*& c, const u8* end) {
         if (!(d.validHuff & (1 << d.comp[i].dc)) || !(d.validHuff & (1 << d.comp[i].ac))) {
             return kErrBadTable;
         }
+        if (!(d.validQuant & (1 << d.comp[i].quant))) {
+            return kErrBadTable;
+        }
         d.comp[i].pred = 0;
     }
     c += 3;
     return 0;
 }
 
-inline void fill(Decoder& d) {
-    while (d.bits <= 56) {
-        u64 b = d.p < d.end ? *d.p++ : 0;
-        d.acc |= b << (56 - d.bits);
-        d.bits += 8;
-    }
-}
-
-inline u32 getBits(Decoder& d, int n) {
-    u32 v = (u32)(d.acc >> (64 - n));
-    d.acc <<= n;
-    d.bits -= n;
-    return v;
-}
-
-inline int decodeSymbol(Decoder& d, const Huffman& h) {
-    u16 e = h.look[d.acc >> (64 - Huffman::kLookBits)];
-    if (e) {
-        getBits(d, e >> 8);
-        return e & 0xFF;
-    }
-    u32 code16 = (u32)(d.acc >> 48);
-    for (int l = Huffman::kLookBits + 1; l <= 16; l++) {
-        s32 code = (s32)(code16 >> (16 - l));
-        if (code <= h.maxCode[l]) {
-            getBits(d, l);
-            return h.values[(code + h.valOffset[l]) & 0xFF];
-        }
-    }
-    getBits(d, 16);
-    return 0;
-}
-
-int decodeBlock(Decoder& d, Component& c, s32* coef) {
-    memset(coef, 0, 64 * sizeof(s32));
-    fill(d);
-    int s = decodeSymbol(d, d.huff[c.dc]);
-    if (s) {
-        c.pred += extend(getBits(d, s & 15), s & 15);
-    }
-    coef[0] = c.pred;
-    int k = 1;
-    const Huffman& ac = d.huff[c.ac];
-    while (k < 64) {
-        fill(d);
-        int rs = decodeSymbol(d, ac);
-        int r = rs >> 4;
-        s = rs & 15;
-        if (s) {
-            k += r;
-            coef[kNaturalOrder[k]] = extend(getBits(d, s), s);
-            k++;
-        } else if (r == 15) {
-            k += 16;
-        } else {
-            break;
-        }
-    }
-    return k;
-}
-
-void decodeScan(Decoder& d, u8* tileY, u8* tileU, u8* tileV) {
-    s32 coef[64];
-    u8 px[64];
-    u32 mcusX = (d.width + 15) / 16, mcusY = (d.height + 15) / 16;
-    u32 cw = (d.width + 1) / 2, ch = (d.height + 1) / 2;
-    u32 untilRestart = d.restartInterval;
-    const float* qy = d.quant[d.comp[0].quant];
-    const float* qu = d.quant[d.comp[1].quant];
-    const float* qv = d.quant[d.comp[2].quant];
-    d.acc = 0;
-    d.bits = 0;
-    for (u32 my = 0; my < mcusY; my++) {
-        for (u32 mx = 0; mx < mcusX; mx++) {
-            for (u32 b = 0; b < 4; b++) {
-                int n = decodeBlock(d, d.comp[0], coef);
-                idct(coef, n, qy, px);
-                storeBlock(tileY, d.width, d.height, mx * 16 + (b & 1) * 8, my * 16 + (b >> 1) * 8, px);
-            }
-            int n = decodeBlock(d, d.comp[1], coef);
-            idct(coef, n, qu, px);
-            storeBlock(tileU, cw, ch, mx * 8, my * 8, px);
-            n = decodeBlock(d, d.comp[2], coef);
-            idct(coef, n, qv, px);
-            storeBlock(tileV, cw, ch, mx * 8, my * 8, px);
-
-            if (d.restartInterval && --untilRestart == 0) {
-                untilRestart = d.restartInterval;
-                getBits(d, d.bits & 7);
-                d.comp[0].pred = d.comp[1].pred = d.comp[2].pred = 0;
-            }
-        }
-    }
-}
-
 }  // namespace
 
 extern "C" {
+
+void THPSetInputSize(u32 size) { sInputSize = size; }
+void THPSetOutputSize(u32 width, u32 height) {
+    sOutputWidth = width;
+    sOutputHeight = height;
+}
 
 BOOL THPInit(void) { return TRUE; }
 
@@ -232,13 +171,16 @@ s32 THPVideoDecode(void* file, void* tileY, void* tileU, void* tileV, void* work
     if (!work) {
         return kErrNoWork;
     }
+    if (sInputSize < 4 || sInputSize > kMaxInputSize) {
+        return kErrNoInput;
+    }
     Decoder& d = sDec;
     d.validHuff = 0;
     d.validQuant = 0;
     d.restartInterval = 0;
     d.width = d.height = 0;
     const u8* c = (const u8*)file;
-    const u8* end = c + (4u << 20);
+    const u8* end = c + sInputSize;
     for (;;) {
         if (c >= end || *c++ != 0xFF) {
             return kErrBadSyntax;
@@ -264,7 +206,7 @@ s32 THPVideoDecode(void* file, void* tileY, void* tileU, void* tileV, void* work
             status = readQuant(d, c, end);
             break;
         case 0xDD:
-            if (c + 4 > end) return kErrBadSyntax;
+            if (c > end || (size_t)(end - c) < 4) return kErrBadSyntax;
             d.restartInterval = read16(c + 2);
             c += 4;
             break;
@@ -281,9 +223,9 @@ s32 THPVideoDecode(void* file, void* tileY, void* tileU, void* tileV, void* work
             return status;
         default:
             if ((marker >= 0xE0 && marker <= 0xEF) || marker == 0xFE) {
-                if (c + 2 > end) return kErrBadSyntax;
-                u16 len = read16(c);
-                if (c + len > end) return kErrBadSyntax;
+                if (c > end || (size_t)(end - c) < 2) return kErrBadSyntax;
+                u16 len = (u16)read16(c);
+                if (len < 2 || (size_t)(end - c) < (size_t)len) return kErrBadSyntax;
                 c += len;
                 break;
             }

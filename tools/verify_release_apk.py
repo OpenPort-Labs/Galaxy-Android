@@ -11,8 +11,11 @@ Checks
      project certificate (an APK signed with anything else cannot update an
      installed copy - issues #35/#36);
   3. every required arm64-v8a entry is inside the archive, exactly once:
-     libgame/libmain/libreserve/libinstaller, wrap.sh and the shader manifest;
-  4. no other ABI or unexpected native payload slipped in;
+     libgame/libmain/libreserve/libinstaller, wrap.sh, classes.dex and the
+     shader manifest;
+  4. no other ABI or unexpected native payload slipped in, the required
+     payloads are non-empty, the libraries are ELF64/AArch64 and wrap.sh is a
+     LF-only shebang script;
   5. the debuggable flag matches policy: `android:debuggable="true"` is allowed
      only for the sideload tester channel (GALAXY_ALLOW_DEBUGGABLE=1).
 
@@ -30,19 +33,14 @@ import zipfile
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from tools.apk_env import APKSIGNER, AAPT2, EXPECTED_SIGNER, ROOT, normalize_fingerprint
+from tools.apk_env import APKSIGNER, AAPT2, ROOT, check_signer, normalize_fingerprint
 
 ABI = "lib/arm64-v8a"
-REQUIRED_ENTRIES = [
-    f"{ABI}/libgame.so",
-    f"{ABI}/libmain.so",
-    f"{ABI}/libreserve.so",
-    f"{ABI}/libinstaller.so",
-    f"{ABI}/wrap.sh",
-    "assets/galaxy_shader_manifest.bin",
-]
+NATIVE_ENTRIES = [f"{ABI}/libgame.so", f"{ABI}/libmain.so", f"{ABI}/libreserve.so", f"{ABI}/libinstaller.so"]
+REQUIRED_ENTRIES = NATIVE_ENTRIES + [f"{ABI}/wrap.sh", "assets/galaxy_shader_manifest.bin", "classes.dex"]
 # The engine ships one ABI; a second one means an unintended build flavour.
 ALLOWED_ABIS = {"arm64-v8a"}
+ELF_MACHINE_AARCH64 = 183
 
 
 def check_entries(names):
@@ -57,6 +55,41 @@ def check_entries(names):
     abis = {n.split("/")[1] for n in names if n.startswith("lib/") and n.count("/") >= 2}
     for abi in sorted(abis - ALLOWED_ABIS):
         problems.append(f"unexpected ABI directory lib/{abi}")
+    return problems
+
+
+def check_contents(archive):
+    """Payload sanity: an entry that exists but is empty or foreign cannot run."""
+    problems = []
+    names = set(archive.namelist())
+    for entry in REQUIRED_ENTRIES:
+        if entry in names and archive.getinfo(entry).file_size == 0:
+            problems.append(f"{entry} is empty")
+
+    for entry in NATIVE_ENTRIES:
+        if entry not in names:
+            continue
+        with archive.open(entry) as handle:
+            header = handle.read(20)
+        if len(header) < 20 or header[:4] != b"\x7fELF" or header[4] != 2 or header[5] != 1:
+            problems.append(f"{entry} is not a little-endian 64-bit ELF")
+        elif int.from_bytes(header[18:20], "little") != ELF_MACHINE_AARCH64:
+            problems.append(f"{entry} is not an AArch64 library")
+
+    wrap = f"{ABI}/wrap.sh"
+    if wrap in names:
+        with archive.open(wrap) as handle:
+            script = handle.read()
+        if not script.startswith(b"#!"):
+            problems.append(f"{wrap} is not a shebang script")
+        if b"\r\n" in script:
+            problems.append(f"{wrap} has CRLF line endings")
+
+    if "classes.dex" in names:
+        with archive.open("classes.dex") as handle:
+            magic = handle.read(4)
+        if magic != b"dex\n":
+            problems.append("classes.dex is not a Dalvik executable")
     return problems
 
 
@@ -83,10 +116,15 @@ def run(cmd):
     return subprocess.run(cmd, capture_output=True, text=True)
 
 
+def tester_debuggable_opt_in():
+    return os.environ.get("GALAXY_ALLOW_DEBUGGABLE") == "1"
+
+
 def inspect(apk, channel="production", allow_debuggable=False):
     problems = []
     with zipfile.ZipFile(apk) as zf:
         problems += check_entries(zf.namelist())
+        problems += check_contents(zf)
 
     signer = run([APKSIGNER, "verify", "--print-certs", apk])
     if signer.returncode != 0:
@@ -95,8 +133,10 @@ def inspect(apk, channel="production", allow_debuggable=False):
         fingerprint = parse_signer(signer.stdout + signer.stderr)
         if not fingerprint:
             problems.append("no signer certificate found")
-        elif fingerprint != normalize_fingerprint(EXPECTED_SIGNER):
-            problems.append(f"signed with {fingerprint}, expected {EXPECTED_SIGNER}")
+        else:
+            problem = check_signer(fingerprint, channel=channel)
+            if problem:
+                problems.append(problem)
 
     tree = run([AAPT2, "dump", "xmltree", "--file", "AndroidManifest.xml", apk])
     if tree.returncode != 0:
@@ -154,9 +194,7 @@ def main(argv):
         print(f"[GATE] REFUSING TO RELEASE: expected exactly one APK, found {len(apks)}: {apks}")
         return 1
 
-    allow_debuggable = False
-    if channel == "tester":
-        allow_debuggable = (os.environ.get("GALAXY_ALLOW_DEBUGGABLE") == "1" or True)
+    allow_debuggable = channel == "tester" and tester_debuggable_opt_in()
 
     problems = inspect(apks[0], channel=channel, allow_debuggable=allow_debuggable)
     if problems:

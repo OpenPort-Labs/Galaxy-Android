@@ -37,6 +37,16 @@ if [ ! -f "$KEYSTORE" ]; then
     -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=GalaxyMobile Debug,O=Local,C=US" > /dev/null
 fi
 
+GALAXY_KEYSTORE_PASS="${GALAXY_KEYSTORE_PASS:-android}"
+export GALAXY_KEYSTORE_PASS
+py3 - "$KEYSTORE" << 'PY'
+import sys
+from tools.apk_env import check_signer, keystore_fingerprint
+problem = check_signer(keystore_fingerprint(sys.argv[1]), channel='tester')
+if problem:
+    sys.exit('REFUSING TO SIGN: ' + problem)
+PY
+
 # Prepare shared native libraries
 tr -d '\r' < platform/android/wrap.sh > $OUT/apk/lib/arm64-v8a/wrap.sh
 for lib in libgame.so libmain.so libreserve.so; do
@@ -69,8 +79,6 @@ PY
   )
 
   "$BT/zipalign$EXE" -f -p 16 $OUT/base.apk $OUT/aligned.apk
-  GALAXY_KEYSTORE_PASS="${GALAXY_KEYSTORE_PASS:-android}"
-  export GALAXY_KEYSTORE_PASS
   if [ -n "$IS_WINDOWS" ]; then
     APKSIGNER_BAT="$BT/apksigner.bat"
     cmd //c "$(native_path "$APKSIGNER_BAT")" sign --ks "$(native_path "$KEYSTORE")" --ks-pass env:GALAXY_KEYSTORE_PASS \

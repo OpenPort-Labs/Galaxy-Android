@@ -363,3 +363,48 @@ licensed under the Apache License 2.0 (below).
    See the License for the specific language governing permissions and
    limitations under the License.
 ```
+
+## Bundled components in the installer APK
+
+`GalaxyInstaller.apk` embeds a private CPython runtime and its shared-library
+dependencies under `installer-mobile/vendor/`. They are distributed under the
+following licenses:
+
+| Component | Version | License |
+| --- | --- | --- |
+| CPython (`libpython3.10.so`) | 3.10.5 | Python Software Foundation License 2.0 |
+| OpenSSL (`libssl1.1.so`, `libcrypto1.1.so`) | 1.1.1o | OpenSSL License and SSLeay License |
+| libffi (`libffi.so`) | bundled build | MIT |
+| bzip2 (`libbz2.so`) | bundled build | BSD-style (Julian Seward) |
+| liblzma / XZ Utils (`liblzma.so`) | bundled build | Public domain |
+| SQLite (`libsqlite3.so`) | 3.35.0 | Public domain |
+| Rubicon-Java (`librubicon.so`) | bundled build | BSD-3-Clause |
+| nod / nodtool (`libnodtool.so`) | bundled build | MIT OR Apache-2.0 |
+
+Upstream license texts and source:
+
+- CPython: https://docs.python.org/3.10/license.html
+- OpenSSL: https://www.openssl.org/source/license-openssl-ssleay.txt
+- libffi: https://github.com/libffi/libffi/blob/master/LICENSE
+- bzip2: https://sourceware.org/bzip2/ (LICENSE in the source tarball)
+- XZ Utils: https://tukaani.org/xz/ (COPYING in the source tarball)
+- SQLite: https://www.sqlite.org/copyright.html
+- Rubicon-Java: https://github.com/beeware/rubicon-java/blob/main/LICENSE
+- nod: https://github.com/encounter/nod/blob/main/LICENSE-APACHE and
+  https://github.com/encounter/nod/blob/main/LICENSE-MIT
+
+### OpenSSL 1.1.1 end-of-life assessment
+
+OpenSSL 1.1.1 reached end of life on 2023-09-11; the bundled 1.1.1o build
+predates the fixes released in 1.1.1s and later. The installer's Python
+processes local, user-supplied disc images and does not initiate TLS
+connections, so the libraries are not exposed to network input. They are
+nevertheless EOL and receive no security updates.
+
+Do not replace the `.so` files in place: `libpython3.10.so` and `_ssl` are
+linked against the 1.1.1 ABI, and mixing OpenSSL 3.x will fail to load or
+crash. The supported remediation is to rebuild the vendored CPython 3.10
+runtime against a maintained OpenSSL 3.x release (or move to a maintained
+Python distribution) and re-verify the cooker end to end. Until that rebuild
+happens, treat the installer's TLS stack as unsupported and keep the
+installer out of any flow that fetches remote content.

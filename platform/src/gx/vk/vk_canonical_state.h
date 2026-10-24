@@ -159,11 +159,14 @@ inline VkBlendOp toVkBlendOp(CanonicalBlendOp op) {
 
 inline CanonicalBlendOp toCanonicalBlendOp(uint32_t raw) {
     switch (raw) {
+    // GX CMODE0 bit 11 selects dst-src blending; gx_builder tags that case
+    // with 0x8008 (see GDPixel.c PE_CMODE0 and GX_BM_SUBTRACT).  It is not
+    // GL_MAX, despite sharing that constant's value.
     case 0x8006: return CanonicalBlendOp::Add;
+    case 0x8008: return CanonicalBlendOp::ReverseSubtract;
     case 0x800A: return CanonicalBlendOp::Subtract;
     case 0x800B: return CanonicalBlendOp::ReverseSubtract;
     case 0x8007: return CanonicalBlendOp::Min;
-    case 0x8008: return CanonicalBlendOp::Max;
     default: return (raw <= 4) ? (CanonicalBlendOp)raw : CanonicalBlendOp::Add;
     }
 }

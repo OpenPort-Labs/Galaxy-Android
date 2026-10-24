@@ -178,6 +178,10 @@ bool VkRenderer::createUiPipeline() {
 }
 
 void VkRenderer::destroyUiPipeline() {
+    if (mUiDescSet != VK_NULL_HANDLE && mStaticDescPool != VK_NULL_HANDLE && mDevice != VK_NULL_HANDLE) {
+        vkFreeDescriptorSets(mDevice, mStaticDescPool, 1, &mUiDescSet);
+    }
+    mUiDescSet = VK_NULL_HANDLE;
     if (mUiPipeline != VK_NULL_HANDLE) { vkDestroyPipeline(mDevice, mUiPipeline, nullptr); mUiPipeline = VK_NULL_HANDLE; }
     if (mUiPipelineLayout != VK_NULL_HANDLE) { vkDestroyPipelineLayout(mDevice, mUiPipelineLayout, nullptr); mUiPipelineLayout = VK_NULL_HANDLE; }
     if (mUiDescLayout != VK_NULL_HANDLE) { vkDestroyDescriptorSetLayout(mDevice, mUiDescLayout, nullptr); mUiDescLayout = VK_NULL_HANDLE; }
@@ -185,7 +189,6 @@ void VkRenderer::destroyUiPipeline() {
     if (mUiFontTexture.view != VK_NULL_HANDLE) { vkDestroyImageView(mDevice, mUiFontTexture.view, nullptr); mUiFontTexture.view = VK_NULL_HANDLE; }
     if (mUiFontTexture.image != VK_NULL_HANDLE) { vkDestroyImage(mDevice, mUiFontTexture.image, nullptr); mUiFontTexture.image = VK_NULL_HANDLE; }
     if (mUiFontTexture.memory != VK_NULL_HANDLE) { vkFreeMemory(mDevice, mUiFontTexture.memory, nullptr); mUiFontTexture.memory = VK_NULL_HANDLE; }
-    mUiDescSet = VK_NULL_HANDLE;
 }
 
 }  // namespace gpu

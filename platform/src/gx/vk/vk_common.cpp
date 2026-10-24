@@ -58,17 +58,48 @@ void VkRenderer::flushDeferredDeletes() {
     }
 }
 
+void VkRenderer::flushSamplerDescriptorCaches() {
+    if (mDevice == VK_NULL_HANDLE) {
+        mPendingDescSetFrees.clear();
+        mSamplerPoolResetPending = false;
+        return;
+    }
+    if (!mPendingDescSetFrees.empty()) {
+        if (mDescriptorPool != VK_NULL_HANDLE) {
+            for (VkDescriptorSet set : mPendingDescSetFrees) {
+                if (set != VK_NULL_HANDLE) {
+                    vkFreeDescriptorSets(mDevice, mDescriptorPool, 1, &set);
+                }
+            }
+            mSamplerDescEpoch++;
+        }
+        mPendingDescSetFrees.clear();
+    }
+    if (mSamplerPoolResetPending) {
+        if (mDescriptorPool != VK_NULL_HANDLE) {
+            vkResetDescriptorPool(mDevice, mDescriptorPool, 0);
+            mSamplerDescSets.clear();
+            mSamplerDescEpoch++;
+            LOGW("Vulkan sampler descriptor pool reset at frame %llu", (unsigned long long)mFrameNumber);
+        }
+        mSamplerPoolResetPending = false;
+    }
+}
+
 void VkRenderer::trimFrameCaches(uint64_t frame) {
     if (mSamplerDescSets.size() < 1024) return;
     const uint64_t kKeepFrames = 1200;
+    bool freed = false;
     for (auto it = mSamplerDescSets.begin(); it != mSamplerDescSets.end();) {
         if (it->second.set != VK_NULL_HANDLE && it->second.lastUse + kKeepFrames < frame) {
             vkFreeDescriptorSets(mDevice, mDescriptorPool, 1, &it->second.set);
             it = mSamplerDescSets.erase(it);
+            freed = true;
         } else {
             ++it;
         }
     }
+    if (freed) mSamplerDescEpoch++;
 }
 
 }  // namespace gpu

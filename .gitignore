@@ -47,6 +47,7 @@ tools/*.jar
 
 # Debug artifacts & captures
 *.txt
+!CMakeLists.txt
 compile_commands.json
 live_*.png
 phone_*.png

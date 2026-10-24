@@ -1,5 +1,6 @@
 #include "JSystem/JKernel/JKRHeap.hpp"
 #include "JSystem/JUtility/JUTException.hpp"
+#include <cstddef>
 #include <revolution/os/OSBootInfo.h>
 
 JKRHeap* JKRHeap::sSystemHeap;
@@ -304,11 +305,23 @@ JKRErrorHandler JKRHeap::setErrorHandler(JKRErrorHandler errorHandler) {
 // host-allocation scope use JKRHeap; everything else goes to malloc.
 #include "port/heap_routing.h"
 
+// The 32-bit game asked its heap for 4-byte alignment.  Native 64-bit builds
+// must satisfy __STDCPP_DEFAULT_NEW_ALIGNMENT__ instead, or members that need
+// 8/16 bytes (u64, atomics, SIMD) end up under-aligned.
+#if defined(__STDCPP_DEFAULT_NEW_ALIGNMENT__)
+static constexpr int kDefaultNewAlignment = (int)__STDCPP_DEFAULT_NEW_ALIGNMENT__;
+#else
+static constexpr int kDefaultNewAlignment = (int)alignof(std::max_align_t);
+#endif
+
 static inline void* gameAlloc(size_t size, int align, JKRHeap* pHeap) {
     if (!port_use_game_heap() || (pHeap == nullptr && JKRHeap::getCurrentHeap() == nullptr)) {
         return port_host_alloc(size, align < 0 ? -align : align);
     }
-    return JKRHeap::alloc(size, align, pHeap);
+    if (size > static_cast< size_t >(0xFFFFFFFFu)) {
+        return nullptr;
+    }
+    return JKRHeap::alloc(static_cast< u32 >(size), align, pHeap);
 }
 
 static inline void gameFree(void* pData) {
@@ -323,7 +336,7 @@ static inline void gameFree(void* pData) {
 }
 
 void* operator new(size_t size) {
-    return gameAlloc(size, 4, nullptr);
+    return gameAlloc(size, kDefaultNewAlignment, nullptr);
 }
 
 void* operator new(size_t size, int align) {
@@ -331,7 +344,7 @@ void* operator new(size_t size, int align) {
 }
 
 void* operator new(size_t size, JKRHeap* pHeap) {
-    return gameAlloc(size, 4, pHeap);
+    return gameAlloc(size, kDefaultNewAlignment, pHeap);
 }
 
 void* operator new(size_t size, JKRHeap* pHeap, int align) {
@@ -339,7 +352,7 @@ void* operator new(size_t size, JKRHeap* pHeap, int align) {
 }
 
 void* operator new[](size_t size) {
-    return gameAlloc(size, 4, nullptr);
+    return gameAlloc(size, kDefaultNewAlignment, nullptr);
 }
 
 void* operator new[](size_t size, int align) {

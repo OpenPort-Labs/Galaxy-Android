@@ -7,10 +7,11 @@
 #include <windows.h>
 #endif
 
+#include <algorithm>
 #include <condition_variable>
 #include <deque>
 #include <mutex>
-#include <thread>
+#include <pthread.h>
 
 #include "port/heap_routing.h"
 #include "port/port.h"
@@ -30,6 +31,12 @@ std::deque<DVDCommandBlock*> sDone;
 DVDCommandBlock* sActive = nullptr;
 bool sActiveCanceled = false;
 bool sWorkerRunning = false;
+pthread_t sWorkerThread;
+bool sWorkerStarted = false;
+// Keep only a bounded number of game files open: the FST can name thousands of
+// entries and Android's per-process fd limit is small.
+constexpr size_t kMaxOpenFds = 32;
+std::deque<u32> sOpenOrder;
 
 int openEntry(u32 entry) {
     if (entry >= sFst.size() || sFst[entry].isDir) {
@@ -38,6 +45,14 @@ int openEntry(u32 entry) {
     }
     FstEntry& fe = sFst[entry];
     if (fe.fd < 0) {
+        while (sOpenOrder.size() >= kMaxOpenFds) {
+            u32 victim = sOpenOrder.front();
+            sOpenOrder.pop_front();
+            if (victim < sFst.size() && sFst[victim].fd >= 0) {
+                close(sFst[victim].fd);
+                sFst[victim].fd = -1;
+            }
+        }
 #if defined(_WIN32)
         DWORD attr = GetFileAttributesA(fe.hostPath.c_str());
         if (attr != INVALID_FILE_ATTRIBUTES && (attr & FILE_ATTRIBUTE_REPARSE_POINT)) {
@@ -52,6 +67,13 @@ int openEntry(u32 entry) {
         if (fe.fd < 0) {
             port_log("dvd: open %s failed: %s", fe.hostPath.c_str(), strerror(errno));
         }
+        if (fe.fd >= 0) {
+            sOpenOrder.push_back(entry);
+        }
+    } else {
+        auto it = std::find(sOpenOrder.begin(), sOpenOrder.end(), entry);
+        if (it != sOpenOrder.end()) sOpenOrder.erase(it);
+        sOpenOrder.push_back(entry);
     }
     return fe.fd;
 }
@@ -125,6 +147,17 @@ void workerMain() {
 
 }  // namespace
 
+void dvd_io_forget_fds() {
+    std::lock_guard<std::mutex> lk(sQueueMutex);
+    sOpenOrder.clear();
+    for (auto& fe : sFst) {
+        if (fe.fd >= 0) {
+            close(fe.fd);
+            fe.fd = -1;
+        }
+    }
+}
+
 bool dvd_io_validate(const DVDFileInfo* fileInfo, const void* addr, s32 length, s32 offset, const char* api) {
     if (!fileInfo) {
         port_log("dvd: %s rejected null fileInfo", api);
@@ -155,19 +188,37 @@ bool dvd_io_validate(const DVDFileInfo* fileInfo, const void* addr, s32 length, 
 
 void dvd_io_start() {
     std::lock_guard<std::mutex> lk(sQueueMutex);
-    if (!sWorkerRunning) {
-        sWorkerRunning = true;
-        PortHostAllocScope scope;
-        std::thread(workerMain).detach();
+    if (sWorkerRunning) return;
+    sWorkerRunning = true;
+    PortHostAllocScope scope;
+    int rc = pthread_create(&sWorkerThread, nullptr, [](void*) -> void* { workerMain(); return nullptr; }, nullptr);
+    if (rc != 0) {
+        // Leaving sWorkerRunning set would make every later submit wait for
+        // completions that can never arrive.
+        sWorkerRunning = false;
+        port_log("dvd: cannot start I/O worker: pthread_create failed (%d)", rc);
+    } else {
+        sWorkerStarted = true;
     }
 }
 
 void dvd_io_stop() {
+    pthread_t worker;
+    bool joinWorker = false;
     {
         std::lock_guard<std::mutex> lk(sQueueMutex);
         sWorkerRunning = false;
         sQueueCv.notify_all();
+        if (sWorkerStarted) {
+            worker = sWorkerThread;
+            sWorkerStarted = false;
+            joinWorker = true;
+        }
     }
+    if (joinWorker) {
+        pthread_join(worker, nullptr);
+    }
+    dvd_io_forget_fds();
 }
 
 BOOL dvd_io_submit(DVDCommandBlock* block, u32 entry) {

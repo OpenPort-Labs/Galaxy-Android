@@ -66,9 +66,6 @@ public final class CustomDriverInstaller {
         File activeMarker = new File(driverDir, "active_driver.txt");
         if (activeMarker.exists()) activeMarker.delete();
 
-        File sdcardMarker = new File("/sdcard/GalaxyData/custom_driver/active_driver.txt");
-        if (sdcardMarker.exists()) sdcardMarker.delete();
-
         prefs.edit().putBoolean("custom_driver_enabled", false).apply();
         if (logger != null) logger.log("[Driver] Reset graphics driver to System Default.");
         Toast.makeText(context, "Reverted to System Default Driver.", Toast.LENGTH_SHORT).show();
@@ -135,13 +132,18 @@ public final class CustomDriverInstaller {
                     }
                 }
 
+                String driverDirPrefix = driverDir.getCanonicalPath() + File.separator;
                 File primarySo = null;
                 if (!targetLibraryName.isEmpty()) {
-                    File candidate = new File(driverDir, targetLibraryName);
-                    if (candidate.exists()) primarySo = candidate;
+                    File candidate = new File(driverDir, targetLibraryName).getCanonicalFile();
+                    if (candidate.getPath().startsWith(driverDirPrefix) && candidate.isFile()) primarySo = candidate;
                 }
                 if (primarySo == null) {
                     primarySo = findFirstSharedLib(driverDir);
+                }
+                if (primarySo != null) {
+                    primarySo = primarySo.getCanonicalFile();
+                    if (!primarySo.getPath().startsWith(driverDirPrefix)) primarySo = null;
                 }
 
                 if (primarySo == null) {
@@ -159,16 +161,6 @@ public final class CustomDriverInstaller {
                     String markerContent = primarySo.getAbsolutePath() + "\n" + driverName + "\n1\n";
                     fos.write(markerContent.getBytes(StandardCharsets.UTF_8));
                 }
-
-                try {
-                    File sdcardDriverDir = new File("/sdcard/GalaxyData/custom_driver");
-                    sdcardDriverDir.mkdirs();
-                    File sdcardMarker = new File(sdcardDriverDir, "active_driver.txt");
-                    try (FileOutputStream fos = new FileOutputStream(sdcardMarker)) {
-                        String markerContent = primarySo.getAbsolutePath() + "\n" + driverName + "\n1\n";
-                        fos.write(markerContent.getBytes(StandardCharsets.UTF_8));
-                    }
-                } catch (Exception ignored) {}
 
                 final String finalName = driverName + (!driverVersion.isEmpty() ? " (v" + driverVersion + ")" : "");
                 final String finalDesc = driverDesc;
@@ -226,8 +218,9 @@ public final class CustomDriverInstaller {
 
     private static void setDriverPermissionsRecursive(File fileOrDir) {
         if (fileOrDir == null || !fileOrDir.exists()) return;
-        fileOrDir.setReadable(true, false);
-        fileOrDir.setExecutable(true, false);
+        // Owner-only: libreserve rejects drivers that are group/other writable.
+        fileOrDir.setReadable(true, true);
+        fileOrDir.setExecutable(true, true);
         if (fileOrDir.isDirectory()) {
             File[] children = fileOrDir.listFiles();
             if (children != null) {

@@ -208,8 +208,8 @@ def main():
         os.remove(aligned_apk)
     run([ZIPALIGN, "-f", "-p", "4", unaligned_apk, aligned_apk])
 
-    # 7. Sign APK
-    final_apk = os.path.join(ROOT, "out", "GalaxyAndroid.apk")
+    # 7. Sign APK (out-mobile is what the release workflow uploads and docs name)
+    final_apk = os.path.join(OUT, "GalaxyAndroid.apk")
     if os.path.exists(final_apk):
         os.remove(final_apk)
     storepass = resolve_keystore_pass(channel=channel)

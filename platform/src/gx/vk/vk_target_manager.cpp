@@ -193,8 +193,11 @@ void VkRenderer::invalidateSamplerDescSetsForView(VkImageView view) {
             if (it->first.views[u] == view) { hasView = true; break; }
         }
         if (hasView) {
-            if (it->second.set != VK_NULL_HANDLE && mDescriptorPool != VK_NULL_HANDLE) {
-                vkFreeDescriptorSets(mDevice, mDescriptorPool, 1, &it->second.set);
+            if (it->second.set != VK_NULL_HANDLE) {
+                // The matching draw may already be recorded into the command
+                // buffer that is still being built, so the set can only be
+                // freed after the next fence wait.
+                mPendingDescSetFrees.push_back(it->second.set);
             }
             it = mSamplerDescSets.erase(it);
             erased = true;

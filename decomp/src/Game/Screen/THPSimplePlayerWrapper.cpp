@@ -5,6 +5,7 @@
 #include <JSystem/JAudio2/JASAiCtrl.hpp>
 #include <JSystem/JKernel/JKRHeap.hpp>
 #include <cstring>
+#include <stdint.h>
 
 static u16 VolumeTable[] = {0,     2,     8,     18,    32,    50,    73,    99,    130,   164,   203,   245,   292,   343,   398,   457,
                             520,   587,   658,   733,   812,   895,   983,   1074,  1170,  1269,  1373,  1481,  1592,  1708,  1828,  1952,
@@ -16,6 +17,12 @@ static u16 VolumeTable[] = {0,     2,     8,     18,    32,    50,    73,    99,
                             25484, 25941, 26402, 26868, 27337, 27810, 28288, 28769, 29255, 29744, 30238, 30736, 31238, 31744, 32254, 32768};
 
 static s32 WorkBuffer[16] __attribute__((aligned(32)));
+
+// Platform THP decoder contract: the decoder must never read past the bytes
+// actually loaded into a frame buffer, nor write a frame larger than the
+// texture set allocated from the movie header.
+extern "C" void THPSetInputSize(u32 size);
+extern "C" void THPSetOutputSize(u32 width, u32 height);
 
 // One stereo frame of s16 samples.  The original clears with sizeof(s16*),
 // which is the same 4 bytes on the Wii but overruns the mix buffer on 64-bit.
@@ -38,6 +45,13 @@ namespace NrvTHPSimplePlayerWrapper {
 };  // namespace NrvTHPSimplePlayerWrapper
 
 namespace {
+    const u32 kMaxThpFrameSize = 4u << 20;
+
+    bool thpFrameFits(const THPHeader& header, u32 size) {
+        u32 capacity = OSRoundUp32B(header.bufSize);
+        return header.bufSize >= 8 && capacity <= kMaxThpFrameSize && size >= 8 && size <= capacity;
+    }
+
     void dvdCallBackFunc(s32 a1, DVDFileInfo* pFileInfo) {
         THPSimplePlayerWrapper* player = (THPSimplePlayerWrapper*)pFileInfo->cb.userData;
         player->dvdCallBack(a1);
@@ -387,6 +401,15 @@ bool THPSimplePlayerWrapper::videoDecode(u8* pFile) {
         mTextureSet[_310].frameNumber = -1;
         return false;
     }
+    u32 capacity = OSRoundUp32B(mHeader.bufSize);
+    uintptr_t base = (uintptr_t)mReadBuffer[mNextDecodeIndex].ptr;
+    uintptr_t frame = (uintptr_t)pFile;
+    if (capacity == 0 || frame < base || frame >= base + capacity) {
+        mTextureSet[_310].frameNumber = -1;
+        return false;
+    }
+    THPSetInputSize((u32)(base + capacity - frame));
+    THPSetOutputSize(mVideoInfo.xSize, mVideoInfo.ySize);
     if (THPVideoDecode(pFile, mTextureSet[_310].ytexture, mTextureSet[_310].utexture, mTextureSet[_310].vtexture, mTHPWork)) {
         mTextureSet[_310].frameNumber = -1;
         return false;
@@ -444,6 +467,10 @@ void THPSimplePlayerWrapper::dvdCallBack(s32 result) {
     mReadBuffer[mReadIndex].isValid = 1;
     mCurOffset += mReadSize;
     mReadSize = *(u32*)mReadBuffer[mReadIndex].ptr;
+    if (!thpFrameFits(mHeader, mReadSize)) {
+        mDvdError = 1;
+        mReadSize = 0;
+    }
     int index = mReadIndex;
     index = getNextBuffer(index);
     mReadIndex = index;
@@ -596,6 +623,12 @@ void THPSimplePlayerWrapper::endReadHeader() {
 
     if (mHeader.version != 0x11000) {
         DVDClose(&mFileInfo);
+        return;
+    }
+
+    if (!thpFrameFits(mHeader, mHeader.firstFrameSize)) {
+        mDvdError = 1;
+        DVDClose(&mFileInfo);
     }
 }
 
@@ -632,6 +665,10 @@ void THPSimplePlayerWrapper::exeReadPreLoad() {
 void THPSimplePlayerWrapper::endReadPreLoadOne() {
     mCurOffset += mReadSize;
     mReadSize = *(s32*)mReadBuffer[mReadIndex].ptr;
+    if (!thpFrameFits(mHeader, (u32)mReadSize)) {
+        mDvdError = 1;
+        mReadSize = 0;
+    }
     mReadBuffer[mReadIndex].isValid = 1;
     mReadBuffer[mReadIndex].frameNumber = mTotalReadFrame;
     mReadIndex = getNextBuffer(mReadIndex);
@@ -664,6 +701,10 @@ bool THPSimplePlayerWrapper::checkComponentsInFrame(s32 comp) {
 }
 
 bool THPSimplePlayerWrapper::tryFinishDvdOpen() {
+    if (mDvdError) {
+        return false;
+    }
+
     if (_10 < mFrameComp.numComponents) {
         return false;
     }

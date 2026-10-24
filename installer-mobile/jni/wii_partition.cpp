@@ -166,7 +166,10 @@ bool WiiPartitionSession::extractFileToDisk(uint64_t decOffset, size_t len,
         remaining -= chunk;
     }
 
-    fclose(fp);
+    if (fclose(fp) != 0) {
+        removePartialFile(safeFullPath);
+        return false;
+    }
     return true;
 }
 

@@ -16,12 +16,7 @@ std::string sDataRoot;
 u32 sCurrentDir = 0;
 
 void dvd_fst_clear() {
-    for (auto& fe : sFst) {
-        if (fe.fd >= 0) {
-            close(fe.fd);
-            fe.fd = -1;
-        }
-    }
+    dvd_io_forget_fds();
     sFst.clear();
 }
 

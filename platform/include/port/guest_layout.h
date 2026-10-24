@@ -70,6 +70,11 @@ GuestRegionId guest_layout_identify_physical(uint32_t phys);
 void* guest_layout_phys_to_virt(uint32_t phys);
 uint32_t guest_layout_virt_to_phys(const void* p, int* outValid);
 
+// Translates the whole range [p, p + size) to a guest physical address.
+// Fails (valid = 0) unless the range is non-empty, does not wrap, and lies
+// entirely inside one guest-addressable region.
+uint32_t guest_layout_virt_range_to_phys(const void* p, size_t size, int* outValid);
+
 // Audit memory map from a /proc/self/maps file stream or string buffer.
 int guest_layout_audit_maps_stream(FILE* f, GuestLayoutAudit* outAudit);
 int guest_layout_audit_maps_buffer(const char* mapsText, GuestLayoutAudit* outAudit);

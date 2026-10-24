@@ -118,8 +118,8 @@ void VkRenderer::uploadTextures(VkCommandBuffer cmd, const std::vector<std::shar
         }
         if (vkBindImageMemory(mDevice, vt.image, vt.memory, 0) != VK_SUCCESS) {
             LOGE("uploadTextures: vkBindImageMemory failed");
-            vkFreeMemory(mDevice, vt.memory, nullptr);
             vkDestroyImage(mDevice, vt.image, nullptr);
+            vkFreeMemory(mDevice, vt.memory, nullptr);
             sUploadFailed++;
             continue;
         }
@@ -134,8 +134,8 @@ void VkRenderer::uploadTextures(VkCommandBuffer cmd, const std::vector<std::shar
         ivci.subresourceRange.layerCount = 1;
         if (vkCreateImageView(mDevice, &ivci, nullptr, &vt.view) != VK_SUCCESS) {
             LOGE("uploadTextures: vkCreateImageView failed");
-            vkFreeMemory(mDevice, vt.memory, nullptr);
             vkDestroyImage(mDevice, vt.image, nullptr);
+            vkFreeMemory(mDevice, vt.memory, nullptr);
             sUploadFailed++;
             continue;
         }
@@ -148,8 +148,8 @@ void VkRenderer::uploadTextures(VkCommandBuffer cmd, const std::vector<std::shar
                           stagingBuf, stagingMem)) {
             LOGE("uploadTextures: createBuffer failed for staging buffer (%llu bytes)", (unsigned long long)uploadBytes);
             vkDestroyImageView(mDevice, vt.view, nullptr);
-            vkFreeMemory(mDevice, vt.memory, nullptr);
             vkDestroyImage(mDevice, vt.image, nullptr);
+            vkFreeMemory(mDevice, vt.memory, nullptr);
             sUploadFailed++;
             continue;
         }
@@ -161,8 +161,8 @@ void VkRenderer::uploadTextures(VkCommandBuffer cmd, const std::vector<std::shar
             vkDestroyBuffer(mDevice, stagingBuf, nullptr);
             vkFreeMemory(mDevice, stagingMem, nullptr);
             vkDestroyImageView(mDevice, vt.view, nullptr);
-            vkFreeMemory(mDevice, vt.memory, nullptr);
             vkDestroyImage(mDevice, vt.image, nullptr);
+            vkFreeMemory(mDevice, vt.memory, nullptr);
             sUploadFailed++;
             continue;
         }

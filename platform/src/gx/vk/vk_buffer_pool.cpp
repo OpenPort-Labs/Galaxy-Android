@@ -76,8 +76,8 @@ bool VkRenderer::createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMem
     VkResult bindRes = vkBindBufferMemory(mDevice, buffer, bufferMemory, 0);
     if (bindRes != VK_SUCCESS) {
         LOGE("createBuffer: vkBindBufferMemory failed: %d", bindRes);
-        vkFreeMemory(mDevice, bufferMemory, nullptr);
         vkDestroyBuffer(mDevice, buffer, nullptr);
+        vkFreeMemory(mDevice, bufferMemory, nullptr);
         buffer = VK_NULL_HANDLE;
         bufferMemory = VK_NULL_HANDLE;
         return false;
@@ -111,9 +111,9 @@ bool VkRenderer::uploadDynamicBuffer(VkBuffer& buf, VkDeviceMemory& mem, void*& 
 
         if (mem != VK_NULL_HANDLE) {
             if (mappedPtr != nullptr) vkUnmapMemory(mDevice, mem);
-            vkFreeMemory(mDevice, mem, nullptr);
         }
         if (buf != VK_NULL_HANDLE) vkDestroyBuffer(mDevice, buf, nullptr);
+        if (mem != VK_NULL_HANDLE) vkFreeMemory(mDevice, mem, nullptr);
 
         buf = newBuf;
         mem = newMem;

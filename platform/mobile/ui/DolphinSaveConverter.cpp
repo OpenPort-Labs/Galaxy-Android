@@ -1,4 +1,5 @@
 #include "DolphinSaveConverter.h"
+#include <algorithm>
 #include <string.h>
 
 namespace mobile_ui {
@@ -29,6 +30,10 @@ static inline uint64_t readU64(const uint8_t* p, bool be) {
 }
 static inline void writeU64(uint8_t* p, uint64_t v, bool be) {
     uint64_t s = be ? bswap64(v) : v; memcpy(p, &s, 8);
+}
+
+static inline bool rangeIn(uint64_t offset, uint64_t length, uint64_t limit) {
+    return length <= limit && offset <= limit - length;
 }
 
 bool DolphinSaveConverter::isDolphinSave(const uint8_t* data, size_t size) {
@@ -78,20 +83,22 @@ static void convertWordsChunk(uint8_t* p, uint32_t sz, bool fromBe) {
 static void convertSpnChunk(uint8_t* p, uint32_t sz, bool fromBe) {
     if (sz < 1) return;
     uint8_t nGalaxies = p[0];
-    uint32_t gOff = 1;
-    for (uint8_t g = 0; g < nGalaxies && gOff + 4 <= sz; g++) {
+    uint64_t gOff = 1;
+    for (uint8_t g = 0; g < nGalaxies; g++) {
+        if (!rangeIn(gOff, 4, sz)) break;
         uint16_t ghash = readU16(p + gOff, fromBe);
         uint16_t bsize = readU16(p + gOff + 2, fromBe);
         writeU16(p + gOff, ghash, !fromBe);
         writeU16(p + gOff + 2, bsize, !fromBe);
-        if (bsize < 4 || gOff > sz - bsize) break;
+        if (bsize < 4 || !rangeIn(gOff, bsize, sz)) break;
         if (gOff + 6 <= sz) {
             uint8_t nScen = p[gOff + 4];
-            uint32_t sOff = gOff + 6;
-            for (uint8_t s = 0; s < nScen && sOff + 2 <= gOff + bsize && sOff + 2 <= sz; s++) {
+            uint64_t sOff = gOff + 6;
+            for (uint8_t s = 0; s < nScen; s++) {
+                if (!rangeIn(sOff, 2, gOff + bsize)) break;
                 uint16_t sbsize = readU16(p + sOff, fromBe);
                 writeU16(p + sOff, sbsize, !fromBe);
-                if (sbsize < 2 || sOff > gOff + bsize - sbsize) break;
+                if (sbsize < 2 || !rangeIn(sOff, sbsize, gOff + bsize)) break;
                 sOff += sbsize;
             }
         }
@@ -108,20 +115,23 @@ static void convertGalaChunk(uint8_t* p, uint32_t sz, bool fromBe) {
     writeU16(p, attNum, !fromBe);
     writeU16(p + 2, numAtt, !fromBe);
     writeU16(p + 4, dsize, !fromBe);
-    for (uint16_t a = 0; a < numAtt && (6 + a * 4 + 4) <= sz; a++) {
-        uint32_t aOff = 6 + a * 4;
+    for (uint32_t a = 0; a < numAtt; a++) {
+        uint64_t aOff = 6ull + (uint64_t)a * 4;
+        if (!rangeIn(aOff, 4, sz)) break;
         uint16_t h = readU16(p + aOff, fromBe);
         uint16_t o = readU16(p + aOff + 2, fromBe);
         writeU16(p + aOff, h, !fromBe);
         writeU16(p + aOff + 2, o, !fromBe);
     }
-    uint32_t eStart = 6 + (uint32_t)numAtt * 4;
-    for (uint16_t e = 0; e < attNum && (eStart + (uint32_t)e * dsize + dsize) <= sz; e++) {
-        uint32_t eOff = eStart + (uint32_t)e * dsize;
+    uint64_t eStart = 6ull + (uint64_t)numAtt * 4;
+    for (uint32_t e = 0; e < attNum; e++) {
+        uint64_t eOff = eStart + (uint64_t)e * dsize;
+        if (!rangeIn(eOff, dsize, sz)) break;
         uint16_t gname = readU16(p + eOff, fromBe);
         writeU16(p + eOff, gname, !fromBe);
-        for (int c = 0; c < 8 && (eOff + 4 + c * 2 + 2) <= sz; c++) {
-            uint32_t cOff = eOff + 4 + c * 2;
+        for (uint32_t c = 0; c < 8; c++) {
+            uint64_t cOff = eOff + 4ull + (uint64_t)c * 2;
+            if (!rangeIn(cOff, 2, sz)) break;
             uint16_t coin = readU16(p + cOff, fromBe);
             writeU16(p + cOff, coin, !fromBe);
         }
@@ -135,15 +145,16 @@ static void convertSyscChunk(uint8_t* p, uint32_t sz, bool fromBe) {
     if (dSz < 4) return;
     writeU16(p, nAtt, !fromBe);
     writeU16(p + 2, dSz, !fromBe);
-    for (uint16_t a = 0; a < nAtt && (4 + a * 4 + 4) <= sz; a++) {
-        uint32_t aOff = 4 + a * 4;
+    for (uint32_t a = 0; a < nAtt; a++) {
+        uint64_t aOff = 4ull + (uint64_t)a * 4;
+        if (!rangeIn(aOff, 4, sz)) break;
         uint16_t h = readU16(p + aOff, fromBe);
         uint16_t o = readU16(p + aOff + 2, fromBe);
         writeU16(p + aOff, h, !fromBe);
         writeU16(p + aOff + 2, o, !fromBe);
     }
-    uint32_t tOff = 4 + (uint32_t)nAtt * 4;
-    if (tOff + 20 <= sz) {
+    uint64_t tOff = 4ull + (uint64_t)nAtt * 4;
+    if (rangeIn(tOff, 20, sz)) {
         uint64_t t1 = readU64(p + tOff, fromBe);
         writeU64(p + tOff, t1, !fromBe);
         uint64_t t2 = readU64(p + tOff + 8, fromBe);
@@ -168,24 +179,34 @@ bool DolphinSaveConverter::processSave(const uint8_t* inData, size_t inSize,
     writeU32(buf + 8, numFiles, !fromDolphin);
     writeU32(buf + 12, fileSize, !fromDolphin);
 
+    // File records must not overlap: sharing a chunk would convert it twice and
+    // leave part of the save in the wrong byte order.
+    std::vector<uint8_t> seen(inSize, 0);
     for (uint32_t i = 0; i < numFiles; i++) {
-        uint32_t metaOff = 16 + i * 16;
+        uint64_t metaOff = 16ull + (uint64_t)i * 16;
+        if (!rangeIn(metaOff, 16, inSize)) return false;
         uint32_t off = readU32(buf + metaOff + 12, fromDolphin);
         writeU32(buf + metaOff + 12, off, !fromDolphin);
-        if (off > inSize || 4 > inSize - off) continue;
+        // File data starts after the header and the 19 file records.
+        if (off < 0x140 || !rangeIn(off, 4, inSize)) continue;
 
         uint8_t nChunks = buf[off + 1];
-        uint32_t cOff = off + 4;
-        for (uint8_t c = 0; c < nChunks && cOff + 12 <= inSize; c++) {
+        uint64_t cOff = (uint64_t)off + 4;
+        for (uint8_t c = 0; c < nChunks; c++) {
+            if (!rangeIn(cOff, 12, inSize)) break;
             uint8_t s0 = buf[cOff], s1 = buf[cOff + 1], s2 = buf[cOff + 2], s3 = buf[cOff + 3];
             uint32_t h = readU32(buf + cOff + 4, fromDolphin);
             uint32_t sz = readU32(buf + cOff + 8, fromDolphin);
-            if (sz < 12 || sz > inSize || cOff > inSize - sz) return false;
+            if (sz < 12 || !rangeIn(cOff, sz, inSize)) return false;
+            for (uint64_t k = cOff; k < cOff + sz; ++k) {
+                if (seen[(size_t)k]) return false;
+            }
+            std::fill(seen.begin() + (size_t)cOff, seen.begin() + (size_t)(cOff + sz), 1);
             buf[cOff] = s3; buf[cOff + 1] = s2; buf[cOff + 2] = s1; buf[cOff + 3] = s0;
             writeU32(buf + cOff + 4, h, !fromDolphin);
             writeU32(buf + cOff + 8, sz, !fromDolphin);
 
-            uint32_t pOff = cOff + 12;
+            uint32_t pOff = (uint32_t)(cOff + 12);
             uint32_t pSz = sz - 12;
             char sigStr[5] = { (char)(fromDolphin ? s0 : s3),
                                (char)(fromDolphin ? s1 : s2),

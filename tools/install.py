@@ -34,9 +34,10 @@ def self_test():
         src = Path(scratch) / 'input.txt'
         dst = Path(scratch) / 'output.txt'
         src.write_text('GalaxyQuest installer worker test', encoding='utf-8')
+        from cook_output import process
         with concurrent.futures.ProcessPoolExecutor(max_workers=2,
                 mp_context=multiprocessing.get_context('spawn')) as pool:
-            stats, notes, error = pool.submit(cook.process, (str(src), str(dst), 'copy')).result(timeout=60)
+            stats, notes, error, _ = pool.submit(process, (str(src), str(dst), 'copy')).result(timeout=60)
         assert error is None and stats['copied'] == 1 and dst.read_bytes() == src.read_bytes()
     if getattr(sys, 'frozen', False):
         assert find_apk().is_file()

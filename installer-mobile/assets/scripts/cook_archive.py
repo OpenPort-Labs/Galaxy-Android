@@ -54,40 +54,6 @@ def cook_archive(src, dst, stats, notes):
     return cook_rarc(data, stats, replace)
 
 
-def process(job):
-    src, dst, mode = job
-    stats = collections.Counter()
-    notes = []
-    try:
-        os.makedirs(os.path.dirname(dst), exist_ok=True)
-        if mode == 'archive':
-            out = cook_archive(src, dst, stats, notes)
-        elif mode == 'file':
-            out = cook_blob(src.replace('\\', '/'), bytearray(open(src, 'rb').read()), stats)
-        elif mode == 'thp':
-            thp.cook_thp(src, dst + '.tmp')
-            os.replace(dst + '.tmp', dst)
-            stats['movies'] += 1
-            return stats, notes, None, src
-        else:
-            shutil.copyfile(src, dst)
-            stats['copied'] += 1
-            return stats, notes, None, src
-        with open(dst + '.tmp', 'wb') as fh:
-            fh.write(out)
-        os.replace(dst + '.tmp', dst)
-    except Exception as e:  # report and continue with the other files
-        err_msg = '%s: %r' % (src, e)
-        print('[Cook Warning]', err_msg)
-        try:
-            shutil.copyfile(src, dst)
-            stats['copied-fallback'] += 1
-        except Exception:
-            pass
-        return stats, notes, err_msg, src
-    return stats, notes, None, src
-
-
 def cook_dol_data(data_dir, out_dir):
     """Writes the data main.dol holds (dol_data.py) to <out>/sys; returns the
     errors."""

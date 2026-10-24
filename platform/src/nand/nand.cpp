@@ -153,9 +153,10 @@ static bool atomicMirrorFile(const std::string& src, const std::string& dst) {
 }
 
 s32 NANDClose(NANDFileInfo* info) {
+    s32 result = NAND_RESULT_OK;
     if (info->fileDescriptor >= 0) {
         if (info->accType != NAND_ACCESS_READ) {
-            fsync(info->fileDescriptor);
+            if (fsync(info->fileDescriptor) != 0) result = errnoToNand(errno);
             // Auto-mirror GameData.bin to persistent external storage (/sdcard/GalaxyData/saves) atomically
             if (strstr(info->origPath, "GameData.bin")) {
                 std::string hp = hostPath(info->origPath);
@@ -171,17 +172,27 @@ s32 NANDClose(NANDFileInfo* info) {
         close(info->fileDescriptor);
         info->fileDescriptor = -1;
     }
-    return NAND_RESULT_OK;
+    return result;
 }
 
 s32 NANDRead(NANDFileInfo* info, void* buf, u32 length) {
-    ssize_t n = read(info->fileDescriptor, buf, length);
+    ssize_t n;
+    do {
+        n = read(info->fileDescriptor, buf, length);
+    } while (n < 0 && errno == EINTR);
     return n < 0 ? errnoToNand(errno) : (s32)n;
 }
 
 s32 NANDWrite(NANDFileInfo* info, const void* buf, u32 length) {
-    ssize_t n = write(info->fileDescriptor, buf, length);
-    return n < 0 ? errnoToNand(errno) : (s32)n;
+    const u8* bytes = static_cast<const u8*>(buf);
+    size_t done = 0;
+    while (done < length) {
+        ssize_t n = write(info->fileDescriptor, bytes + done, length - done);
+        if (n < 0 && errno == EINTR) continue;
+        if (n <= 0) return n < 0 ? errnoToNand(errno) : NAND_RESULT_UNKNOWN;
+        done += static_cast<size_t>(n);
+    }
+    return static_cast<s32>(done);
 }
 
 s32 NANDSeek(NANDFileInfo* info, s32 offset, s32 whence) {

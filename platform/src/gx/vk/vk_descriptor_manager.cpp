@@ -107,20 +107,19 @@ VkDescriptorSet VkRenderer::getSamplerDescriptorSet(const std::array<VkImageView
     ai.pSetLayouts = &mTextureDescLayout;
 
     VkDescriptorSet set = VK_NULL_HANDLE;
+    if (mSamplerPoolResetPending) {
+        // The pool is already exhausted this frame; a reset can only happen
+        // after the frame's submission has completed.
+        return VK_NULL_HANDLE;
+    }
     if (vkAllocateDescriptorSets(mDevice, &ai, &set) != VK_SUCCESS) {
-        // Safe recovery: wait for in-flight render fence submissions, reset sampler pool,
-        // and reallocate. Static descriptor sets (SSBOs, UI, Present) in mStaticDescPool
-        // are untouched and remain completely valid!
-        waitInFlightSubmissions("samplerPoolReset");
-        vkResetDescriptorPool(mDevice, mDescriptorPool, 0);
-        mSamplerDescSets.clear();
-        // Every set handed out before the reset is now invalid, including the
-        // one the draw loop still caches as its last bound set.
-        mSamplerDescEpoch++;
-        if (vkAllocateDescriptorSets(mDevice, &ai, &set) != VK_SUCCESS) {
-            LOGE("getSamplerDescriptorSet: allocation failed even after pool reset");
-            return VK_NULL_HANDLE;
-        }
+        // Resetting the pool now would invalidate every sampler set already
+        // referenced by the command buffer being recorded. Defer the reset to
+        // the next frame boundary (after the fence wait) and skip the rest of
+        // this frame's uncached draws instead.
+        mSamplerPoolResetPending = true;
+        LOGW("getSamplerDescriptorSet: sampler pool exhausted; deferring reset to the next frame");
+        return VK_NULL_HANDLE;
     }
 
     std::array<VkDescriptorImageInfo, 8> imageInfos{};

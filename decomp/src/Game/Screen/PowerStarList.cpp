@@ -541,7 +541,7 @@ wchar_t* PowerStarList::makeGalaxyNameText(wchar_t* pBuffer, const GalaxyStatusA
     s32 offset;
     if (isFirstLine) {
         const wchar_t* pName = MR::getGalaxyNameShortOnCurrentLanguage(pAccessor->getName());
-        offset = swprintf(pBuffer, 0x100, pName);
+        offset = swprintf(pBuffer, 0x100, L"%ls", pName);
     } else {
         const wchar_t* pName = MR::getGalaxyNameShortOnCurrentLanguage(pAccessor->getName());
         offset = swprintf(pBuffer, 0x100, L"%ls%s%ls", pBuffer, "\n", pName);
@@ -626,7 +626,7 @@ wchar_t* PowerStarList::makeRaceNameText(wchar_t* pBuffer, int raceId, bool isFi
     s32 offset;
     if (isFirstLine) {
         const wchar_t* pName = MR::getRaceNameOnCurrentLanguage(raceId);
-        offset = swprintf(pBuffer, 0x100, pName);
+        offset = swprintf(pBuffer, 0x100, L"%ls", pName);
     } else {
         const wchar_t* pName = MR::getRaceNameOnCurrentLanguage(raceId);
         offset = swprintf(pBuffer, 0x100, L"%ls%s%ls", pBuffer, "\n", pName);
@@ -641,7 +641,7 @@ wchar_t* PowerStarList::makeRaceTimeText(wchar_t* pBuffer, int raceId, bool isFi
 
     s32 offset;
     if (isFirstLine) {
-        offset = swprintf(pBuffer, 0x100, raceBest);
+        offset = swprintf(pBuffer, 0x100, L"%ls", raceBest);
     } else {
         offset = swprintf(pBuffer, 0x100, L"%ls%s%ls", pBuffer, "\n", raceBest);
     }

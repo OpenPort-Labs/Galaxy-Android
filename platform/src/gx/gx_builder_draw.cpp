@@ -162,6 +162,8 @@ void Builder::emitDraw(u32 prim, u32 flags, u32 first, u32 count, u32& ordinal) 
     static const uint32_t srcF[8] = {0, 1, 0x0306, 0x0307, 0x0302, 0x0303, 0x0304, 0x0305};
     static const uint32_t dstF[8] = {0, 1, 0x0300, 0x0301, 0x0302, 0x0303, 0x0304, 0x0305};
     if ((cm >> 11) & 1) {
+        // PE_CMODE0.BLENDOP: GX subtract blends dst - src regardless of the
+        // programmed factors (libogc GX_BM_SUBTRACT).
         it.blend = 1;
         it.srcRGB = 1;
         it.dstRGB = 1;

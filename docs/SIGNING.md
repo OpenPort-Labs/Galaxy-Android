@@ -1,80 +1,108 @@
 # Signing Galaxy Android
 
-Android only installs an APK over an existing one when both are signed with the
-**same certificate**.  Anything else fails with
-`INSTALL_FAILED_UPDATE_INCOMPATIBLE` and leaves the player with no choice but to
-uninstall first, losing the extracted disc and the saves
-([#35](https://github.com/OpenPort-Labs/Galaxy-Android/issues/35),
-[#36](https://github.com/OpenPort-Labs/Galaxy-Android/issues/36)).
+Android installs an update only when the old and new APKs carry the same
+certificate.  A release signed with the wrong key produces
+`INSTALL_FAILED_UPDATE_INCOMPATIBLE` and, worse, a key that has leaked lets
+anyone else produce a malicious "update" that Android accepts.
 
-Every Galaxy Android build therefore has to be signed with the one project key.
+## Incident: the former project key is compromised
 
-## The project key
+The former key (`CN=GalaxyAndroid Debug, O=Local, C=US`, alias
+`androiddebugkey`) was committed to this public repository together with its
+store password.  It has been removed from the current tree and is git-ignored,
+but it remains recoverable from history and **must be treated as public**.
 
 | | |
 | --- | --- |
-| Subject | `CN=GalaxyAndroid Debug, O=Local, C=US` |
-| SHA-256 | `1883CD600AACD5628513E23CE646F4C8ED19C040A14575FBC922D33F6686FEFF` |
-| Store password | Set via `GALAXY_KEYSTORE_PASS` (never hard-coded in repo) |
-| Key alias | `androiddebugkey` |
+| Old certificate SHA-256 | `1883CD600AACD5628513E23CE646F4C8ED19C040A14575FBC922D33F6686FEFF` |
+| Status | Compromised. Never sign with it again. |
 
-The fingerprint is public information - it is what Android compares - and the
-packager pins it in `package_mobile_apk.py` (`PROJECT_KEY_SHA256`).
+The fingerprint is public information - Android compares certificates by it - so
+publishing it discloses nothing new.  The private key and its password are the
+secret, and both are already in history.
 
-The keystore itself is **not** in the repository: it was committed once, which
-put the private key in public history, and it has since been removed and added
-to `.gitignore`.  Keep the copy you have safe; treat it as the identity of the
-app.  Rotating it is possible, but it forces every existing player through a
-one-time uninstall.
+`tools/apk_env.py` pins this fingerprint as `COMPROMISED_KEY_SHA256` and
+`check_signer()` refuses it on **every** channel.  Removing the file from
+`git` is not enough; the key itself has to be abandoned.
+
+The old key has **not** been rotated in this checkout yet.  Until the steps
+below are completed, packaging and the release workflow fail deliberately.
+That is the intended fail-closed state, not a regression.
+
+## Rotate to a new signing identity
+
+Run these steps on a trusted machine, offline where possible.
+
+1. Create the new key.  Choose a long, unique password and store it in a
+   password manager.  Use a new alias (the old builds used
+   `androiddebugkey`, but a distinct alias makes rotation visible).
+
+   ```bash
+   keytool -genkeypair -keystore release.keystore \
+     -alias galaxy-release -keyalg RSA -keysize 4096 -validity 10000 \
+     -dname "CN=Galaxy Android Release, O=Galaxy Android, C=US"
+   ```
+
+2. Read its fingerprint:
+
+   ```bash
+   keytool -list -v -keystore release.keystore -alias galaxy-release
+   ```
+
+   Copy the `SHA-256:` value and remove the colons.
+
+3. Configure CI (repository settings, never committed):
+
+   | Name | Kind | Value |
+   | --- | --- | --- |
+   | `GALAXY_KEYSTORE_B64` | secret | `base64 -w0 release.keystore` |
+   | `GALAXY_KEYSTORE_PASS` | secret | the new store password |
+   | `GALAXY_KEY_ALIAS` | secret | `galaxy-release` |
+   | `GALAXY_EXPECTED_SIGNER_SHA256` | variable | the new fingerprint |
+
+   The release workflow refuses to build or publish while
+   `GALAXY_EXPECTED_SIGNER_SHA256` is empty, and the packager refuses any
+   certificate that does not match it.
+
+4. Local builds use the same policy:
+
+   ```bash
+   export GALAXY_KEYSTORE=/absolute/path/to/release.keystore
+   export GALAXY_KEYSTORE_PASS='...'
+   export GALAXY_KEY_ALIAS=galaxy-release
+   export GALAXY_EXPECTED_SIGNER_SHA256='<new fingerprint>'
+   python package_mobile_apk.py --channel tester
+   ```
+
+5. Delete or archive the old keystores (`out/release.keystore`,
+   `out/debug.keystore`, `platform/mobile/release.keystore`).  The tools now
+   reject them by fingerprint, but keeping them invites a future mistake.
+
+## Installing the rotated build
+
+APKs signed with the old key cannot update APKs signed with the new key.
+Existing installations need one uninstall before installing the rotated APK.
+Back up anything important first: the app stores saves under
+`/sdcard/GalaxyData/saves/`, which is shared storage, but uninstall and
+storage changes can still remove data.  Do not accept an "update" from an
+unknown source that is signed with the old fingerprint.
 
 ## Build channels
 
-Packaging and release verification distinguish between two channels:
+1. **Tester channel (`--channel tester` / `GALAXY_RELEASE_CHANNEL=tester`)**
+   - Sideload-only pre-release artifacts.
+   - Permits `android:debuggable="true"` only with `GALAXY_ALLOW_DEBUGGABLE=1`;
+     Android requires a debuggable app to run `lib/<abi>/wrap.sh`, which
+     preloads `libreserve.so` to reserve the game's 32-bit address window.
+   - A local key is accepted only if it is not the compromised key.  Set
+     `GALAXY_EXPECTED_SIGNER_SHA256` to pin it.
 
-1. **Tester channel (`--channel tester` / `GALAXY_RELEASE_CHANNEL=tester`)**:
-   - Permits `android:debuggable="true"` when opt-in (`GALAXY_ALLOW_DEBUGGABLE=1`).
-   - Required on Android for `lib/<abi>/wrap.sh` to preload `libreserve.so` (which
-     reserves the 32-bit GameCube memory space before ART initializes).
-   - Tester APKs are sideload-only artifacts and marked as pre-releases on GitHub.
-   - For local development with a local debug keystore, defaults to `android` only
-     when building on the tester channel.
-
-2. **Production channel (`--channel production` / `GALAXY_RELEASE_CHANNEL=production`)**:
-   - Strictly forbids `android:debuggable="true"`.
-   - Requires explicit `GALAXY_KEYSTORE_PASS` via environment; missing credentials
-     immediately fail rather than falling back to defaults.
-   - Forbids `GALAXY_ALLOW_NEW_KEY=1` throwaway keys.
-   - Rejects any APK that fails certificate verification or entry validation.
-
-## Local builds
-
-Put the key at `out/release.keystore` (`out/` is git-ignored) and the packager
-finds it:
-
-```bash
-cp /path/to/release.keystore out/release.keystore
-export GALAXY_KEYSTORE_PASS="your-store-pass"
-python package_mobile_apk.py --channel tester
-```
-
-`out/debug.keystore` and the old `platform/mobile/release.keystore` location are
-still accepted so existing checkouts keep working.
-
-## CI releases
-
-The release workflow decodes the key from repository secrets:
-
-| Secret | Value |
-| --- | --- |
-| `GALAXY_KEYSTORE_B64` | `base64 -w0 out/release.keystore` |
-| `GALAXY_KEYSTORE_PASS` | the store password (provided securely via environment) |
-
-Set them under *Settings -> Secrets and variables -> Actions*.  Credentials are
-passed to `apksigner` and `keytool` through environment variables (`env:` and
-`-storepass:env`), never through exposed command-line arguments.
-
-Without valid credentials, release packaging fails immediately instead of
-publishing an insecure or untrusted artifact.
+2. **Production channel (`--channel production`)**
+   - `android:debuggable="true"` is forbidden.
+   - `GALAXY_KEYSTORE_PASS` and `GALAXY_EXPECTED_SIGNER_SHA256` are required;
+     there is no default password and no fallback to a debug key.
+   - `GALAXY_ALLOW_NEW_KEY` is not accepted.
+   - The finished APK's certificate is read back and must match the pin.
 
 ## What the packager enforces
 
@@ -82,22 +110,33 @@ publishing an insecure or untrusted artifact.
 `GALAXY_KEYSTORE_B64`, `GALAXY_KEYSTORE`, `out/release.keystore`,
 `out/debug.keystore`, `platform/mobile/release.keystore`, then:
 
-1. checks the keystore's certificate against the pinned fingerprint **before**
-   spending time on a build;
-2. signs the APK;
-3. reads the certificate back out of the finished APK with `apksigner verify`
-   and refuses to hand it over if it is not the project certificate.
+1. rejects the compromised fingerprint and any certificate that does not match
+   `GALAXY_EXPECTED_SIGNER_SHA256`;
+2. requires `GALAXY_EXPECTED_SIGNER_SHA256` for production;
+3. signs the APK;
+4. reads the certificate back with `apksigner verify` and refuses to hand over
+   the APK if it does not satisfy the same policy.
 
-`GALAXY_ALLOW_NEW_KEY=1` generates a throwaway `out/dev.keystore` for
-experimentation.  Such an APK is not an update of anything, so the fingerprint
-check is skipped for it, with a warning.
+The legacy shell packagers (`package_mobile_apk.sh`, `tools/package_apk.sh`)
+run the same compromise check before signing.  `installer-mobile/build.py`
+uses the shared policy for the installer APK.
 
-`GALAXY_EXPECTED_SIGNER_SHA256` overrides the pin for a fork that ships under a
-different certificate.
+`tools/verify_release_apk.py` applies the policy to the artifact that is
+actually uploaded, not just the one the packager saw.  Besides the signer it
+rejects a debuggable manifest in production, missing or duplicate native
+entries, a second ABI, empty entries, non-AArch64 libraries, a `wrap.sh` that
+is not a LF-only shebang script and a `classes.dex` without the Dalvik magic.
+The release workflow runs it once after packaging and again on the downloaded
+artifact in the job that publishes it.
 
-## Verifying an APK by hand
+## Verifying by hand
 
 ```bash
 apksigner verify --print-certs out-mobile/GalaxyAndroid.apk
-adb install -r out-mobile/GalaxyAndroid.apk   # must succeed, without uninstalling
+adb install --no-incremental -r out-mobile/GalaxyAndroid.apk
 ```
+
+The printed SHA-256 must equal `GALAXY_EXPECTED_SIGNER_SHA256` and must not be
+the compromised fingerprint.  History has not been rewritten: purging the
+old key from Git history would not make it secret again and would break every
+existing clone.  Rotation is the remedy.

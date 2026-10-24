@@ -75,8 +75,14 @@ KEY_ALIAS = os.environ.get("GALAXY_KEY_ALIAS", "androiddebugkey")
 KEY_PASS = os.environ.get("GALAXY_KEY_PASS", "")
 KEYTOOL = shutil.which("keytool") or "keytool"
 
-PROJECT_KEY_SHA256 = "1883cd600aacd5628513e23ce646f4c8ed19c040a14575fbc922d33f6686feff"
-EXPECTED_SIGNER = os.environ.get("GALAXY_EXPECTED_SIGNER_SHA256", PROJECT_KEY_SHA256)
+# Published in the repository history together with its password: anyone can
+# reproduce this certificate, so it must never sign another artifact.
+COMPROMISED_KEY_SHA256 = "1883cd600aacd5628513e23ce646f4c8ed19c040a14575fbc922d33f6686feff"
+
+def normalize_fingerprint(value):
+    return re.sub(r"[^0-9a-f]", "", value.lower())
+
+EXPECTED_SIGNER = normalize_fingerprint(os.environ.get("GALAXY_EXPECTED_SIGNER_SHA256", ""))
 LOCAL_KEYSTORE = os.path.join(ROOT, "out", "release.keystore")
 KEYSTORE_CANDIDATES = [LOCAL_KEYSTORE, os.path.join(ROOT, "out", "debug.keystore"),
                        os.path.join(ROOT, "platform", "mobile", "release.keystore")]
@@ -84,8 +90,21 @@ DEV_KEYSTORE = os.path.join(ROOT, "out", "dev.keystore")
 KEYSTORE = ""
 ANDROID_NS = "{http://schemas.android.com/apk/res/android}"
 
-def normalize_fingerprint(value):
-    return re.sub(r"[^0-9a-f]", "", value.lower())
+
+def check_signer(fingerprint, channel="tester"):
+    """Why this certificate must not sign an artifact, or None if it may."""
+    fingerprint = normalize_fingerprint(fingerprint or "")
+    if not fingerprint:
+        return "could not determine the signer certificate"
+    if fingerprint == COMPROMISED_KEY_SHA256:
+        return ("certificate %s is the signing key published in the repository history; "
+                "rotate the signing identity and never use it again" % fingerprint)
+    expected = normalize_fingerprint(os.environ.get("GALAXY_EXPECTED_SIGNER_SHA256", ""))
+    if expected and fingerprint != expected:
+        return "certificate %s does not match the pinned signer %s" % (fingerprint, expected)
+    if channel == "production" and not expected:
+        return "production requires GALAXY_EXPECTED_SIGNER_SHA256 naming the rotated release key"
+    return None
 
 MANIFEST = os.path.join(ROOT, "platform", "mobile", "AndroidManifest.xml")
 
@@ -144,16 +163,16 @@ def prepare_signing_key(channel="tester"):
                                 "-validity", "10000", "-dname", "CN=GalaxyAndroid Dev,O=Local,C=US"],
                                check=True, env=env)
                 KEYSTORE = DEV_KEYSTORE
-                return KEYSTORE
-            raise SystemExit("REFUSING TO PACKAGE: no signing key found.")
+            else:
+                raise SystemExit("REFUSING TO PACKAGE: no signing key found.")
 
     fingerprint = keystore_fingerprint(KEYSTORE, storepass=storepass)
-    if not fingerprint:
-        return KEYSTORE
-
-    if EXPECTED_SIGNER and fingerprint != normalize_fingerprint(EXPECTED_SIGNER):
-        raise SystemExit(f"REFUSING TO PACKAGE: {KEYSTORE} holds unexpected certificate {fingerprint}")
-
+    problem = check_signer(fingerprint, channel=channel)
+    if problem:
+        raise SystemExit(f"REFUSING TO PACKAGE {KEYSTORE}: {problem}")
+    if channel != "production" and not os.environ.get("GALAXY_EXPECTED_SIGNER_SHA256"):
+        print("[SIGNING] Tester certificate %s is not pinned; "
+              "set GALAXY_EXPECTED_SIGNER_SHA256 before publishing." % fingerprint)
     return KEYSTORE
 
 def verify_signed_apk(path, channel="tester"):
@@ -163,8 +182,7 @@ def verify_signed_apk(path, channel="tester"):
     if proc.returncode != 0 or not match:
         raise SystemExit(f"REFUSING TO RELEASE: {path} did not verify:\n{text.strip()}")
     fingerprint = normalize_fingerprint(match.group(1))
-    if channel != "production" and os.environ.get("GALAXY_ALLOW_NEW_KEY") == "1":
-        return fingerprint
-    if fingerprint != normalize_fingerprint(EXPECTED_SIGNER):
-        raise SystemExit(f"REFUSING TO RELEASE: {path} is signed with {fingerprint} but expected {EXPECTED_SIGNER}")
+    problem = check_signer(fingerprint, channel=channel)
+    if problem:
+        raise SystemExit(f"REFUSING TO RELEASE {path}: {problem}")
     return fingerprint

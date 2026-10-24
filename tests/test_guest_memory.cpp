@@ -166,12 +166,39 @@ static void testAuditReportFormatting(void) {
     printf("[PASS] Audit report formatting verified\n");
 }
 
+static void testRangeTranslation(void) {
+    int valid = 0;
+    uint32_t phys = guest_layout_virt_range_to_phys((void*)(uintptr_t)0x80004000u, 0x1000u, &valid);
+    assert(valid == 1 && phys == 0x00004000u);
+
+    phys = guest_layout_virt_range_to_phys((void*)(uintptr_t)0xD0000000u, 0x08000000u, &valid);
+    assert(valid == 1 && phys == 0x10000000u);
+
+    // A range that ends one byte past its region must be rejected whole.
+    guest_layout_virt_range_to_phys((void*)(uintptr_t)0x87FFF000u, 0x2000u, &valid);
+    assert(valid == 0);
+    guest_layout_virt_range_to_phys((void*)(uintptr_t)0x98000000u, 0x08000001u, &valid);
+    assert(valid == 0);
+    // A range straddling the cached/uncached gap is not one guest range.
+    guest_layout_virt_range_to_phys((void*)(uintptr_t)0x87FFF000u, 0x40001000u, &valid);
+    assert(valid == 0);
+    // Wrap-around and empty ranges.
+    guest_layout_virt_range_to_phys((void*)(uintptr_t)0xFFFFFFFFFFFFF000ull, 0x2000u, &valid);
+    assert(valid == 0);
+    guest_layout_virt_range_to_phys((void*)(uintptr_t)0x80004000u, 0, &valid);
+    assert(valid == 0);
+    guest_layout_virt_range_to_phys(NULL, 0x10u, &valid);
+    assert(valid == 0);
+    printf("[PASS] Whole-range guest address conversion rejects straddling and overflow\n");
+}
+
 int main(void) {
     printf("=== Running Guest Memory Subsystem Unit Tests ===\n");
     testDefinitionsAndAlignment();
     testOverlapAndOverflow();
     testAddressTranslation();
     testBoundsAndRejection();
+    testRangeTranslation();
     testCleanMapsAudit();
     testArtCollisionDetection();
     testPreReservedWindowRecognition();

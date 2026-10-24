@@ -4,8 +4,13 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <limits.h>
 
 typedef uint16_t wch;
+
+// Caps stop hostile formats from causing unbounded padding or buffer overflow.
+static constexpr int kMaxFormatWidth = 4096;
+static constexpr int kMaxFormatPrecision = 1024, kMaxNumericPrecision = 60;
 
 extern "C" {
 
@@ -114,9 +119,16 @@ int port_vswprintf(wchar_t* dstW, size_t n, const wchar_t* fmtW, va_list args) {
         if (*fmt == '*') {
             width = va_arg(args, int);
             fmt++;
+            if (width < 0) {
+                left = true;
+                width = (width == INT_MIN) ? kMaxFormatWidth : -width;
+            }
+            if (width > kMaxFormatWidth) width = kMaxFormatWidth;
         } else {
             while (*fmt >= '0' && *fmt <= '9') {
-                width = width * 10 + (*fmt++ - '0');
+                if (width < kMaxFormatWidth) width = width * 10 + (*fmt - '0');
+                if (width > kMaxFormatWidth) width = kMaxFormatWidth;
+                fmt++;
             }
         }
         int prec = -1;
@@ -126,9 +138,13 @@ int port_vswprintf(wchar_t* dstW, size_t n, const wchar_t* fmtW, va_list args) {
             if (*fmt == '*') {
                 prec = va_arg(args, int);
                 fmt++;
+                if (prec < 0) prec = -1;
+                else if (prec > kMaxFormatPrecision) prec = kMaxFormatPrecision;
             } else {
                 while (*fmt >= '0' && *fmt <= '9') {
-                    prec = prec * 10 + (*fmt++ - '0');
+                    if (prec < kMaxFormatPrecision) prec = prec * 10 + (*fmt - '0');
+                    if (prec > kMaxFormatPrecision) prec = kMaxFormatPrecision;
+                    fmt++;
                 }
             }
         }
@@ -165,7 +181,7 @@ int port_vswprintf(wchar_t* dstW, size_t n, const wchar_t* fmtW, va_list args) {
                 long long sv = lng == 2 ? va_arg(args, long long) : lng == 1 ? (long long)va_arg(args, long) : (long long)va_arg(args, int);
                 if (lng == -1) sv = (short)sv;
                 negative = sv < 0;
-                v = negative ? (unsigned long long)(-sv) : (unsigned long long)sv;
+                v = negative ? (~(unsigned long long)sv + 1ull) : (unsigned long long)sv;
             } else {
                 v = lng == 2 ? va_arg(args, unsigned long long) : lng == 1 ? (unsigned long long)va_arg(args, unsigned long) : (unsigned long long)va_arg(args, unsigned int);
                 if (lng == -1) v = (unsigned short)v;
@@ -178,7 +194,8 @@ int port_vswprintf(wchar_t* dstW, size_t n, const wchar_t* fmtW, va_list args) {
                 tmp[t++] = (wch)digits[v % base];
                 v /= base;
             } while (v);
-            while (t < prec) {
+            const int numPrec = prec > kMaxNumericPrecision ? kMaxNumericPrecision : prec;
+            while (t < numPrec) {
                 tmp[t++] = '0';
             }
             if (alt && base == 16) {

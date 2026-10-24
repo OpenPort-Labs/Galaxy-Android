@@ -122,6 +122,33 @@ PyMODINIT_FUNC PyInit_android_bridge(void) {
     return PyModule_Create(&bridge_module);
 }
 
+// CPython cannot be initialized or finalized repeatedly with statically linked
+// modules, and Py_Finalize must run on the initializing thread.  Keep one
+// interpreter for the process lifetime; callers serialize on sOperationMutex
+// and acquire the GIL for each cook.
+static bool sPythonReady = false;
+static wchar_t* sPythonHomeW = nullptr;
+
+static bool initPythonOnce(const char* pythonHome) {
+    if (sPythonReady) return true;
+    if (Py_IsInitialized()) {
+        sPythonReady = true;
+        return true;
+    }
+    PyImport_AppendInittab("android_bridge", PyInit_android_bridge);
+    sPythonHomeW = Py_DecodeLocale(pythonHome, nullptr);
+    if (sPythonHomeW) {
+        Py_SetPythonHome(sPythonHomeW);
+    }
+    Py_Initialize();
+    sPythonReady = Py_IsInitialized();
+    if (sPythonReady) {
+        // Balance Py_Initialize's implicit GIL; runCooker re-acquires it.
+        PyEval_SaveThread();
+    }
+    return sPythonReady;
+}
+
 extern "C" JNIEXPORT jint JNICALL
 Java_com_galaxy_installer_CookerEngine_runCooker(
         JNIEnv *env, jclass clazz,
@@ -135,19 +162,32 @@ Java_com_galaxy_installer_CookerEngine_runCooker(
         return -2;
     }
 
+    if (!jPythonHome || !jScriptsDir || !jInputDir || !jOutputDir) {
+        LOGE("runCooker: a null jstring path argument was passed in");
+        return -1;
+    }
     const char* pythonHome = env->GetStringUTFChars(jPythonHome, nullptr);
-    const char* scriptsDir = env->GetStringUTFChars(jScriptsDir, nullptr);
-    const char* inputDir = env->GetStringUTFChars(jInputDir, nullptr);
-    const char* outputDir = env->GetStringUTFChars(jOutputDir, nullptr);
+    const char* scriptsDir = pythonHome ? env->GetStringUTFChars(jScriptsDir, nullptr) : nullptr;
+    const char* inputDir = scriptsDir ? env->GetStringUTFChars(jInputDir, nullptr) : nullptr;
+    const char* outputDir = inputDir ? env->GetStringUTFChars(jOutputDir, nullptr) : nullptr;
     if (!pythonHome || !scriptsDir || !inputDir || !outputDir) {
+        if (env->ExceptionCheck()) env->ExceptionClear();
         LOGE("runCooker: a null path argument was passed in");
+        if (pythonHome) env->ReleaseStringUTFChars(jPythonHome, pythonHome);
+        if (scriptsDir) env->ReleaseStringUTFChars(jScriptsDir, scriptsDir);
+        if (inputDir) env->ReleaseStringUTFChars(jInputDir, inputDir);
+        if (outputDir) env->ReleaseStringUTFChars(jOutputDir, outputDir);
         return -1;
     }
     bool withMovies = (bool)jWithMovies;
 
     gCallbackGlobal = env->NewGlobalRef(jCallback);
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        gCallbackGlobal = nullptr;
+    }
     if (!bindCallbackMethods(env, jCallback)) {
-        env->DeleteGlobalRef(gCallbackGlobal);
+        if (gCallbackGlobal) env->DeleteGlobalRef(gCallbackGlobal);
         gCallbackGlobal = nullptr;
         env->ReleaseStringUTFChars(jPythonHome, pythonHome);
         env->ReleaseStringUTFChars(jScriptsDir, scriptsDir);
@@ -156,20 +196,26 @@ Java_com_galaxy_installer_CookerEngine_runCooker(
         return -1;
     }
 
-    sendLogToJava("[Native] Initializing embedded Python engine...");
+    sendLogToJava(sPythonReady ? "[Native] Reusing embedded Python engine..."
+                               : "[Native] Initializing embedded Python engine...");
 
-    PyImport_AppendInittab("android_bridge", PyInit_android_bridge);
-
-    wchar_t* wHome = Py_DecodeLocale(pythonHome, nullptr);
-    if (wHome) {
-        Py_SetPythonHome(wHome);
+    if (!initPythonOnce(pythonHome)) {
+        sendLogToJava("[Error] Embedded Python could not be initialized.");
+        env->ReleaseStringUTFChars(jPythonHome, pythonHome);
+        env->ReleaseStringUTFChars(jScriptsDir, scriptsDir);
+        env->ReleaseStringUTFChars(jInputDir, inputDir);
+        env->ReleaseStringUTFChars(jOutputDir, outputDir);
+        env->DeleteGlobalRef(gCallbackGlobal);
+        gCallbackGlobal = nullptr;
+        return -1;
     }
-
-    Py_Initialize();
 
     sendLogToJava("[Native] Python engine initialized.");
 
-    if (!setPythonGlobals(scriptsDir, inputDir, outputDir, withMovies)) {
+    PyGILState_STATE gil = PyGILState_Ensure();
+    if (PyErr_Occurred()) PyErr_Clear();
+    bool globalsOk = setPythonGlobals(scriptsDir, inputDir, outputDir, withMovies);
+    if (!globalsOk) {
         sendLogToJava("[Error] Could not pass the working paths to the embedded interpreter.");
         reportPythonException();
     }
@@ -187,10 +233,12 @@ Java_com_galaxy_installer_CookerEngine_runCooker(
         "sys.stdout = OutputLogger()\n"
         "sys.stderr = OutputLogger()\n";
 
-    bool setupOk = PyRun_SimpleString(setupScript.c_str()) == 0;
+    bool setupOk = globalsOk && PyRun_SimpleString(setupScript.c_str()) == 0;
     if (!setupOk) {
-        sendLogToJava("[Error] Python setup failed; the conversion cannot run.");
-        reportPythonException();
+        if (globalsOk) {
+            sendLogToJava("[Error] Python setup failed; the conversion cannot run.");
+            reportPythonException();
+        }
     }
 
     std::string runScript =
@@ -223,11 +271,7 @@ Java_com_galaxy_installer_CookerEngine_runCooker(
     if (result != 0) {
         reportPythonException();
     }
-
-    Py_Finalize();
-    if (wHome) {
-        PyMem_RawFree(wHome);
-    }
+    PyGILState_Release(gil);
 
     env->ReleaseStringUTFChars(jPythonHome, pythonHome);
     env->ReleaseStringUTFChars(jScriptsDir, scriptsDir);

@@ -11,6 +11,7 @@
 #include <dlfcn.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <limits.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -19,6 +20,10 @@
 #include <sys/prctl.h>
 #include <sys/stat.h>
 #include <unistd.h>
+
+#ifndef PATH_MAX
+#define PATH_MAX 4096
+#endif
 
 #ifndef MAP_FIXED_NOREPLACE
 #define MAP_FIXED_NOREPLACE 0x100000
@@ -51,35 +56,138 @@ __attribute__((constructor)) static void reserveGameWindow(void) {
 
 // ---------------------------------------------------------------------------
 // Custom Graphics Driver Interceptor
+//
+// A driver binary is user-supplied code that runs inside the game process, so
+// the marker is only trusted from the app's private directory and the payload
+// must stay inside it.  /sdcard is deliberately not consulted: any app with
+// storage access can write there, which would turn the interposer into an
+// arbitrary-library loader.
 // ---------------------------------------------------------------------------
-static int getActiveCustomDriverPath(char* outPath, size_t maxLen) {
-    const char* candidates[] = {
-        "/data/user/0/com.openport.galaxyandroid/files/custom_driver/active_driver.txt",
-        "/data/data/com.openport.galaxyandroid/files/custom_driver/active_driver.txt",
-        "/sdcard/GalaxyData/custom_driver/active_driver.txt"
-    };
+static int readActiveMarker(const char* path, char* out, size_t maxLen) {
+    int fd = open(path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC);
+    if (fd < 0) {
+        return 0;
+    }
+    struct stat st;
+    if (fstat(fd, &st) != 0 || !S_ISREG(st.st_mode) || st.st_uid != geteuid() ||
+        (st.st_mode & (S_IWGRP | S_IWOTH)) != 0 || st.st_size <= 0 || (size_t)st.st_size >= maxLen) {
+        close(fd);
+        return 0;
+    }
+    ssize_t n = read(fd, out, maxLen - 1);
+    close(fd);
+    if (n <= 0) {
+        return 0;
+    }
+    out[n] = '\0';
+    char* eol = strchr(out, '\n');
+    if (eol != NULL) {
+        *eol = '\0';
+    }
+    size_t len = strlen(out);
+    while (len > 0 && (out[len - 1] == '\r' || out[len - 1] == ' ')) {
+        out[--len] = '\0';
+    }
+    return len > 0;
+}
 
-    for (size_t i = 0; i < sizeof(candidates) / sizeof(candidates[0]); i++) {
-        FILE* f = fopen(candidates[i], "r");
-        if (f) {
-            char line[512];
-            if (fgets(line, sizeof(line), f)) {
-                size_t len = strlen(line);
-                while (len > 0 && (line[len - 1] == '\r' || line[len - 1] == '\n' || line[len - 1] == ' ')) {
-                    line[len - 1] = '\0';
-                    len--;
-                }
-                fclose(f);
-                if (len > 0 && access(line, R_OK) == 0) {
-                    snprintf(outPath, maxLen, "%s", line);
-                    return 1;
-                }
-            } else {
-                fclose(f);
-            }
+static int hasParentTraversal(const char* path) {
+    const char* p = path;
+    while ((p = strstr(p, "..")) != NULL) {
+        int atBoundary = (p == path || p[-1] == '/');
+        int endsHere = (p[2] == '\0' || p[2] == '/');
+        if (atBoundary && endsHere) {
+            return 1;
         }
+        p += 2;
     }
     return 0;
+}
+
+static int hasElfMagic(int fd) {
+    unsigned char magic[4];
+    return pread(fd, magic, sizeof(magic), 0) == (ssize_t)sizeof(magic) && magic[0] == 0x7f && magic[1] == 'E' &&
+           magic[2] == 'L' && magic[3] == 'F';
+}
+
+static int validateDriverPath(const char* markerPath, const char* rawPath, char* outPath, size_t maxLen) {
+    size_t rawLen = strlen(rawPath);
+    if (rawPath[0] != '/' || rawLen < 8 || rawLen >= maxLen) {
+        return 0;
+    }
+    if (strcmp(rawPath + rawLen - 3, ".so") != 0 || hasParentTraversal(rawPath)) {
+        return 0;
+    }
+
+    char driverDir[PATH_MAX];
+    snprintf(driverDir, sizeof(driverDir), "%s", markerPath);
+    char* slash = strrchr(driverDir, '/');
+    if (slash == NULL) {
+        return 0;
+    }
+    *slash = '\0';
+
+    char dirReal[PATH_MAX];
+    char pathReal[PATH_MAX];
+    if (realpath(driverDir, dirReal) == NULL || realpath(rawPath, pathReal) == NULL) {
+        return 0;
+    }
+    size_t dirLen = strlen(dirReal);
+    if (strncmp(pathReal, dirReal, dirLen) != 0 || pathReal[dirLen] != '/') {
+        return 0;
+    }
+
+    struct stat st;
+    if (lstat(pathReal, &st) != 0 || !S_ISREG(st.st_mode) || st.st_uid != geteuid() ||
+        (st.st_mode & (S_IWGRP | S_IWOTH)) != 0 || st.st_size <= 0 || st.st_size > 64 * 1024 * 1024) {
+        return 0;
+    }
+
+    int fd = open(pathReal, O_RDONLY | O_NOFOLLOW | O_CLOEXEC);
+    if (fd < 0) {
+        return 0;
+    }
+    int valid = hasElfMagic(fd);
+    close(fd);
+    if (!valid) {
+        return 0;
+    }
+
+    snprintf(outPath, maxLen, "%s", pathReal);
+    return 1;
+}
+
+static int getActiveCustomDriverPath(char* outPath, size_t maxLen) {
+    const char* markers[] = {
+        "/data/user/0/com.openport.galaxyandroid/files/custom_driver/active_driver.txt",
+        "/data/data/com.openport.galaxyandroid/files/custom_driver/active_driver.txt",
+    };
+
+    for (size_t i = 0; i < sizeof(markers) / sizeof(markers[0]); i++) {
+        char rawPath[512];
+        if (!readActiveMarker(markers[i], rawPath, sizeof(rawPath))) {
+            continue;
+        }
+        if (validateDriverPath(markers[i], rawPath, outPath, maxLen)) {
+            return 1;
+        }
+        DRIVER_WARN("Ignoring custom driver marker %s: %s is not a trusted driver in the app-private directory",
+                    markers[i], rawPath);
+    }
+    return 0;
+}
+
+// Only HAL drivers are redirected.  Matching "vulkan." anywhere also matched
+// the loader itself ("libvulkan.so"), which would replace the loader with an
+// ICD.
+static int isVulkanHalLibrary(const char* filename) {
+    if (filename == NULL) {
+        return 0;
+    }
+    const char* base = strrchr(filename, '/');
+    base = base != NULL ? base + 1 : filename;
+    size_t len = strlen(base);
+    return len > 10 && strncmp(base, "vulkan.", 7) == 0 && strcmp(base + len - 3, ".so") == 0;
 }
 
 typedef void* (*DlopenExtFn)(const char*, int, const void*);
@@ -93,8 +201,8 @@ __attribute__((visibility("default"))) void* android_dlopen_ext(const char* file
         sRealAndroidDlopenExt = (DlopenExtFn)dlsym(RTLD_NEXT, "android_dlopen_ext");
     }
 
-    if (filename && strstr(filename, "vulkan.")) {
-        char customDriverPath[512];
+    if (isVulkanHalLibrary(filename)) {
+        char customDriverPath[PATH_MAX];
         if (getActiveCustomDriverPath(customDriverPath, sizeof(customDriverPath))) {
             DRIVER_LOG("Intercepting Vulkan HAL dlopen: %s -> redirecting to custom driver: %s", filename, customDriverPath);
             void* customHandle = sRealAndroidDlopenExt ? sRealAndroidDlopenExt(customDriverPath, flags, NULL)
@@ -119,8 +227,8 @@ __attribute__((visibility("default"))) void* android_load_sphal_library(const ch
         sRealAndroidLoadSphal = (DlopenFn)dlsym(RTLD_NEXT, "android_load_sphal_library");
     }
 
-    if (filename && strstr(filename, "vulkan.")) {
-        char customDriverPath[512];
+    if (isVulkanHalLibrary(filename)) {
+        char customDriverPath[PATH_MAX];
         if (getActiveCustomDriverPath(customDriverPath, sizeof(customDriverPath))) {
             DRIVER_LOG("Intercepting sphal Vulkan load: %s -> redirecting to custom driver: %s", filename, customDriverPath);
             void* customHandle = sRealAndroidLoadSphal ? sRealAndroidLoadSphal(customDriverPath, flags)

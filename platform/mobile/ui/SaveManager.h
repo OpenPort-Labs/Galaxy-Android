@@ -33,11 +33,6 @@ public:
     // Import save from /sdcard/Download
     bool importSave(std::string& outToastMsg);
 
-    // Directory copy and validation helpers
-    static bool copyFileVerified(const std::string& src, const std::string& dst);
-    static bool copyDirVerified(const std::string& src, const std::string& dst);
-    static bool validateSaveDir(const std::string& dir);
-
 private:
     std::string mSavePath;
     int mCurrentSlot = 1;

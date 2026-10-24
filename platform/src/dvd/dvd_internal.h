@@ -46,4 +46,5 @@ BOOL dvd_io_submit(DVDCommandBlock* block, u32 entry);
 int dvd_io_cancel(DVDCommandBlock* block);  // 1: dequeued from queue, 2: active, 0: not found
 bool dvd_io_pop_done(DVDCommandBlock** block);
 bool dvd_io_idle();
+void dvd_io_forget_fds();
 bool dvd_io_validate(const DVDFileInfo* fileInfo, const void* addr, s32 length, s32 offset, const char* api);

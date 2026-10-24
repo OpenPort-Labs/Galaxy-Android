@@ -7,8 +7,9 @@ stored as u32 (vertex/text colors) are swapped as values: ut::Color's u32
 conversions are byte-order aware in the port.
 """
 from util import u16, u32, sw16, sw32, sw_range
+import cook_warnings
 
-warnings = []
+warnings = cook_warnings.ThreadWarnings()
 
 
 def warn(msg):

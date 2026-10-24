@@ -11,8 +11,9 @@ AudMePlayingParamsHolder), ME sequence table (.bme, AudMeTable + byte code),
 remix sequence data (.brs, 32-bit words).
 """
 from util import u16, u32, s32, sw16, sw32, sw_range
+import cook_warnings
 
-warnings = []
+warnings = cook_warnings.ThreadWarnings()
 
 DATA_SE, DATA_BGM, DATA_STREAM = 0x50, 0x60, 0x70
 

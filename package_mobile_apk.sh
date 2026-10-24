@@ -32,7 +32,22 @@ mkdir -p $OUT/apk/lib/arm64-v8a
 
 KEYSTORE=${GALAXY_KEYSTORE:-out/debug.keystore}
 mkdir -p out
-if [ ! -f "$KEYSTORE" ]; then
+CLEANUP_KEYSTORE=
+if [ -n "${GALAXY_KEYSTORE_B64:-}" ]; then
+  # CI-provided key material is decoded into a private temp file and removed on
+  # exit; it is never written to the tracked out/ paths.
+  : "${GALAXY_KEYSTORE_PASS:?set GALAXY_KEYSTORE_PASS before decoding GALAXY_KEYSTORE_B64}"
+  KEYSTORE=$(mktemp out/galaxy-signing-XXXXXX) || { echo "cannot create a temporary keystore" >&2; exit 1; }
+  chmod 600 "$KEYSTORE"
+  CLEANUP_KEYSTORE=$KEYSTORE
+  trap 'rm -f "$CLEANUP_KEYSTORE"' EXIT
+  py3 -c 'import base64, os, sys; sys.stdout.buffer.write(base64.b64decode(os.environ["GALAXY_KEYSTORE_B64"]))' > "$KEYSTORE"
+  if [ "$(wc -c < "$KEYSTORE")" -lt 128 ]; then
+    echo "GALAXY_KEYSTORE_B64 is not a keystore" >&2
+    exit 1
+  fi
+fi
+if [ -z "$CLEANUP_KEYSTORE" ] && [ ! -f "$KEYSTORE" ]; then
   if [ "${GALAXY_ALLOW_NEW_KEY:-0}" != "1" ]; then
     echo "No keystore at $KEYSTORE. Set GALAXY_KEYSTORE and GALAXY_KEYSTORE_PASS, or" >&2
     echo "set GALAXY_ALLOW_NEW_KEY=1 to deliberately create a local dev key." >&2

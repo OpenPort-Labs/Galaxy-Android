@@ -109,6 +109,27 @@ void rollback(std::vector<PromotedFile>& promoted) {
     promoted.clear();
 }
 
+// A process killed during promotion can leave a title's previous data as
+// "<file>.import_rollback" with the live file missing. Restore that backup, or
+// drop one whose replacement already landed, before reading or writing NAND.
+void recoverInterruptedImport(const std::string& saveRoot) {
+    for (const char* id : kTitleIds) {
+        std::string destDir = std::string(saveRoot) + "/title/00010000/" + id + "/data";
+        for (const char* name : kSaveNames) {
+            std::string dest = destDir + "/" + name;
+            std::string backup = dest + ".import_rollback";
+            struct stat st;
+            if (lstat(backup.c_str(), &st) != 0) continue;
+            if (lstat(dest.c_str(), &st) == 0) {
+                unlink(backup.c_str());
+            } else {
+                rename(backup.c_str(), dest.c_str());
+            }
+        }
+    }
+    savefs::removeDirRecursive(std::string(saveRoot) + "/import_staging");
+}
+
 // All eight title copies are staged first; only when every write succeeded are
 // they renamed into the live NAND tree. A failure during promotion restores the
 // previous files, so an import can never leave a half-updated NAND.
@@ -178,6 +199,7 @@ bool SaveSyncManager::exportSave(const std::string& savePath, std::string& outTo
                                  const SaveIoPaths& paths) {
     std::string saveRoot = parentDir(savePath);
     if (saveRoot.empty()) return false;
+    recoverInterruptedImport(saveRoot);
 
     std::vector<uint8_t> data;
     if (!readFirstValid(exportCandidates(saveRoot, paths), data)) {
@@ -214,6 +236,7 @@ bool SaveSyncManager::importSave(const std::string& savePath, std::string& outTo
         outToastMsg = "Save path not set!";
         return false;
     }
+    recoverInterruptedImport(saveRoot);
 
     std::vector<uint8_t> data;
     bool foundAny = false;

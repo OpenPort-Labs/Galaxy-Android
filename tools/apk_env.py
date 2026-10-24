@@ -1,9 +1,11 @@
+import atexit
 import base64
 import glob
 import os
 import re
 import shutil
 import subprocess
+import tempfile
 import xml.etree.ElementTree as ET
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -89,6 +91,7 @@ KEYSTORE_CANDIDATES = [LOCAL_KEYSTORE, os.path.join(ROOT, "out", "debug.keystore
                        os.path.join(ROOT, "platform", "mobile", "release.keystore")]
 DEV_KEYSTORE = os.path.join(ROOT, "out", "dev.keystore")
 KEYSTORE = ""
+EXTRACTED_KEYSTORE = ""
 ANDROID_NS = "{http://schemas.android.com/apk/res/android}"
 
 
@@ -132,6 +135,46 @@ def keystore_fingerprint(keystore, storepass=None, alias=None):
     match = re.search(r"SHA-?256:\s*([0-9A-Fa-f:]+)", proc.stdout)
     return normalize_fingerprint(match.group(1)) if match else None
 
+def cleanup_extracted_keystore():
+    """Removes key material decoded from GALAXY_KEYSTORE_B64, if any."""
+    global EXTRACTED_KEYSTORE, KEYSTORE
+    path = EXTRACTED_KEYSTORE
+    EXTRACTED_KEYSTORE = ""
+    if not path:
+        return
+    try:
+        os.unlink(path)
+    except OSError:
+        pass
+    if KEYSTORE == path:
+        KEYSTORE = ""
+
+
+def _extract_keystore(data):
+    """Writes CI-provided key material to a private temp file outside the tree."""
+    global EXTRACTED_KEYSTORE
+    out_dir = os.path.join(ROOT, "out")
+    os.makedirs(out_dir, exist_ok=True)
+    fd, path = tempfile.mkstemp(prefix="galaxy-signing-", suffix=".keystore", dir=out_dir)
+    try:
+        os.chmod(path, 0o600)
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(data)
+    except BaseException:
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+        raise
+    EXTRACTED_KEYSTORE = path
+    atexit.register(cleanup_extracted_keystore)
+    return path
+
+
 def prepare_signing_key(channel="tester"):
     global KEYSTORE
     storepass = resolve_keystore_pass(channel=channel)
@@ -143,14 +186,7 @@ def prepare_signing_key(channel="tester"):
             raise SystemExit(f"GALAXY_KEYSTORE_B64 is not valid base64: {exc}")
         if len(data) < 128:
             raise SystemExit(f"GALAXY_KEYSTORE_B64 decoded to {len(data)} bytes, which is not a keystore")
-        os.makedirs(os.path.dirname(LOCAL_KEYSTORE), exist_ok=True)
-        with open(LOCAL_KEYSTORE, "wb") as handle:
-            handle.write(data)
-        try:
-            os.chmod(LOCAL_KEYSTORE, 0o600)
-        except OSError:
-            pass
-        KEYSTORE = LOCAL_KEYSTORE
+        KEYSTORE = _extract_keystore(data)
     else:
         explicit = os.environ.get("GALAXY_KEYSTORE")
         for candidate in ([explicit] if explicit else []) + KEYSTORE_CANDIDATES:

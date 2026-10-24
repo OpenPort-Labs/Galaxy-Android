@@ -7,12 +7,13 @@ lists, texture images and palettes stay big-endian: they are byte streams the
 GPU emulation reads as such.
 """
 from util import u16, s16, u32, s32, sw16, sw32, sw_range, extents, swap_ntab
+import cook_warnings
 
 GX_VA_POS, GX_VA_NRM, GX_VA_CLR0, GX_VA_CLR1, GX_VA_TEX0, GX_VA_NBT, GX_VA_NULL = 9, 10, 11, 12, 13, 25, 0xFF
 COMP_WIDTH = {0: 1, 1: 1, 2: 2, 3: 2, 4: 4}        # u8 s8 u16 s16 f32
 COLOR_WIDTH = {0: 2, 1: 1, 2: 1, 3: 2, 4: 1, 5: 1}  # 565 888 888x 4444 6666 8888
 
-warnings = []
+warnings = cook_warnings.ThreadWarnings()
 
 
 def warn(msg):

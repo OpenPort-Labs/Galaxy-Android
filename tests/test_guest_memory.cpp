@@ -3,6 +3,11 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifdef __linux__
+#include <sys/mman.h>
+#include <unistd.h>
+#endif
+
 #include "port/guest_layout.h"
 
 static void testDefinitionsAndAlignment(void) {
@@ -205,6 +210,58 @@ static void testRangeTranslation(void) {
     printf("[PASS] Whole-range guest address conversion rejects straddling and overflow\n");
 }
 
+#ifdef __linux__
+static void testReserveLifecycleRepeatedAndRelease(void) {
+    guest_layout_release_slices();
+    GuestLayoutAudit first;
+    assert(guest_layout_reserve_slices_nondestructive(&first) == 1);
+    assert(first.fullyAvailable == 1);
+
+    // A second call must see the process's own PROT_NONE slices as belonging
+    // to this process, not re-map or forget them.
+    GuestLayoutAudit second;
+    assert(guest_layout_reserve_slices_nondestructive(&second) == 1);
+    assert(second.fullyAvailable == 1);
+
+    guest_layout_release_slices();
+    guest_layout_release_slices(); // idempotent cleanup
+
+    GuestLayoutAudit third;
+    assert(guest_layout_reserve_slices_nondestructive(&third) == 1);
+    guest_layout_release_slices();
+    printf("[PASS] Repeated reservation, release, and re-reservation verified\n");
+}
+
+static void testReserveRejectsOccupiedWindow(void) {
+    guest_layout_release_slices();
+    void* intruder = mmap((void*)(uintptr_t)0x90000000u, 0x1000u,
+                          PROT_READ | PROT_WRITE,
+                          MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE, -1, 0);
+    if (intruder != (void*)(uintptr_t)0x90000000u) {
+        if (intruder != MAP_FAILED) munmap(intruder, 0x1000u);
+        printf("[SKIP] cannot place an occupied-window probe on this host\n");
+        return;
+    }
+
+    GuestLayoutAudit audit;
+    int ok = guest_layout_reserve_slices_nondestructive(&audit);
+    assert(ok == 0);
+    assert(audit.fullyAvailable == 0);
+    assert(audit.totalConflicts >= 1);
+    assert(audit.regions[GUEST_REGION_MEM2].status == GUEST_RES_CONFLICT);
+
+    // The foreign mapping must survive the refusal.
+    assert(((volatile char*)intruder)[0] == 0);
+    munmap(intruder, 0x1000u);
+
+    // A failed attempt must not leave stale bookkeeping that blocks the next.
+    GuestLayoutAudit retry;
+    assert(guest_layout_reserve_slices_nondestructive(&retry) == 1);
+    guest_layout_release_slices();
+    printf("[PASS] Occupied window is refused and the next reservation succeeds\n");
+}
+#endif
+
 int main(void) {
     printf("=== Running Guest Memory Subsystem Unit Tests ===\n");
     testDefinitionsAndAlignment();
@@ -217,6 +274,10 @@ int main(void) {
     testPreReservedWindowRecognition();
     testPartialGuardMappingIsConflict();
     testAuditReportFormatting();
+#ifdef __linux__
+    testReserveRejectsOccupiedWindow();
+    testReserveLifecycleRepeatedAndRelease();
+#endif
     printf("All guest memory subsystem unit tests passed successfully.\n");
     return 0;
 }

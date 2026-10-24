@@ -16,6 +16,18 @@ static uintptr_t sReservedBases[GUEST_REGION_COUNT];
 static size_t sReservedSizes[GUEST_REGION_COUNT];
 static int sReservedCount = 0;
 
+// Drops the slices added from `first` onwards. Slices reserved by an earlier
+// call stay tracked and mapped, so a repeated reserve followed by a release
+// still frees everything this process mapped.
+static void releaseFrom(int first) {
+#if defined(__ANDROID__) || defined(__linux__)
+    for (int i = first; i < sReservedCount; i++) {
+        munmap((void*)sReservedBases[i], sReservedSizes[i]);
+    }
+#endif
+    if (first < sReservedCount) sReservedCount = first;
+}
+
 static void parseMapLine(const char* line, GuestLayoutAudit* audit) {
     unsigned long long lo = 0, hi = 0;
     char perms[8] = {0};
@@ -111,11 +123,21 @@ int guest_layout_reserve_slices_nondestructive(GuestLayoutAudit* outAudit) {
         return 0; // Collisions present; strictly avoid clobbering with MAP_FIXED
     }
 
-    sReservedCount = 0;
 #if defined(__ANDROID__) || defined(__linux__)
+    int firstNew = sReservedCount;
     for (int i = 0; i < GUEST_REGION_COUNT; i++) {
         GuestRegionAudit* ra = &audit.regions[i];
         if (ra->status == GUEST_RES_PRE_RESERVED) continue; // Already safely reserved
+
+        if (sReservedCount >= GUEST_REGION_COUNT) {
+            ra->status = GUEST_RES_CONFLICT;
+            audit.totalConflicts++;
+            audit.fullyAvailable = 0;
+            snprintf(ra->conflictOwner, sizeof(ra->conflictOwner), "reservation table exhausted");
+            releaseFrom(firstNew);
+            if (outAudit) *outAudit = audit;
+            return 0;
+        }
 
         void* p = mmap((void*)ra->def.base, ra->def.size, PROT_NONE,
                        MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE | MAP_FIXED_NOREPLACE, -1, 0);
@@ -125,7 +147,7 @@ int guest_layout_reserve_slices_nondestructive(GuestLayoutAudit* outAudit) {
             audit.totalConflicts++;
             audit.fullyAvailable = 0;
             snprintf(ra->conflictOwner, sizeof(ra->conflictOwner), "mmap EEXIST / collision");
-            guest_layout_release_slices(); // Roll back any partial reservations
+            releaseFrom(firstNew); // Roll back only the slices mapped by this call
             if (outAudit) *outAudit = audit;
             return 0;
         }
@@ -142,10 +164,5 @@ int guest_layout_reserve_slices_nondestructive(GuestLayoutAudit* outAudit) {
 }
 
 void guest_layout_release_slices(void) {
-#if defined(__ANDROID__) || defined(__linux__)
-    for (int i = 0; i < sReservedCount; i++) {
-        munmap((void*)sReservedBases[i], sReservedSizes[i]);
-    }
-#endif
-    sReservedCount = 0;
+    releaseFrom(0);
 }

@@ -161,10 +161,36 @@ class CookPipelineTests(unittest.TestCase):
             self.assertEqual((out / 'files' / 'ObjectData' / 'Readme.txt').read_bytes(), b'plain text')
             self.assertEqual(list(root.glob('.galaxy-cook-*')), [])
 
+    def test_parallel_cook_notes_are_per_thread(self):
+        import threading
+        import j3d
+
+        del j3d.warnings[:]
+        barrier = threading.Barrier(2)
+        seen = {}
+
+        def worker(name):
+            del j3d.warnings[:]
+            barrier.wait()
+            j3d.warnings.append(name)
+            barrier.wait()
+            seen[name] = list(j3d.warnings)
+
+        threads = [threading.Thread(target=worker, args=(name,))
+                   for name in ('left', 'right')]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=10)
+        self.assertEqual(seen, {'left': ['left'], 'right': ['right']})
+        self.assertEqual(['note'] + j3d.warnings, ['note'],
+                         'worker notes leaked into the parent thread')
+
     def test_shared_cook_modules_stay_identical(self):
         if not MOBILE_SCRIPTS.is_dir():
             self.skipTest('mobile scripts are not present')
-        for name in ('cook_archive.py', 'cook_output.py'):
+        for name in ('cook_archive.py', 'cook_output.py', 'cook_warnings.py',
+                     'j3d.py', 'lyt.py', 'jpa.py', 'jaudio.py'):
             self.assertEqual((COOK / name).read_bytes(), (MOBILE_SCRIPTS / name).read_bytes(), name)
 
 

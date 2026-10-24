@@ -4,8 +4,9 @@ Layouts follow JSystem/JParticle/*.hpp and JPAResourceLoader.cpp.  Texture
 images stay big-endian.
 """
 from util import u16, u32, s16, sw16, sw32, sw_range
+import cook_warnings
 
-warnings = []
+warnings = cook_warnings.ThreadWarnings()
 
 
 def blk_bem1(b, o):

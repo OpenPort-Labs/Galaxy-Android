@@ -215,11 +215,48 @@ void testExportReportsWriteFailure() {
           message);
 }
 
+void testImportRecoversInterruptedPromotion() {
+    Fixture fixture;
+    const std::vector<uint8_t> previous = nativeSave(0x31);
+    fs::create_directories(fixture.titleFile("524d4750", "GameData.bin").parent_path());
+    writeFile(fixture.titleFile("524d4750", "GameData.bin"), previous);
+    fs::rename(fixture.titleFile("524d4750", "GameData.bin"),
+               fixture.titleFile("524d4750", "GameData.bin.import_rollback"));
+    fs::create_directories(fixture.nand / "import_staging" / "title");
+    writeFile(fixture.nand / "import_staging" / "title" / "partial.bin", nativeSave(0x99));
+
+    std::string message;
+    bool ok = SaveSyncManager::importSave(fixture.savePath, message, fixture.paths);
+    check("interrupted import reports no source", !ok, message);
+    check("interrupted import restores previous save",
+          readFile(fixture.titleFile("524d4750", "GameData.bin")) == previous);
+    check("recovery leaves no rollback files", !fixture.hasLeftover(".import_rollback"));
+    check("recovery removes interrupted staging", !fs::exists(fixture.nand / "import_staging"));
+}
+
+void testExportRecoversInterruptedPromotion() {
+    Fixture fixture;
+    const std::vector<uint8_t> current = nativeSave(0x42);
+    fs::create_directories(fixture.titleFile("524d4750", "GameData.bin").parent_path());
+    writeFile(fixture.titleFile("524d4750", "GameData.bin"), current);
+    writeFile(fixture.titleFile("524d4750", "GameData.bin.import_rollback"),
+              nativeSave(0x11));
+
+    std::string message;
+    bool ok = SaveSyncManager::exportSave(fixture.savePath, message, fixture.paths);
+    check("export after interrupted promotion succeeds", ok, message);
+    check("export keeps the promoted save",
+          readFile(fixture.download / "GameData.bin") == current);
+    check("export clears stale rollback files", !fixture.hasLeftover(".import_rollback"));
+}
+
 }  // namespace
 
 int main() {
     testImportWritesEveryCopy();
     testImportRollsBackOnPromotionFailure();
+    testImportRecoversInterruptedPromotion();
+    testExportRecoversInterruptedPromotion();
     testImportRejectsOversizedFile();
     testImportConvertsDolphinSave();
     testExportWritesVerifiedCopies();

@@ -185,6 +185,24 @@ class TestReleaseGate(unittest.TestCase):
             if old is not None:
                 os.environ["GALAXY_KEYSTORE_PASS"] = old
 
+    def test_base64_keystore_is_private_and_removed(self):
+        import base64
+        import tempfile
+        import tools.apk_env as env
+        with tempfile.TemporaryDirectory() as tmp, \
+             mock.patch.dict(os.environ, {
+                 "GALAXY_KEYSTORE_B64": base64.b64encode(b"k" * 256).decode(),
+                 "GALAXY_KEYSTORE_PASS": "secret"}, clear=False), \
+             mock.patch.object(env, "ROOT", tmp), \
+             mock.patch.object(env, "keystore_fingerprint", return_value=NEW_SIGNER):
+            path = env.prepare_signing_key(channel="tester")
+            self.assertTrue(os.path.isfile(path))
+            self.assertEqual(os.path.dirname(path), os.path.join(tmp, "out"))
+            self.assertNotEqual(path, os.path.join(tmp, "out", "release.keystore"))
+            env.cleanup_extracted_keystore()
+            self.assertFalse(os.path.exists(path))
+            self.assertEqual(env.EXTRACTED_KEYSTORE, "")
+
     def test_production_mode_rejects_debuggable_even_with_allow_var(self):
         import tools.verify_release_apk as vr
         with mock.patch.dict(os.environ, {"GALAXY_EXPECTED_SIGNER_SHA256": NEW_SIGNER}), \

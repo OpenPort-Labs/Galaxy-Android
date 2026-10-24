@@ -151,6 +151,19 @@ static void testPreReservedWindowRecognition(void) {
     printf("[PASS] Pre-reserved PROT_NONE window properly recognized without false alarms\n");
 }
 
+static void testPartialGuardMappingIsConflict(void) {
+    // An anonymous PROT_NONE guard that covers only half of MEM1 is not an own
+    // reservation; treating it as pre-reserved would let MAP_FIXED clobber it.
+    const char* partialGuard = "80000000-84000000 ---p 00000000 00:00 0\n";
+
+    GuestLayoutAudit audit;
+    guest_layout_audit_maps_buffer(partialGuard, &audit);
+    assert(audit.totalConflicts >= 1);
+    assert(audit.regions[GUEST_REGION_MEM1].status == GUEST_RES_CONFLICT);
+    assert(audit.fullyAvailable == 0);
+    printf("[PASS] Partial anonymous guard mapping is reported as a conflict\n");
+}
+
 static void testAuditReportFormatting(void) {
     const char* mixedMaps =
         "98000000-99000000 rwxp 00000000 00:00 0 [anon:jit-code-cache]\n";
@@ -202,6 +215,7 @@ int main(void) {
     testCleanMapsAudit();
     testArtCollisionDetection();
     testPreReservedWindowRecognition();
+    testPartialGuardMappingIsConflict();
     testAuditReportFormatting();
     printf("All guest memory subsystem unit tests passed successfully.\n");
     return 0;

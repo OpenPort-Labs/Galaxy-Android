@@ -110,9 +110,14 @@ jobs:
       - name: Require pinned signing certificate
         env:
           GALAXY_EXPECTED_SIGNER_SHA256: ${{ vars.GALAXY_EXPECTED_SIGNER_SHA256 }}
+          GALAXY_KEY_ALIAS: ${{ secrets.GALAXY_KEY_ALIAS }}
         run: |
           if [ -z "$GALAXY_EXPECTED_SIGNER_SHA256" ]; then
             echo "REFUSING TO BUILD: set the GALAXY_EXPECTED_SIGNER_SHA256 repository variable to the rotated signing certificate (see docs/SIGNING.md)." >&2
+            exit 1
+          fi
+          if [ -z "$GALAXY_KEY_ALIAS" ]; then
+            echo "REFUSING TO BUILD: set the GALAXY_KEY_ALIAS secret to the rotated key's alias (see docs/SIGNING.md)." >&2
             exit 1
           fi
 
@@ -126,6 +131,7 @@ jobs:
           GALAXY_ALLOW_DEBUGGABLE: '1'
           GALAXY_KEYSTORE_B64: ${{ secrets.GALAXY_KEYSTORE_B64 }}
           GALAXY_KEYSTORE_PASS: ${{ secrets.GALAXY_KEYSTORE_PASS }}
+          GALAXY_KEY_ALIAS: ${{ secrets.GALAXY_KEY_ALIAS }}
           GALAXY_EXPECTED_SIGNER_SHA256: ${{ vars.GALAXY_EXPECTED_SIGNER_SHA256 }}
         run: |
           mkdir -p out-mobile

@@ -171,14 +171,16 @@ class TestReleaseGate(unittest.TestCase):
             else:
                 os.environ.pop("GALAXY_KEYSTORE_PASS", None)
 
-    def test_resolve_keystore_pass_tester_fallback(self):
+    def test_resolve_keystore_pass_tester_requires_secret(self):
         from tools.apk_env import resolve_keystore_pass
         import os
         old = os.environ.get("GALAXY_KEYSTORE_PASS")
         try:
             if "GALAXY_KEYSTORE_PASS" in os.environ:
                 del os.environ["GALAXY_KEYSTORE_PASS"]
-            self.assertEqual(resolve_keystore_pass(channel="tester"), "android")
+            with self.assertRaises(SystemExit) as ctx:
+                resolve_keystore_pass(channel="tester")
+            self.assertIn("GALAXY_KEYSTORE_PASS", str(ctx.exception))
         finally:
             if old is not None:
                 os.environ["GALAXY_KEYSTORE_PASS"] = old

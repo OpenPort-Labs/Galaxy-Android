@@ -43,6 +43,9 @@ Run these steps on a trusted machine, offline where possible.
      -dname "CN=Galaxy Android Release, O=Galaxy Android, C=US"
    ```
 
+   Use the same password for the store and the key (the default PKCS12
+   keystore requires this, and CI supplies only `GALAXY_KEYSTORE_PASS`).
+
 2. Read its fingerprint:
 
    ```bash
@@ -61,8 +64,9 @@ Run these steps on a trusted machine, offline where possible.
    | `GALAXY_EXPECTED_SIGNER_SHA256` | variable | the new fingerprint |
 
    The release workflow refuses to build or publish while
-   `GALAXY_EXPECTED_SIGNER_SHA256` is empty, and the packager refuses any
-   certificate that does not match it.
+   `GALAXY_EXPECTED_SIGNER_SHA256` or `GALAXY_KEY_ALIAS` is empty, and the
+   packager refuses any certificate that does not match the pin.  It signs with
+   the named alias and then reads the finished APK's certificate back.
 
 4. Local builds use the same policy:
 
@@ -103,6 +107,15 @@ unknown source that is signed with the old fingerprint.
      there is no default password and no fallback to a debug key.
    - `GALAXY_ALLOW_NEW_KEY` is not accepted.
    - The finished APK's certificate is read back and must match the pin.
+   - **Blocked today.** A non-debuggable app never executes `wrap.sh`, so
+     `libreserve.so` cannot claim the guest window before ART. The launcher's
+     runtime audit then reserves after ART has started; it now aborts on any
+     conflict instead of overwriting memory, but no non-debuggable build has
+     been proven to boot reliably on a device.  Do not publish a production
+     APK until a pre-ART reservation path is proven.  Next experiment: sign a
+     non-debuggable build, launch it on the test device, and capture the
+     launcher audit plus `/proc/<pid>/maps` across repeated cold starts to see
+     whether the window is still free at that point.
 
 ## What the packager enforces
 
@@ -111,15 +124,24 @@ unknown source that is signed with the old fingerprint.
 `out/debug.keystore`, `platform/mobile/release.keystore`, then:
 
 1. rejects the compromised fingerprint and any certificate that does not match
-   `GALAXY_EXPECTED_SIGNER_SHA256`;
-2. requires `GALAXY_EXPECTED_SIGNER_SHA256` for production;
-3. signs the APK;
+   `GALAXY_EXPECTED_SIGNER_SHA256`;  the pre-check inspects the certificate of
+   `GALAXY_KEY_ALIAS`, the alias that will sign, not just the first key in the
+   store;
+2. requires `GALAXY_KEYSTORE_PASS` and `GALAXY_EXPECTED_SIGNER_SHA256` for
+   production;
+3. signs the APK with `GALAXY_KEY_ALIAS`;
 4. reads the certificate back with `apksigner verify` and refuses to hand over
    the APK if it does not satisfy the same policy.
 
+No channel has a default password.  A missing key is an error unless
+`GALAXY_ALLOW_NEW_KEY=1` explicitly asks for a local development key, in which
+case `GALAXY_KEYSTORE_PASS` must still be supplied.
+
 The legacy shell packagers (`package_mobile_apk.sh`, `tools/package_apk.sh`)
-run the same compromise check before signing.  `installer-mobile/build.py`
-uses the shared policy for the installer APK.
+apply the same policy: they require an explicit password, refuse to create a
+key without `GALAXY_ALLOW_NEW_KEY=1`, sign with `GALAXY_KEY_ALIAS`, and verify
+the finished APK's certificate.  `installer-mobile/build.py` uses the shared
+policy for the installer APK.
 
 `tools/verify_release_apk.py` applies the policy to the artifact that is
 actually uploaded, not just the one the packager saw.  Besides the signer it

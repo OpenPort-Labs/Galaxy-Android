@@ -66,12 +66,13 @@ def resolve_keystore_pass(channel="tester"):
     val = os.environ.get("GALAXY_KEYSTORE_PASS")
     if val:
         return val
-    if channel == "production":
-        raise SystemExit("REFUSING TO PACKAGE [production]: GALAXY_KEYSTORE_PASS environment variable is required.")
-    return "android"
+    # No channel accepts a default password: the compromised key's password was
+    # published, and "android" must never become an implicit credential again.
+    raise SystemExit(
+        "REFUSING TO PACKAGE [%s]: GALAXY_KEYSTORE_PASS environment variable is required." % channel)
 
 KEYSTORE_PASS = os.environ.get("GALAXY_KEYSTORE_PASS", "")
-KEY_ALIAS = os.environ.get("GALAXY_KEY_ALIAS", "androiddebugkey")
+KEY_ALIAS = os.environ.get("GALAXY_KEY_ALIAS") or "androiddebugkey"
 KEY_PASS = os.environ.get("GALAXY_KEY_PASS", "")
 KEYTOOL = shutil.which("keytool") or "keytool"
 
@@ -112,12 +113,18 @@ def manifest_is_debuggable(path=MANIFEST):
     application = ET.parse(path).getroot().find("application")
     return application is not None and application.get(ANDROID_NS + "debuggable") == "true"
 
-def keystore_fingerprint(keystore, storepass=None):
+def keystore_fingerprint(keystore, storepass=None, alias=None):
     sp = storepass or resolve_keystore_pass(channel="tester")
+    # Check the certificate of the alias that apksigner will actually use. A
+    # keystore may hold several keys (for example the compromised debug key
+    # alongside the rotated release key), and listing the whole store can
+    # report a different certificate than the one that signs the APK.
+    key_alias = alias or KEY_ALIAS
     env = dict(os.environ)
     env["_GALAXY_KT_PASS"] = sp
     try:
         proc = subprocess.run([KEYTOOL, "-list", "-v", "-keystore", keystore,
+                               "-alias", key_alias,
                                "-storepass:env", "_GALAXY_KT_PASS"],
                               capture_output=True, text=True, env=env)
     except OSError:

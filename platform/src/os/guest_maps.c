@@ -27,9 +27,16 @@ static void parseMapLine(const char* line, GuestLayoutAudit* audit) {
         GuestRegionAudit* ra = &audit->regions[i];
         if (guest_layout_check_overlap((uintptr_t)lo, (size_t)(hi - lo), ra->def.base, ra->def.size)) {
             int isProtNone = (strncmp(perms, "---p", 4) == 0);
-            int isOwnReservation = isProtNone && (strstr(path, "petari") != NULL ||
-                                                  strstr(path, "guest") != NULL ||
-                                                  path[0] == '\0');
+            // Only a PROT_NONE mapping that covers the whole region can be an
+            // own reservation. A partial anonymous guard mapping belongs to
+            // someone else and must be reported as a conflict, not skipped and
+            // later overwritten by MAP_FIXED.
+            int coversRegion = (uintptr_t)lo <= ra->def.base &&
+                               (uintptr_t)hi >= ra->def.base + ra->def.size;
+            int isOwnReservation = isProtNone && coversRegion &&
+                                   (strstr(path, "petari") != NULL ||
+                                    strstr(path, "guest") != NULL ||
+                                    path[0] == '\0');
             if (isOwnReservation) {
                 if (ra->status == GUEST_RES_UNMAPPED) {
                     ra->status = GUEST_RES_PRE_RESERVED;

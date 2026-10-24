@@ -31,14 +31,23 @@ OUT=out
 rm -rf $OUT/apk
 mkdir -p $OUT/apk/lib/arm64-v8a
 
-KEYSTORE=$OUT/debug.keystore
+KEYSTORE=${GALAXY_KEYSTORE:-$OUT/debug.keystore}
 if [ ! -f $KEYSTORE ]; then
-  "$KEYTOOL" -genkeypair -keystore $KEYSTORE -storepass android -keypass android -alias androiddebugkey \
+  if [ "${GALAXY_ALLOW_NEW_KEY:-0}" != "1" ]; then
+    echo "No keystore at $KEYSTORE. Set GALAXY_KEYSTORE and GALAXY_KEYSTORE_PASS, or" >&2
+    echo "set GALAXY_ALLOW_NEW_KEY=1 to deliberately create a local dev key." >&2
+    exit 1
+  fi
+  : "${GALAXY_KEYSTORE_PASS:?set GALAXY_KEYSTORE_PASS before creating a signing key}"
+  GALAXY_KEY_ALIAS="${GALAXY_KEY_ALIAS:-androiddebugkey}"
+  "$KEYTOOL" -genkeypair -keystore $KEYSTORE -storepass:env GALAXY_KEYSTORE_PASS \
+    -keypass:env GALAXY_KEYSTORE_PASS -alias "$GALAXY_KEY_ALIAS" \
     -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=PetariVR Debug,O=Local,C=US" > /dev/null
 fi
 
-GALAXY_KEYSTORE_PASS="${GALAXY_KEYSTORE_PASS:-android}"
-export GALAXY_KEYSTORE_PASS
+: "${GALAXY_KEYSTORE_PASS:?set GALAXY_KEYSTORE_PASS (no default credential is used)}"
+GALAXY_KEY_ALIAS="${GALAXY_KEY_ALIAS:-androiddebugkey}"
+export GALAXY_KEYSTORE_PASS GALAXY_KEY_ALIAS
 py3 - "$KEYSTORE" << 'PY'
 import sys
 from tools.apk_env import check_signer, keystore_fingerprint
@@ -73,10 +82,16 @@ PY
 "$BT/zipalign$EXE" -f -p 16 $OUT/base.apk $OUT/aligned.apk
 if [ -n "$IS_WINDOWS" ]; then
   cmd //c "$(cygpath -w "$BT/apksigner.bat")" sign --ks "$(cygpath -w $KEYSTORE)" --ks-pass env:GALAXY_KEYSTORE_PASS \
-    --out "$(cygpath -w $OUT/GalaxyQuest.apk)" "$(cygpath -w $OUT/aligned.apk)"
+    --ks-key-alias "$GALAXY_KEY_ALIAS" --out "$(cygpath -w $OUT/GalaxyQuest.apk)" "$(cygpath -w $OUT/aligned.apk)"
 else
-  "$BT/apksigner" sign --ks $KEYSTORE --ks-pass env:GALAXY_KEYSTORE_PASS --out $OUT/GalaxyQuest.apk $OUT/aligned.apk
+  "$BT/apksigner" sign --ks $KEYSTORE --ks-pass env:GALAXY_KEYSTORE_PASS --ks-key-alias "$GALAXY_KEY_ALIAS" \
+    --out $OUT/GalaxyQuest.apk $OUT/aligned.apk
 fi
+py3 - "$OUT/GalaxyQuest.apk" << 'PY'
+import sys
+from tools.apk_env import verify_signed_apk
+verify_signed_apk(sys.argv[1], channel='tester')
+PY
 rm -f $OUT/base.apk $OUT/aligned.apk $OUT/res.zip
 echo "built $OUT/GalaxyQuest.apk ($(wc -c < $OUT/GalaxyQuest.apk) bytes)"
 # An incremental install only unpacks the .so files, not wrap.sh.

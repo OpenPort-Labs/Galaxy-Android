@@ -37,14 +37,15 @@ void android_main(struct android_app* app) {
     GuestLayoutAudit audit;
     int reserved = guest_layout_reserve_slices_nondestructive(&audit);
     if (!reserved || !audit.fullyAvailable) {
+        // Continuing would let port_mem_init map fixed addresses over whatever
+        // already owns them. Refuse to start instead of corrupting the
+        // process; the tester build prevents this by preloading libreserve.so.
         char report[1024];
         guest_layout_format_audit_report(&audit, report, sizeof(report));
-        __android_log_print(ANDROID_LOG_WARN, "PetariVR",
-            "cannot reserve all guest slices cleanly (%d conflicts detected);\n%s",
-            audit.totalConflicts, report);
-    } else {
-        LOG("guest address slices verified and reserved safely");
+        FATAL("cannot reserve the guest address window (%d conflicts); refusing to start:\n%s",
+              audit.totalConflicts, report);
     }
+    LOG("guest address slices verified and reserved safely");
 
     // libgame.so lives next to us, unless a developer build was pushed to the
     // app's private files directory (must be read-only for dlopen on Android 14).

@@ -30,15 +30,26 @@ OUT=out-mobile
 rm -rf $OUT/apk
 mkdir -p $OUT/apk/lib/arm64-v8a
 
-KEYSTORE=out/debug.keystore
+KEYSTORE=${GALAXY_KEYSTORE:-out/debug.keystore}
 mkdir -p out
 if [ ! -f "$KEYSTORE" ]; then
-  "$KEYTOOL" -genkeypair -keystore "$KEYSTORE" -storepass android -keypass android -alias androiddebugkey \
+  if [ "${GALAXY_ALLOW_NEW_KEY:-0}" != "1" ]; then
+    echo "No keystore at $KEYSTORE. Set GALAXY_KEYSTORE and GALAXY_KEYSTORE_PASS, or" >&2
+    echo "set GALAXY_ALLOW_NEW_KEY=1 to deliberately create a local dev key." >&2
+    exit 1
+  fi
+  : "${GALAXY_KEYSTORE_PASS:?set GALAXY_KEYSTORE_PASS before creating a signing key}"
+  GALAXY_KEY_ALIAS="${GALAXY_KEY_ALIAS:-androiddebugkey}"
+  "$KEYTOOL" -genkeypair -keystore "$KEYSTORE" -storepass:env GALAXY_KEYSTORE_PASS \
+    -keypass:env GALAXY_KEYSTORE_PASS -alias "$GALAXY_KEY_ALIAS" \
     -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=GalaxyMobile Debug,O=Local,C=US" > /dev/null
 fi
 
-GALAXY_KEYSTORE_PASS="${GALAXY_KEYSTORE_PASS:-android}"
-export GALAXY_KEYSTORE_PASS
+# No implicit password and no implicit alias: a wrong alias must fail before an
+# APK ever reaches a device.
+: "${GALAXY_KEYSTORE_PASS:?set GALAXY_KEYSTORE_PASS (no default credential is used)}"
+GALAXY_KEY_ALIAS="${GALAXY_KEY_ALIAS:-androiddebugkey}"
+export GALAXY_KEYSTORE_PASS GALAXY_KEY_ALIAS
 py3 - "$KEYSTORE" << 'PY'
 import sys
 from tools.apk_env import check_signer, keystore_fingerprint
@@ -82,10 +93,17 @@ PY
   if [ -n "$IS_WINDOWS" ]; then
     APKSIGNER_BAT="$BT/apksigner.bat"
     cmd //c "$(native_path "$APKSIGNER_BAT")" sign --ks "$(native_path "$KEYSTORE")" --ks-pass env:GALAXY_KEYSTORE_PASS \
-      --out "$(native_path "$OUT_APK")" "$(native_path "$OUT/aligned.apk")"
+      --ks-key-alias "$GALAXY_KEY_ALIAS" --out "$(native_path "$OUT_APK")" "$(native_path "$OUT/aligned.apk")"
   else
-    "$BT/apksigner" sign --ks $KEYSTORE --ks-pass env:GALAXY_KEYSTORE_PASS --out "$OUT_APK" $OUT/aligned.apk
+    "$BT/apksigner" sign --ks $KEYSTORE --ks-pass env:GALAXY_KEYSTORE_PASS --ks-key-alias "$GALAXY_KEY_ALIAS" \
+      --out "$OUT_APK" $OUT/aligned.apk
   fi
+  # Inspect the artifact that will be installed, not just the keystore.
+  py3 - "$OUT_APK" << 'PY'
+import sys
+from tools.apk_env import verify_signed_apk
+verify_signed_apk(sys.argv[1], channel='tester')
+PY
   rm -f $OUT/base.apk $OUT/aligned.apk
   echo "Successfully built $LABEL: $OUT_APK ($(wc -c < "$OUT_APK") bytes)"
 }

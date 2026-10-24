@@ -13,6 +13,7 @@
 #include "revolution/vi/vi3in1types.h"
 #include "revolution/vi/vifuncs.h"
 #include "revolution/vi/vitypes.h"
+#include "vi_timing.h"
 
 static VIRetraceCallback sPreCb;
 static VIRetraceCallback sPostCb;
@@ -31,13 +32,8 @@ static std::atomic<int64_t> sRaisedAt{0};    // host time of the last retrace ra
 static std::atomic<int> sDisplayRefreshRate{60};
 static std::atomic<float> sSpeedMultiplier{1.0f};
 
-// NTSC / EURGB60 base field period (1001/60000 s = ~16.683350 ms).
-static const int64_t kBaseViPeriodNs = 16683350LL;
-
 static inline int64_t getSimulationPeriodNs() {
-    float speed = sSpeedMultiplier.load();
-    if (speed < 0.1f) speed = 1.0f;
-    return (int64_t)((double)kBaseViPeriodNs / speed);
+    return port_vi_timing::simulationPeriodNs(sSpeedMultiplier.load());
 }
 
 // Raises the retrace interrupt: enforces authentic Wii ~59.94 Hz simulation cadence
@@ -47,11 +43,10 @@ static inline int64_t getSimulationPeriodNs() {
 static void raiseRetrace() {
     int64_t now = port_host_time_ns();
     int64_t last = sRaisedAt.load();
-    int64_t period = getSimulationPeriodNs();
-    int64_t minInterval = (int64_t)(period * 0.88);
-    if (minInterval < 2000000LL) minInterval = 2000000LL;
-
-    if (now - last < minInterval || !sRaisedAt.compare_exchange_strong(last, now)) {
+    if (!port_vi_timing::retraceAllowed(now, last, getSimulationPeriodNs())) {
+        return;
+    }
+    if (!sRaisedAt.compare_exchange_strong(last, now)) {
         return;
     }
     port_irq_raise(PORT_IRQ_VI);
@@ -61,7 +56,7 @@ static void raiseRetrace() {
 extern "C" void port_gx_present_xfb(void* xfb, int black);
 
 static void viIrq() {
-    sRetraceCount++;
+    sRetraceCount = sRetraceCount + 1;
     if (sPreCb) {
         sPreCb(sRetraceCount);
     }
@@ -86,20 +81,15 @@ static void viClock() {
         if (next > now) {
             port_host_sleep_ns(next - now);
         }
-        next += period;
         now = port_host_time_ns();
-        if (now > next + period * 2) {
-            next = now + period;  // resync after a stall instead of bursting
-        }
+        next = port_vi_timing::advanceDeadline(next, now, period);
         if (sPaused.load()) {
             continue;  // no retrace: the game stays in VIWaitForRetrace
         }
-        // If a retrace was already raised recently within the current cadence window
-        // (e.g. by display presentation sync), skip this tick.
-        // Otherwise (e.g. 30 FPS battery saver, dropped frames, or 90 Hz intermediate tick),
-        // fire the retrace now so simulation strictly maintains its 60 Hz cadence!
-        int64_t lastRaised = sRaisedAt.load();
-        if (now - lastRaised < (int64_t)(period * 0.70)) {
+        // A display-timed retrace already serving this cadence window makes
+        // this tick redundant; a slower presentation rate leaves gaps that
+        // the fallback clock must fill to keep simulation at 60 Hz.
+        if (!port_vi_timing::fallbackTickDue(now, sRaisedAt.load(), period)) {
             continue;
         }
         raiseRetrace();

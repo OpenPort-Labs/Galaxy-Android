@@ -1,4 +1,5 @@
 #include "FramePacer.h"
+#include "FramePacerTiming.h"
 #include <sched.h>
 #include <time.h>
 #include "port/port.h"
@@ -9,22 +10,20 @@ namespace mobile_display {
 void FramePacer::sync(android_app* app, int targetFps, float gameSpeed) {
     (void)app;
     (void)gameSpeed;
-    if (targetFps < 30) targetFps = 30;
-    if (targetFps > 144) targetFps = 144;
-
     // Presentation cadence is locked to display target refresh rate.
     // Game simulation speed (gameSpeed multiplier) drives physics/tick rates,
     // NOT the display presentation cadence.
-    int effectiveFps = targetFps;
-    int64_t framePeriodNs = 1000000000ll / (effectiveFps > 0 ? effectiveFps : 60);
+    int effectiveFps = pacing::clampTargetFps(targetFps);
+    int64_t framePeriodNs = pacing::framePeriodNs(effectiveFps);
 
     int64_t nowNs = port_host_time_ns();
-    if (mLastPresentNs == 0 || nowNs < mLastPresentNs || (nowNs - mLastPresentNs > framePeriodNs * 2)) {
+    if (pacing::phaseLost(nowNs, mLastPresentNs, framePeriodNs)) {
         mLastPresentNs = nowNs;
         return;
     }
 
-    int64_t targetNs = mLastPresentNs + framePeriodNs;
+    int64_t lastNs = mLastPresentNs;
+    int64_t targetNs = pacing::nextDeadline(lastNs, framePeriodNs);
     if (nowNs < targetNs) {
         int64_t waitNs = targetNs - nowNs;
         int64_t sleepRecordedNs = 0;
@@ -59,21 +58,15 @@ void FramePacer::sync(android_app* app, int targetFps, float gameSpeed) {
         if (sleepRecordedNs > 0) {
             port_perf_pace(sleepRecordedNs);
         }
-        // Advance target timestamp monotonically to eliminate VSync drift and beating
-        mLastPresentNs = targetNs;
-    } else {
-        // Target deadline was already missed. Reset mLastPresentNs to nowNs immediately
-        // so future frames do not inherit negative phase debt.
-        mLastPresentNs = nowNs;
     }
+    // Anchor on-time frames to the exact deadline and missed ones to now,
+    // so VSync phase cannot drift or accumulate negative debt.
+    mLastPresentNs = pacing::settlePhase(nowNs, lastNs, framePeriodNs);
 }
 
 bool FramePacer::shouldPresentSlot(int targetFps, float gameSpeed, int64_t nowNs) const {
     (void)gameSpeed;
-    if (targetFps <= 60) return false;
-    int effectiveFps = targetFps;
-    int64_t framePeriodNs = 1000000000ll / (effectiveFps > 0 ? effectiveFps : 60);
-    return (nowNs - mLastPresentNs >= framePeriodNs);
+    return pacing::presentSlotDue(nowNs, mLastPresentNs, targetFps);
 }
 
 void FramePacer::reset() {

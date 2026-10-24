@@ -1,24 +1,13 @@
 #include <assert.h>
 #include <stdint.h>
 #include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 
-// Mirror of core VI timing algorithms and constants from platform/src/vi/vi.cpp
-static const int64_t kBaseViPeriodNs = 16683350LL; // 59.94 Hz
+#include "vi/vi_timing.h"
+#include "FramePacerTiming.h"
 
-static inline int64_t calcSimPeriod(float speed) {
-    if (speed < 0.1f) speed = 1.0f;
-    return (int64_t)((double)kBaseViPeriodNs / speed);
-}
+// These tests drive the same inline decisions vi.cpp and FramePacer.cpp use,
+// so a change to the shipped thresholds or windows fails here.
 
-static inline int64_t calcMinInterval(int64_t simPeriod) {
-    int64_t minInterval = (int64_t)(simPeriod * 0.88);
-    if (minInterval < 2000000LL) minInterval = 2000000LL;
-    return minInterval;
-}
-
-// Simulated retrace engine tracking both display flips and fallback clock ticks
 struct SimulatedViEngine {
     int64_t raisedAt = 0;
     float speedMultiplier = 1.0f;
@@ -30,10 +19,12 @@ struct SimulatedViEngine {
         retraceCount = 0;
     }
 
+    int64_t simPeriod() const {
+        return port_vi_timing::simulationPeriodNs(speedMultiplier);
+    }
+
     bool raiseRetrace(int64_t nowNs) {
-        int64_t period = calcSimPeriod(speedMultiplier);
-        int64_t minInterval = calcMinInterval(period);
-        if (nowNs - raisedAt < minInterval) {
+        if (!port_vi_timing::retraceAllowed(nowNs, raisedAt, simPeriod())) {
             return false;
         }
         raisedAt = nowNs;
@@ -41,192 +32,149 @@ struct SimulatedViEngine {
         return true;
     }
 
-    // Step clock tick from viClock fallback loop
     bool onViClockTick(int64_t nowNs) {
-        int64_t period = calcSimPeriod(speedMultiplier);
-        if (nowNs - raisedAt < (int64_t)(period * 0.70)) {
+        if (!port_vi_timing::fallbackTickDue(nowNs, raisedAt, simPeriod())) {
             return false;
         }
         return raiseRetrace(nowNs);
     }
 };
 
+// Interleaves presentation flips at presentFps with the free-running fallback
+// clock, exactly as the render thread and viClock do at runtime.
+static uint32_t runOneSecond(int presentFps, float speed = 1.0f) {
+    SimulatedViEngine engine;
+    engine.reset(speed);
+
+    const int64_t totalDurationNs = 1000000000LL;
+    const int64_t presentPeriodNs = 1000000000LL / presentFps;
+    int64_t nextPresentNs = presentPeriodNs;
+    int64_t nextClockNs = engine.simPeriod();
+    int64_t currentNs = 0;
+
+    engine.raiseRetrace(0);
+
+    while (currentNs < totalDurationNs) {
+        if (nextPresentNs <= nextClockNs) {
+            currentNs = nextPresentNs;
+            engine.raiseRetrace(currentNs);
+            nextPresentNs += presentPeriodNs;
+        } else {
+            currentNs = nextClockNs;
+            engine.onViClockTick(currentNs);
+            nextClockNs = port_vi_timing::advanceDeadline(nextClockNs, currentNs, engine.simPeriod());
+        }
+    }
+    return engine.retraceCount;
+}
+
 static void testSimulationPeriodAndInterval(void) {
-    int64_t period60 = calcSimPeriod(1.0f);
+    int64_t period60 = port_vi_timing::simulationPeriodNs(1.0f);
+    assert(period60 == port_vi_timing::kBaseViPeriodNs);
     assert(period60 == 16683350LL);
-    int64_t minInterval60 = calcMinInterval(period60);
+
+    int64_t minInterval60 = port_vi_timing::minRetraceIntervalNs(period60);
     // 88% of 16.683ms is ~14.68ms
     assert(minInterval60 == 14681348LL);
 
-    // 90Hz display frame time (11.11ms) must strictly be REJECTED (< 14.68ms)
-    int64_t frame90Hz = 11111111LL;
-    assert(frame90Hz < minInterval60);
+    // 90/120/144 Hz display frames arrive faster than the Wii field rate and
+    // must be rejected, or the game runs in fast forward (Issue #112).
+    assert(1000000000LL / 90 < minInterval60);
+    assert(1000000000LL / 120 < minInterval60);
+    assert(1000000000LL / 144 < minInterval60);
 
-    // 120Hz display frame time (8.33ms) must strictly be REJECTED (< 14.68ms)
-    int64_t frame120Hz = 8333333LL;
-    assert(frame120Hz < minInterval60);
+    // 60/30 Hz frames satisfy the cadence window.
+    assert(1000000000LL / 60 >= minInterval60);
+    assert(1000000000LL / 30 >= minInterval60);
 
-    // 144Hz display frame time (6.94ms) must strictly be REJECTED (< 14.68ms)
-    int64_t frame144Hz = 6944444LL;
-    assert(frame144Hz < minInterval60);
-
-    // 60Hz display frame time (16.67ms) must be ACCEPTED (>= 14.68ms)
-    int64_t frame60Hz = 16666666LL;
-    assert(frame60Hz >= minInterval60);
-
-    // 30Hz display frame time (33.33ms) must be ACCEPTED (>= 14.68ms)
-    int64_t frame30Hz = 33333333LL;
-    assert(frame30Hz >= minInterval60);
-
+    // The 2 ms floor still bounds pathological speed multipliers.
+    assert(port_vi_timing::minRetraceIntervalNs(1000000LL) == 2000000LL);
     printf("[PASS] Simulation period invariants and refresh rate rejection thresholds verified\n");
 }
 
 static void test90HzSimulationDecoupling(void) {
-    SimulatedViEngine engine;
-    engine.reset(1.0f);
-
-    // Simulate 1 second (1,000,000,000 ns) of 90 FPS rendering (calls every 11.11ms)
-    // with interleaved viClock fallback loop running at authentic 16.68ms period.
-    const int64_t totalDurationNs = 1000000000LL;
-    const int64_t presentPeriodNs = 1000000000LL / 90; // ~11.11ms
-    const int64_t clockPeriodNs = kBaseViPeriodNs;      // ~16.68ms
-
-    int64_t nextPresentNs = presentPeriodNs;
-    int64_t nextClockNs = clockPeriodNs;
-    int64_t currentNs = 0;
-
-    // Initial first retrace at boot
-    engine.raiseRetrace(0);
-
-    while (currentNs < totalDurationNs) {
-        if (nextPresentNs <= nextClockNs) {
-            currentNs = nextPresentNs;
-            engine.raiseRetrace(currentNs);
-            nextPresentNs += presentPeriodNs;
-        } else {
-            currentNs = nextClockNs;
-            engine.onViClockTick(currentNs);
-            nextClockNs += clockPeriodNs;
-        }
-    }
-
-    // In 1 second, a 90 FPS display mode MUST yield ~60 simulation retraces (NOT 90!)
-    // Tolerating +-1 boundary frame for 59.94 Hz timing over 1.00s.
-    assert(engine.retraceCount >= 59 && engine.retraceCount <= 61);
+    uint32_t ticks = runOneSecond(90);
+    assert(ticks >= 59 && ticks <= 61);
     printf("[PASS] 90 Hz presentation simulation rate clamped to 60 Hz simulation cadence (%u ticks)\n",
-           engine.retraceCount);
+           ticks);
 }
 
 static void test30HzBatterySaverCadence(void) {
-    SimulatedViEngine engine;
-    engine.reset(1.0f);
-
-    // Simulate 1 second of 30 FPS rendering (calls every 33.33ms)
-    // viClock MUST fill the intermediate slots so physics runs at 100% normal speed.
-    const int64_t totalDurationNs = 1000000000LL;
-    const int64_t presentPeriodNs = 1000000000LL / 30; // ~33.33ms
-    const int64_t clockPeriodNs = kBaseViPeriodNs;      // ~16.68ms
-
-    int64_t nextPresentNs = presentPeriodNs;
-    int64_t nextClockNs = clockPeriodNs;
-    int64_t currentNs = 0;
-
-    engine.raiseRetrace(0);
-
-    while (currentNs < totalDurationNs) {
-        if (nextPresentNs <= nextClockNs) {
-            currentNs = nextPresentNs;
-            engine.raiseRetrace(currentNs);
-            nextPresentNs += presentPeriodNs;
-        } else {
-            currentNs = nextClockNs;
-            engine.onViClockTick(currentNs);
-            nextClockNs += clockPeriodNs;
-        }
-    }
-
-    // In 1 second, 30 FPS presentation MUST yield ~60 simulation retraces (NOT 30!)
-    // This fixes Issue #112 slow motion (half speed).
-    assert(engine.retraceCount >= 59 && engine.retraceCount <= 61);
-    printf("[PASS] 30 Hz presentation preserves full 60 Hz simulation cadence (%u ticks)\n",
-           engine.retraceCount);
+    uint32_t ticks = runOneSecond(30);
+    assert(ticks >= 59 && ticks <= 61);
+    printf("[PASS] 30 Hz presentation preserves full 60 Hz simulation cadence (%u ticks)\n", ticks);
 }
 
 static void test60HzPhaseLocking(void) {
-    SimulatedViEngine engine;
-    engine.reset(1.0f);
-
-    // Simulate 1 second of 60 FPS presentation (calls every 16.67ms)
-    const int64_t totalDurationNs = 1000000000LL;
-    const int64_t presentPeriodNs = 1000000000LL / 60; // 16.666ms
-    const int64_t clockPeriodNs = kBaseViPeriodNs;      // 16.683ms
-
-    int64_t nextPresentNs = presentPeriodNs;
-    int64_t nextClockNs = clockPeriodNs;
-    int64_t currentNs = 0;
-
-    engine.raiseRetrace(0);
-
-    while (currentNs < totalDurationNs) {
-        if (nextPresentNs <= nextClockNs) {
-            currentNs = nextPresentNs;
-            engine.raiseRetrace(currentNs);
-            nextPresentNs += presentPeriodNs;
-        } else {
-            currentNs = nextClockNs;
-            engine.onViClockTick(currentNs);
-            nextClockNs += clockPeriodNs;
-        }
-    }
-
-    assert(engine.retraceCount >= 59 && engine.retraceCount <= 61);
-    printf("[PASS] 60 Hz presentation phase-locked to simulation cadence (%u ticks)\n",
-           engine.retraceCount);
+    uint32_t ticks = runOneSecond(60);
+    assert(ticks >= 59 && ticks <= 61);
+    printf("[PASS] 60 Hz presentation phase-locked to simulation cadence (%u ticks)\n", ticks);
 }
 
 static void testGameSpeedScaling(void) {
-    SimulatedViEngine engine;
+    int64_t period2x = port_vi_timing::simulationPeriodNs(2.0f);
+    assert(period2x == port_vi_timing::kBaseViPeriodNs / 2);
+    // At 2x speed, 120 Hz frames must be accepted.
+    assert(8333333LL >= port_vi_timing::minRetraceIntervalNs(period2x));
 
-    // Fast-Forward: 2.0x game speed
-    engine.reset(2.0f);
-    int64_t period2x = calcSimPeriod(2.0f);
-    assert(period2x == kBaseViPeriodNs / 2);
-    int64_t minInterval2x = calcMinInterval(period2x);
-    // At 2x speed, 120Hz frames (8.33ms) must be accepted
-    assert(8333333LL >= minInterval2x);
+    int64_t periodHalf = port_vi_timing::simulationPeriodNs(0.5f);
+    assert(periodHalf == port_vi_timing::kBaseViPeriodNs * 2);
+    // At 0.5x speed, 60 Hz frames arrive too early and must be rejected.
+    assert(16666666LL < port_vi_timing::minRetraceIntervalNs(periodHalf));
 
-    // Slow-Mo: 0.5x game speed
-    engine.reset(0.5f);
-    int64_t periodHalf = calcSimPeriod(0.5f);
-    assert(periodHalf == kBaseViPeriodNs * 2);
-    int64_t minIntervalHalf = calcMinInterval(periodHalf);
-    // At 0.5x speed, 60Hz frames (16.67ms) must be rejected (< 29.36ms)
-    assert(16666666LL < minIntervalHalf);
+    // Sub-0.1 multipliers are treated as normal speed.
+    assert(port_vi_timing::simulationPeriodNs(0.0f) == port_vi_timing::kBaseViPeriodNs);
 
+    // A 2x-speed second must produce ~120 retraces, not 60.
+    uint32_t ticks = runOneSecond(60, 2.0f);
+    assert(ticks >= 119 && ticks <= 121);
     printf("[PASS] Game speed scaling correctly adjusts simulation period and retrace filter\n");
 }
 
 static void testFramePacerMonotonicPhase(void) {
-    int64_t lastPresentNs = 1000000000LL;
-    int64_t framePeriodNs = 1000000000LL / 60; // 16666666 ns
+    using namespace mobile_display::pacing;
 
-    // Case 1: Frame rendered on time, target advances monotonically without drift
-    int64_t targetNs = lastPresentNs + framePeriodNs;
-    int64_t nowNs = targetNs + 2000; // Woke up 2 microseconds after target
-    // In our fixed pacer, when on time or near target, mLastPresentNs locks to targetNs:
-    lastPresentNs = targetNs;
-    assert(lastPresentNs == 1000000000LL + framePeriodNs);
+    assert(clampTargetFps(15) == 30);
+    assert(clampTargetFps(240) == 144);
+    assert(framePeriodNs(60) == 16666666);
 
-    // Next frame target retains exact 60.000 Hz phase:
-    int64_t nextTargetNs = lastPresentNs + framePeriodNs;
-    assert(nextTargetNs == 1000000000LL + framePeriodNs * 2);
+    int64_t period = framePeriodNs(clampTargetFps(60));
+    int64_t last = 1000000000LL;
+    int64_t target = nextDeadline(last, period);
 
-    // Case 2: Severe stall (missed deadline by > 1 frame period)
-    nowNs = nextTargetNs + framePeriodNs * 2;
-    if (nowNs >= nextTargetNs) {
-        lastPresentNs = nowNs; // Resets cleanly without negative debt
-    }
-    assert(lastPresentNs == nowNs);
+    // Reaching the pacer before the deadline: it sleeps to the target and
+    // anchors to the exact deadline, so no drift accumulates.
+    int64_t onTime = target - 2000;
+    assert(!phaseLost(onTime, last, period));
+    int64_t settled = settlePhase(onTime, last, period);
+    assert(settled == target);
+    assert(nextDeadline(settled, period) == last + period * 2);
+
+    // The deadline was already missed at decision time: re-anchor to now
+    // instead of inheriting the old phase (negative debt).
+    int64_t missed = target + 2000;
+    assert(!phaseLost(missed, last, period));
+    assert(settlePhase(missed, last, period) == missed);
+
+    // A one-frame overrun still has usable phase and re-anchors to now.
+    int64_t late = target + period;
+    assert(!phaseLost(late, last, period));
+    assert(settlePhase(late, last, period) == late);
+
+    // Missing by more than two frames loses phase entirely.
+    int64_t stalled = target + period * 2 + 1;
+    assert(phaseLost(stalled, last, period));
+    assert(settlePhase(stalled, last, period) == stalled);
+
+    // Backwards or uninitialized anchors reset as well.
+    assert(phaseLost(last - 1, last, period));
+    assert(phaseLost(target, 0, period));
+
+    // Catch-up slots exist only above 60 Hz.
+    assert(!presentSlotDue(last + 1000, last, 60));
+    assert(!presentSlotDue(last + period * 2, last, 60));
+    assert(presentSlotDue(last + period, last, 120));
+    assert(!presentSlotDue(last + 1000, last, 120));
 
     printf("[PASS] Frame pacer monotonic phase tracking and stall reset verified\n");
 }
